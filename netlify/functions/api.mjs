@@ -73,16 +73,30 @@ const loadAdjustments = (d0, d1) => { const a = isoToLocalStartMs(d0), b = isoTo
 const store = () => getStore({ name: "ponto", consistency: "strong" });
 const readKey = async k => (await store().get(k, { type: "json" })) || {};
 const writeKey = (k, v) => store().setJSON(k, v);
+const TIPOS = ["6x1", "12x36", "intermitente"];
 function validateHorario(h) {
   try { return validateHorarioRaw(h); } catch (e) { throw Object.assign(new Error(e.message === "hora inválida" ? "Preencha entrada e saída" : e.message), { status: 400 }); }
 }
 function validateHorarioRaw(h) {
-  const days = [...new Set((h.days || []).map(Number).filter(d => d >= 1 && d <= 7))].sort();
+  const type = TIPOS.includes(h.type) ? h.type : "6x1";
+  if (type === "intermitente") return { type, days: [], start: "", end: "", break_min: 0 };
   hm2min(h.start); hm2min(h.end);
-  if (!days.length) throw new Error("Marque pelo menos um dia de trabalho");
-  return { days, start: h.start, end: h.end, break_min: Math.max(0, parseInt(h.break_min || 0, 10) || 0) };
+  const break_min = Math.max(0, parseInt(h.break_min || 0, 10) || 0);
+  if (type === "12x36") {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(h.anchor || "")) throw new Error("12x36: informe o dia de trabalho de referência");
+    return { type, days: [], start: h.start, end: h.end, break_min, anchor: h.anchor };
+  }
+  const days = [...new Set((h.days || []).map(Number).filter(d => d >= 1 && d <= 7))].sort();
+  if (days.length !== 6) throw new Error("6x1: marque exatamente 6 dias de trabalho (1 folga)");
+  return { type, days, start: h.start, end: h.end, break_min };
 }
-const labelHorario = h => `${h.days.length === 6 ? "6x1" : h.days.length === 5 ? "5x2" : h.days.length + " dias"} · ${h.start}–${h.end}` + (h.break_min ? ` (pausa ${h.break_min} min)` : "");
+const labelHorario = h => {
+  const brk = h.break_min ? ` (pausa ${h.break_min} min)` : "";
+  if (h.type === "intermitente") return "Intermitente · sem horário fixo";
+  if (h.type === "12x36") return `12x36 · ${h.start}–${h.end}${brk} · ref. ${String(h.anchor).split("-").reverse().join("/")}`;
+  const n = (h.days || []).length;
+  return `${h.type === "6x1" || n === 6 ? "6x1" : n === 5 ? "5x2" : n + " dias"} · ${h.start}–${h.end}${brk}`;
+};
 const hmFmt = m => { const s = m < 0 ? "-" : ""; m = Math.abs(Math.round(m)); return `${s}${pad(Math.floor(m / 60))}:${pad(m % 60)}`; };
 
 // ------------------------------------------------------------ análise
@@ -120,15 +134,24 @@ async function analyze(d0, d1) {
     }
     let brk = 0, src = sch?.name || "— sem escala —";
     const custom = hor[String(eid)];
+    const isInter = custom?.type === "intermitente";
+    let segsFor = cur => table[apiDay(cur)] || [];
     if (custom) {
-      const a = hm2min(custom.start); let b = hm2min(custom.end); if (b <= a) b += 1440;
-      table = {}; for (const d of custom.days) table[d] = [[a, b]];
       brk = custom.break_min || 0; src = "✔ " + labelHorario(custom);
+      if (isInter) segsFor = () => [];
+      else {
+        const a = hm2min(custom.start); let b = hm2min(custom.end); if (b <= a) b += 1440;     // turno que passa da meia-noite
+        if (custom.type === "12x36") {
+          segsFor = cur => { const n = Math.round((isoToUtcMidnight(cur) - isoToUtcMidnight(custom.anchor)) / DAY); return ((n % 2) + 2) % 2 === 0 ? [[a, b]] : []; };
+        } else {
+          table = {}; for (const d of custom.days) table[d] = [[a, b]];
+        }
+      }
     }
     const tot = { early: 0, early_min: 0, late: 0, late_min: 0, absences: 0, expected: 0, worked: 0, incomplete: 0 };
     const days = [];
     for (let cur = d0; cur <= d1; cur = addDays(cur, 1)) {
-      const segs = table[apiDay(cur)] || [];
+      const segs = segsFor(cur);
       let expected = segs.length ? Math.max(0, segs.reduce((s, [a, b]) => s + b - a, 0) - brk) : 0;
       const marks = [...(byEmpDay.get(eid + "|" + cur) || [])].sort((x, y) => x[0] - y[0]);
       const adj = adjDays.get(eid + "|" + cur);
@@ -140,7 +163,15 @@ async function analyze(d0, d1) {
         if (dout) worked += Math.max(0, Math.floor((dout - din) / 60000)); else open = true;
       }
       rec.worked = worked;
-      if (HOLIDAYS.has(cur)) { rec.status = "feriado"; expected = 0; rec.expected = 0; }
+      if (isInter) {                       // intermitente: sem previsto — conta só o que foi trabalhado (saldo sempre 0)
+        if (cur > today) { rec.status = "futuro"; }
+        else if (marks.length) {
+          rec.status = "trabalhou";
+          if (open) { rec.note = "Saída sem batida"; if (cur < today) tot.incomplete++; else worked = 0; }
+          expected = worked; rec.expected = worked;
+        }
+      }
+      else if (HOLIDAYS.has(cur)) { rec.status = "feriado"; expected = 0; rec.expected = 0; }
       else if (adj && (adj.full || !marks.length)) {
         rec.status = "abonado"; rec.note = adj.desc;
         if (adj.missing) { tot.absences++; rec.status = "falta"; }
