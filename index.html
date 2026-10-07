@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel de Ponto</title>
+<meta name="robots" content="noindex,nofollow">
+<style>
+  :root{--bg:#f5f6f8;--card:#fff;--tx:#1d2330;--mut:#6b7385;--bd:#e3e6ec;--pri:#5b2a86;
+        --red:#c62828;--amb:#b26a00;--grn:#1b7a3d;--blu:#1f5fbf;
+        --redbg:#fdecec;--ambbg:#fff3df;--grnbg:#e6f5ec;--blubg:#e8f0fc}
+  @media(prefers-color-scheme:dark){:root{--bg:#14161b;--card:#1d2027;--tx:#e8eaf0;--mut:#9aa1b2;--bd:#2c303a;
+        --redbg:#3a1d1f;--ambbg:#3a2c14;--grnbg:#16301f;--blubg:#17283f;--red:#ff8a80;--amb:#ffc266;--grn:#7fd99b;--blu:#8ab8ff}}
+  *{box-sizing:border-box} body{margin:0;font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx)}
+  header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:16px 24px;background:var(--card);border-bottom:1px solid var(--bd)}
+  h1{font-size:18px;margin:0;color:var(--pri)} .ctl{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  input,select,button{font:inherit;padding:7px 10px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--tx)}
+  button{cursor:pointer;background:var(--pri);color:#fff;border-color:var(--pri)} button.ghost{background:var(--card);color:var(--tx);border-color:var(--bd)}
+  main{max-width:1200px;margin:0 auto;padding:20px 24px 60px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:20px}
+  .kpi{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px 16px}
+  .kpi b{display:block;font-size:26px;margin-top:2px} .kpi span{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  .neg{color:var(--red)} .pos{color:var(--grn)}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--bd);border-radius:12px;overflow:hidden}
+  th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--bd)} th{font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;cursor:pointer;user-select:none;white-space:nowrap}
+  tr.emp{cursor:pointer} tr.emp:hover{background:var(--bg)} td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .wrap{overflow-x:auto;border-radius:12px}
+  .chip{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:600}
+  .c-falta{background:var(--redbg);color:var(--red)} .c-atraso,.c-atrasado-sem-batida,.c-incompleto{background:var(--ambbg);color:var(--amb)}
+  .c-ok{background:var(--grnbg);color:var(--grn)} .c-abonado,.c-feriado{background:var(--blubg);color:var(--blu)}
+  .c-folga,.c-futuro,.c-aguardando{background:var(--bg);color:var(--mut)}
+  .detail td{background:var(--bg);padding:0} .detail table{border:0;border-radius:0} .detail td,.detail th{padding:6px 12px;cursor:default}
+  #msg{padding:14px 16px;border-radius:10px;margin-bottom:16px;display:none} #msg.err{display:block;background:var(--redbg);color:var(--red)} #msg.load{display:block;background:var(--blubg);color:var(--blu)}
+  .tabs{display:flex;gap:4px;padding:0 24px;background:var(--card);border-bottom:1px solid var(--bd)}
+  .tab{background:none;border:0;border-bottom:3px solid transparent;border-radius:0;color:var(--mut);padding:12px 16px;font-weight:600}
+  .tab.on{color:var(--pri);border-bottom-color:var(--pri)}
+  .days{display:flex;gap:3px} .days label{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid var(--bd);border-radius:6px;cursor:pointer;font-size:12px;user-select:none}
+  .days input{display:none} .days input:checked+span{background:var(--pri);color:#fff;border-radius:5px;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+  .hrow input[type=time]{width:105px} .hrow input[type=number]{width:70px} .mini{padding:4px 8px;font-size:12px}
+  .ok2{color:var(--grn);font-size:12px} .hint{background:var(--blubg);color:var(--blu);padding:12px 16px;border-radius:10px;margin-bottom:14px}
+  .sec{margin:26px 0 10px;font-size:15px;font-weight:700} .bar{height:10px;border-radius:5px;background:var(--pri);min-width:2px}
+  .bars td{padding:7px 12px} .best{background:var(--grnbg)} .worst{background:var(--redbg)} .badge{display:inline-block;background:var(--blubg);color:var(--blu);border-radius:6px;padding:0 6px;font-size:11px;margin-left:6px}
+  .ins{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:6px 18px;margin-bottom:6px} .ins li{margin:9px 0}
+  .bulk{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+  #login{position:fixed;inset:0;background:var(--bg);display:none;align-items:center;justify-content:center;z-index:99}
+  #login .box{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:28px;width:min(360px,92vw);display:flex;flex-direction:column;gap:12px}
+  #login h2{margin:0;color:var(--pri);font-size:18px} #lerr{color:var(--red);font-size:13px;min-height:18px}
+  .foot{color:var(--mut);font-size:12px;margin-top:14px}
+</style>
+</head>
+<body>
+<div id="login"><form class="box" onsubmit="doLogin(event)"><h2>⏱ Painel de Ponto</h2><span style="color:var(--mut)">Digite a senha de acesso</span>
+  <input type="password" id="pw" placeholder="Senha" autocomplete="current-password" required><button type="submit">Entrar</button><div id="lerr"></div></form></div>
+<header>
+  <h1>⏱ Painel de Ponto</h1>
+  <div class="ctl" id="ctl">
+    <button class="ghost" onclick="preset('hoje')">Hoje</button>
+    <button class="ghost" onclick="preset('semana')">Semana</button>
+    <button class="ghost" onclick="preset('mes')">Mês</button>
+    <input type="date" id="d0"> <span>até</span> <input type="date" id="d1">
+    <select id="hubf" onchange="render()"><option value="">Todos os hubs</option></select>
+    <input id="q" placeholder="Buscar funcionário…" oninput="render()">
+    <button onclick="load()">Atualizar</button> <button class="ghost" onclick="logout()">Sair</button>
+  </div>
+</header>
+<div class="tabs"><button class="tab on" id="t1" onclick="showTab(1)">Painel</button><button class="tab" id="t3" onclick="showTab(3)">Hubs</button><button class="tab" id="t2" onclick="showTab(2)">Horários</button></div>
+<main id="pg1">
+  <div id="msg"></div>
+  <div class="kpis" id="kpis"></div>
+  <div class="wrap"><table id="tbl"><thead><tr>
+    <th onclick="sortBy('name')">Funcionário</th><th onclick="sortBy('absences')" class="num">Faltas</th>
+    <th onclick="sortBy('early')" class="num">Chegou cedo</th><th onclick="sortBy('late')" class="num">Atrasos</th><th onclick="sortBy('late_min')" class="num">Min. atraso</th>
+    <th onclick="sortBy('worked')" class="num">Trabalhado</th><th onclick="sortBy('expected')" class="num">Previsto</th>
+    <th onclick="sortBy('balance')" class="num">Saldo</th></tr></thead><tbody id="tb"></tbody></table></div>
+  <div class="foot" id="foot"></div>
+</main>
+<main id="pg3" style="display:none">
+  <div id="hubmsg" class="hint">Cadastre o hub de cada pessoa na aba Horários para ver os comparativos.</div>
+  <div class="sec" style="margin-top:0">Insights do período</div><div class="ins"><ul id="ins"></ul></div>
+  <div class="kpis" id="hkpis" style="margin-top:14px"></div>
+  <div class="sec">Comparativo entre hubs</div>
+  <div class="ctl" style="margin-bottom:10px">Ordenar/visualizar por: <select id="hmetric" onchange="render3()"></select></div>
+  <div class="wrap"><table class="bars"><tbody id="hbars"></tbody></table></div>
+  <div class="wrap" style="margin-top:14px"><table><thead><tr><th>Hub</th><th class="num">Pessoas</th><th class="num">Faltas</th><th class="num">Absenteísmo</th><th class="num">Atrasos</th><th class="num">Pontualidade</th><th class="num">Atraso médio/pessoa</th><th class="num">Chegou cedo</th><th class="num">Saldo total</th><th class="num">Saldo médio/pessoa</th></tr></thead><tbody id="htab"></tbody></table></div>
+  <div class="sec">Comparativo entre colaboradores</div>
+  <div class="ctl" style="margin-bottom:10px">Hub: <select id="hsel" onchange="render3()"></select> Ordenar por: <select id="hsort" onchange="render3()">
+    <option value="late_min">Mais minutos de atraso</option><option value="absences">Mais faltas</option><option value="balance">Menor saldo de horas</option><option value="name">Nome</option></select></div>
+  <div class="wrap"><table><thead><tr><th>Colaborador</th><th class="num">Faltas</th><th class="num">Atrasos</th><th class="num">Min. atraso</th><th class="num">Chegou cedo</th><th class="num">Pontualidade</th><th class="num">Saldo</th><th class="num">Atraso vs média do hub</th><th class="num">Saldo vs média do hub</th></tr></thead><tbody id="etab"></tbody></table></div>
+  <div class="foot">Absenteísmo = faltas ÷ dias previstos. Pontualidade = dias sem atraso ÷ dias trabalhados. "vs média do hub" compara cada pessoa com a média do próprio hub.</div>
+</main>
+<main id="pg2" style="display:none">
+  <div id="hmsg" class="hint" style="display:none;background:var(--redbg);color:var(--red)"></div>
+  <div class="hint">Cadastre o horário de cada pessoa: marque os dias que ela trabalha, a entrada e a saída. O painel passa a usar este horário no lugar da escala do Tangerino. Use <b>6x1</b> / <b>5x2</b> para marcar os dias mais rápido e ajuste o dia de folga se precisar.</div>
+  <div class="ctl" style="margin-bottom:12px"><input id="hq" placeholder="Buscar funcionário…" oninput="renderH()"><span id="hcount" style="color:var(--mut)"></span></div>
+  <div class="bulk">Definir hub para <b>todos os listados</b> (use a busca para filtrar): <input id="bulkhub" list="hublist" placeholder="Nome do hub"> <button class="ghost mini" onclick="bulkHub()">Aplicar aos listados</button></div>
+  <datalist id="hublist"></datalist>
+  <div class="wrap"><table><thead><tr><th>Funcionário</th><th>Hub</th><th>Dias</th><th>Entrada</th><th>Saída</th><th>Pausa (min)</th><th></th></tr></thead><tbody id="hb"></tbody></table></div>
+  <div class="foot">Salvo no armazenamento do Netlify (fica guardado mesmo com o seu computador desligado). "Pausa" é o intervalo não remunerado descontado das horas previstas (deixe 0 se não houver).</div>
+</main>
+<script>
+const _fetch=window.fetch.bind(window);
+window.fetch=async(u,o={})=>{const r=await _fetch(u,{credentials:'same-origin',...o});if(r.status===401&&!String(u).includes('/api/login'))showLogin();return r};
+function showLogin(){document.getElementById('login').style.display='flex';setTimeout(()=>document.getElementById('pw').focus(),50)}
+async function doLogin(ev){ev.preventDefault();const e=document.getElementById('lerr');e.textContent='';
+  try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:document.getElementById('pw').value})});const j=await r.json();
+    if(!r.ok)throw new Error(j.error||'Erro');document.getElementById('pw').value='';document.getElementById('login').style.display='none';load()}catch(err){e.textContent=err.message}}
+async function logout(){await fetch('/api/logout');showLogin()}
+const $=id=>document.getElementById(id); let DATA=null, sort={k:'absences',dir:-1}, open=new Set();
+const iso=d=>d.toISOString().slice(0,10), WD=['','Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+const hm=m=>{const s=m<0?'-':'';m=Math.abs(Math.round(m));return s+String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')};
+const LBL={ok:'OK',falta:'Falta',atraso:'Atraso','atrasado-sem-batida':'Não bateu (atrasado)',incompleto:'Saída sem batida',abonado:'Abonado',feriado:'Feriado',folga:'Folga',futuro:'—',aguardando:'Aguardando'};
+function preset(p){const t=new Date();let a=new Date(t);
+  if(p==='semana'){a.setDate(t.getDate()-((t.getDay()+6)%7))} if(p==='mes'){a=new Date(t.getFullYear(),t.getMonth(),1)}
+  $('d0').value=iso(a);$('d1').value=iso(t);load()}
+async function load(){
+  $('msg').className='load';$('msg').textContent='Buscando pontos na Tangerino…';
+  try{const r=await fetch(`/api/report?start=${$('d0').value}&end=${$('d1').value}`);const j=await r.json();
+    if(!r.ok)throw new Error(j.error||r.status);DATA=j;$('msg').className='';fillHubs();render();render3()}
+  catch(e){$('msg').className='err';$('msg').textContent='Erro: '+e.message}}
+function sortBy(k){sort=sort.k===k?{k,dir:-sort.dir}:{k,dir:k==='name'?1:-1};render()}
+function val(e,k){return k==='name'?e.name.toLowerCase():e.totals[k]}
+function render(){if(!DATA)return;const q=$('q').value.toLowerCase();
+  const hf=$('hubf').value;const list=DATA.employees.filter(e=>e.name.toLowerCase().includes(q)&&(!hf||(e.hub||'Sem hub')===hf)).sort((a,b)=>{const x=val(a,sort.k),y=val(b,sort.k);return (x>y?1:x<y?-1:0)*sort.dir});
+  const S=k=>list.reduce((s,e)=>s+e.totals[k],0), bal=S('balance');
+  $('kpis').innerHTML=[['Funcionários',list.length,''],['Faltas',S('absences'),S('absences')?'neg':''],['Chegaram cedo',S('early'),''],['Atrasos',S('late'),S('late')?'neg':''],
+    ['Minutos de atraso',S('late_min'),''],['Saldo total',hm(bal),bal<0?'neg':'pos']].map(([l,v,c])=>`<div class="kpi"><span>${l}</span><b class="${c}">${v}</b></div>`).join('');
+  $('tb').innerHTML=list.map(e=>{const t=e.totals,o=open.has(e.id);
+    let h=`<tr class="emp" onclick="tog(${e.id})"><td><b>${o?'▾':'▸'} ${e.name}</b>${e.hub?`<span class="badge">${e.hub}</span>`:''}<br><small style="color:${e.custom?'var(--grn)':'var(--amb)'}">${e.custom?e.schedule:e.schedule+' (não cadastrado)'}</small></td>
+    <td class="num ${t.absences?'neg':''}">${t.absences}</td><td class="num">${t.early?`<span class="pos">${t.early}×</span> <small>(${t.early_min} min)</small>`:'0'}</td><td class="num ${t.late?'neg':''}">${t.late}</td><td class="num">${t.late_min}</td>
+    <td class="num">${hm(t.worked)}</td><td class="num">${hm(t.expected)}</td><td class="num ${t.balance<0?'neg':'pos'}"><b>${hm(t.balance)}</b></td></tr>`;
+    if(o)h+=`<tr class="detail"><td colspan="8"><table><thead><tr><th>Data</th><th>Situação</th><th>Batidas</th><th class="num">Trabalhado</th><th class="num">Previsto</th><th class="num">Saldo</th></tr></thead><tbody>`+
+      e.days.filter(d=>d.status!=='futuro').map(d=>`<tr><td>${WD[d.weekday]} ${d.date.split('-').reverse().slice(0,2).join('/')}</td>
+      <td><span class="chip c-${d.status}">${LBL[d.status]||d.status}</span>${d.late_min?` <small>+${d.late_min} min</small>`:''}${d.early_min?` <small class="pos">cedo ${d.early_min} min</small>`:''}${d.note?` <small>${d.note}</small>`:''}</td>
+      <td>${d.marks.map(m=>m[0]+'–'+(m[1]||'?')).join(' · ')||'—'}</td><td class="num">${hm(d.worked)}</td><td class="num">${hm(d.expected)}</td>
+      <td class="num ${d.balance<0?'neg':d.balance>0?'pos':''}">${d.balance?hm(d.balance):'—'}</td></tr>`).join('')+`</tbody></table></td></tr>`;
+    return h}).join('')||'<tr><td colspan="8">Nenhum resultado.</td></tr>';
+  $('foot').textContent=`Período ${DATA.start} a ${DATA.end} · tolerância de atraso: ${DATA.tolerance} min · gerado em ${DATA.generated}`}
+function tog(id){open.has(id)?open.delete(id):open.add(id);render()}
+
+function showTab(n){[1,2,3].forEach(i=>{$('pg'+i).style.display=n===i?'':'none';$('t'+i).className='tab'+(n===i?' on':'')});
+  $('ctl').style.display=n===2?'none':'';$('hubf').style.display=n===1?'':'none';$('q').style.display=n===1?'':'none';if(n===2)loadH();if(n===3)render3()}
+let HE=[];
+async function loadH(){const m=$('hmsg');
+  try{const r=await fetch('/api/horarios');const j=await r.json();
+    if(!r.ok||!j.employees)throw new Error(j.error==='not found'?'A função da API não respondeu. Verifique se o deploy no Netlify terminou sem erro.':(j.error||'Erro ao carregar os funcionários'));
+    HE=j.employees;m.style.display='none';renderH()}
+  catch(e){m.style.display='block';m.textContent='⚠ '+e.message;HE=[];renderH()}}
+function renderH(){const q=$('hq').value.toLowerCase();const list=HE.filter(e=>e.name.toLowerCase().includes(q));
+  $('hcount').textContent=`${HE.filter(e=>e.horario).length} de ${HE.length} com horário cadastrado`;
+  $('hublist').innerHTML=hubNames().map(h=>`<option value="${h}">`).join('');
+  $('hb').innerHTML=list.map(e=>{const h=e.horario||{days:[],start:'08:00',end:'17:00',break_min:0};
+    const dias=[1,2,3,4,5,6,7].map(d=>`<label><input type="checkbox" data-d="${d}" ${h.days.includes(d)?'checked':''}><span>${WD[d][0]}</span></label>`).join('');
+    return `<tr class="hrow" id="h${e.id}"><td><b>${e.name}</b><br><small style="color:var(--mut)">Tangerino: ${e.tangerino}</small></td>
+    <td><input class="hubin" list="hublist" style="width:130px" placeholder="Hub" value="${(e.hub||'').replace(/"/g,'&quot;')}" onchange="saveHub(${e.id},this.value)"></td>
+    <td><div class="days">${dias}</div><div style="margin-top:4px"><button class="ghost mini" onclick="pre(${e.id},[2,3,4,5,6,7])">6x1</button> <button class="ghost mini" onclick="pre(${e.id},[2,3,4,5,6])">5x2</button></div></td>
+    <td><input type="time" class="st" value="${h.start}"></td><td><input type="time" class="en" value="${h.end}"></td>
+    <td><input type="number" class="bk" min="0" step="5" value="${h.break_min}"></td>
+    <td><button class="mini" onclick="saveH(${e.id})">Salvar</button> <button class="ghost mini" onclick="copyAll(${e.id})" title="Aplica este horário a todos que ainda não têm">Copiar p/ sem horário</button>
+      ${e.horario?`<button class="ghost mini" onclick="clearH(${e.id})">Limpar</button>`:''}<div class="ok2" id="m${e.id}"></div></td></tr>`}).join('')}
+function pre(id,days){document.querySelectorAll(`#h${id} .days input`).forEach(i=>i.checked=days.includes(+i.dataset.d))}
+function readRow(id){const r=$('h'+id);return{days:[...r.querySelectorAll('.days input:checked')].map(i=>+i.dataset.d),start:r.querySelector('.st').value,end:r.querySelector('.en').value,break_min:+r.querySelector('.bk').value||0}}
+async function post(body,path='/api/horarios'){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();if(!r.ok)throw new Error(j.error);return j}
+async function saveH(id){const h=readRow(id);if(!h.days.length||!h.start||!h.end){$('m'+id).textContent='Marque os dias e preencha entrada e saída';$('m'+id).style.color='var(--red)';return}
+  try{await post({id,horario:h});await loadH();const m=$('m'+id);if(m){m.style.color='';m.textContent='✔ salvo'}}catch(e){alert(e.message)}}
+async function saveHub(id,hub){try{await post({id,hub},'/api/hubs');const e=HE.find(x=>x.id===id);if(e)e.hub=hub.trim();fillHubs();$('hublist').innerHTML=hubNames().map(h=>`<option value="${h}">`).join('')}catch(err){alert(err.message)}}
+async function bulkHub(){const hub=$('bulkhub').value.trim();const q=$('hq').value.toLowerCase();const ids=HE.filter(e=>e.name.toLowerCase().includes(q)).map(e=>e.id);
+  if(!ids.length)return;if(!confirm(`${hub?`Definir o hub "${hub}"`:'Remover o hub'} de ${ids.length} funcionário(s) listados?`))return;
+  await post({ids,hub},'/api/hubs');await loadH()}
+function hubNames(){return [...new Set((HE.length?HE:(DATA?DATA.employees:[])).map(e=>e.hub).filter(Boolean))].sort()}
+function fillHubs(){const cur=$('hubf').value;const names=[...new Set((DATA?DATA.employees:HE).map(e=>e.hub).filter(Boolean))].sort();
+  const hasNo=(DATA?DATA.employees:HE).some(e=>!e.hub);
+  $('hubf').innerHTML='<option value="">Todos os hubs</option>'+names.concat(hasNo&&names.length?['Sem hub']:[]).map(h=>`<option ${h===cur?'selected':''}>${h}</option>`).join('')}
+async function clearH(id){await post({id,horario:null});await loadH()}
+async function copyAll(id){const h=readRow(id);const ids=HE.filter(e=>!e.horario&&e.id!==id).map(e=>e.id);
+  if(!h.days.length||!ids.length)return alert('Nada para copiar.');if(!confirm(`Aplicar este horário a ${ids.length} funcionários que ainda não têm horário?`))return;
+  await post({ids:[id,...ids],horario:h});await loadH()}
+
+/* ===================== INSIGHTS DE HUBS ===================== */
+const pct=v=>(v*100).toFixed(1).replace('.',',')+'%', GOOD=['ok','atraso','incompleto','falta'];
+function stats(emps){const t={n:emps.length,abs:0,late:0,late_min:0,early:0,balance:0,sched:0,present:0,latem:0};
+  emps.forEach(e=>{const T=e.totals;t.abs+=T.absences;t.late+=T.late;t.late_min+=T.late_min;t.early+=T.early;t.balance+=T.balance;
+    e.days.forEach(d=>{if(GOOD.includes(d.status)){t.sched++;if(d.status!=='falta')t.present++;if(d.status==='atraso')t.latem++}})});
+  t.absRate=t.sched?t.abs/t.sched:0;t.punct=t.present?1-t.latem/t.present:1;t.balAvg=t.n?t.balance/t.n:0;t.lateAvg=t.n?t.late_min/t.n:0;return t}
+const METRICS={absRate:{l:'Absenteísmo (menor é melhor)',f:pct,low:true},punct:{l:'Pontualidade (maior é melhor)',f:pct,low:false},
+  lateAvg:{l:'Atraso médio por pessoa (menor é melhor)',f:v=>Math.round(v)+' min',low:true},balAvg:{l:'Saldo médio por pessoa (maior é melhor)',f:hm,low:false}};
+function groups(){const g={};DATA.employees.forEach(e=>{const h=e.hub||'Sem hub';(g[h]=g[h]||[]).push(e)});
+  return Object.entries(g).map(([name,emps])=>({name,emps,s:stats(emps)}))}
+function cmpCls(key,v,arr){if(arr.length<2)return '';const vals=arr.map(a=>a.s[key]),lo=Math.min(...vals),hi=Math.max(...vals);if(lo===hi)return '';
+  const low=METRICS[key]?.low??(key==='absRate'||key==='lateAvg');const best=low?lo:hi,worst=low?hi:lo;return v===best?'best':v===worst?'worst':''}
+function render3(){if(!DATA){load();return}
+  if(!$('hmetric').options.length)$('hmetric').innerHTML=Object.entries(METRICS).map(([k,m])=>`<option value="${k}">${m.l}</option>`).join('');
+  const G=groups(),named=G.filter(g=>g.name!=='Sem hub'),all=stats(DATA.employees);
+  $('hubmsg').style.display=named.length?'none':'';
+  $('hkpis').innerHTML=[['Hubs',named.length,''],['Absenteísmo geral',pct(all.absRate),''],['Pontualidade geral',pct(all.punct),''],['Atraso médio/pessoa',Math.round(all.lateAvg)+' min',''],['Saldo médio/pessoa',hm(all.balAvg),all.balAvg<0?'neg':'pos']]
+    .map(([l,v,c])=>`<div class="kpi"><span>${l}</span><b class="${c}">${v}</b></div>`).join('');
+  // insights em texto
+  const L=[],cmp=G.filter(g=>g.s.sched>0);
+  if(named.length>=2&&cmp.length>=2){const by=(k,low)=>[...cmp].sort((a,b)=>low?a.s[k]-b.s[k]:b.s[k]-a.s[k]);
+    const wa=by('absRate',false)[0],ba=by('absRate',true)[0],bp=by('punct',false)[0],wp=by('punct',true)[0],wb=by('balAvg',true)[0],bb=by('balAvg',false)[0];
+    if(wa.s.absRate>0)L.push(`<b>${wa.name}</b> tem o maior absenteísmo: ${pct(wa.s.absRate)} (média geral ${pct(all.absRate)}). O menor é <b>${ba.name}</b>, com ${pct(ba.s.absRate)}.`);
+    if(bp!==wp)L.push(`Pontualidade: <b>${bp.name}</b> lidera com ${pct(bp.s.punct)}; <b>${wp.name}</b> é o mais atrasado, com ${pct(wp.s.punct)}.`);
+    if(wb.s.balAvg<0)L.push(`<b>${wb.name}</b> acumula mais horas devedoras: ${hm(wb.s.balAvg)} por pessoa. Melhor saldo: <b>${bb.name}</b> (${hm(bb.s.balAvg)}).`)}
+  const top=(k,txt)=>[...DATA.employees].filter(e=>e.totals[k]>0).sort((a,b)=>b.totals[k]-a.totals[k]).slice(0,3);
+  const tl=top('late_min');if(tl.length)L.push('Quem mais acumula minutos de atraso: '+tl.map(e=>`<b>${e.name}</b>${e.hub?` (${e.hub})`:''} — ${e.totals.late_min} min`).join('; ')+'.');
+  const ta=top('absences');if(ta.length)L.push('Quem mais faltou: '+ta.map(e=>`<b>${e.name}</b>${e.hub?` (${e.hub})`:''} — ${e.totals.absences}`).join('; ')+'.');
+  const nd=DATA.employees.filter(e=>!e.hub).length;if(nd&&named.length)L.push(`${nd} colaborador(es) ainda sem hub — cadastre na aba Horários.`);
+  const nc=DATA.employees.filter(e=>!e.custom).length;if(nc)L.push(`${nc} colaborador(es) sem horário cadastrado: os números deles usam a escala do Tangerino e podem estar imprecisos.`);
+  $('ins').innerHTML=L.length?L.map(x=>`<li>${x}</li>`).join(''):'<li>Sem dados suficientes no período.</li>';
+  // barras
+  const mk=$('hmetric').value||'absRate',M=METRICS[mk],sorted=[...G].sort((a,b)=>M.low?a.s[mk]-b.s[mk]:b.s[mk]-a.s[mk]);
+  const mx=Math.max(...sorted.map(g=>Math.abs(g.s[mk])),1e-9);
+  $('hbars').innerHTML=sorted.map((g,i)=>{const v=g.s[mk],neg=mk==='balAvg'&&v<0;const col=sorted.length>1&&mk!=='balAvg'?(i===0?'var(--grn)':i===sorted.length-1?'var(--red)':'var(--pri)'):(neg?'var(--red)':'var(--grn)');
+    return `<tr><td style="width:180px"><b>${g.name}</b> <small style="color:var(--mut)">${g.s.n} pessoas</small></td><td><div class="bar" style="width:${Math.max(2,Math.abs(v)/mx*100)}%;background:${col}"></div></td><td class="num" style="width:110px"><b>${M.f(v)}</b></td></tr>`}).join('');
+  // tabela comparativa
+  $('htab').innerHTML=sorted.map(g=>{const s=g.s,c=k=>cmpCls(k,s[k],cmp);
+    return `<tr><td><b>${g.name}</b></td><td class="num">${s.n}</td><td class="num">${s.abs}</td><td class="num ${c('absRate')}">${pct(s.absRate)}</td><td class="num">${s.late}</td><td class="num ${c('punct')}">${pct(s.punct)}</td>
+    <td class="num ${c('lateAvg')}">${Math.round(s.lateAvg)} min</td><td class="num">${s.early}</td><td class="num ${s.balance<0?'neg':'pos'}">${hm(s.balance)}</td><td class="num ${c('balAvg')}">${hm(s.balAvg)}</td></tr>`}).join('');
+  // colaboradores por hub
+  const cur=$('hsel').value;$('hsel').innerHTML='<option value="">Todos</option>'+G.map(g=>`<option ${g.name===cur?'selected':''}>${g.name}</option>`).join('');
+  const sel=$('hsel').value,grp=sel?G.find(g=>g.name===sel):{emps:DATA.employees,s:all},ref=grp?grp.s:all,sk=$('hsort').value;
+  const rows=(grp?grp.emps:[]).map(e=>({e,s:stats([e])})).sort((a,b)=>sk==='name'?a.e.name.localeCompare(b.e.name):sk==='balance'?a.e.totals.balance-b.e.totals.balance:b.e.totals[sk]-a.e.totals[sk]);
+  const dl=v=>v===0?'—':(v>0?'+':'')+Math.round(v)+' min';
+  $('etab').innerHTML=rows.map(({e,s})=>{const T=e.totals,dLate=T.late_min-ref.lateAvg,dBal=T.balance-ref.balAvg;
+    return `<tr><td><b>${e.name}</b>${!sel&&e.hub?`<span class="badge">${e.hub}</span>`:''}</td><td class="num ${T.absences?'neg':''}">${T.absences}</td><td class="num ${T.late?'neg':''}">${T.late}</td><td class="num">${T.late_min}</td><td class="num">${T.early}</td>
+    <td class="num">${pct(s.punct)}</td><td class="num ${T.balance<0?'neg':'pos'}"><b>${hm(T.balance)}</b></td>
+    <td class="num ${dLate>0?'neg':dLate<0?'pos':''}">${dl(dLate)}</td><td class="num ${dBal<0?'neg':dBal>0?'pos':''}">${dBal===0?'—':(dBal>0?'+':'')+hm(dBal)}</td></tr>`}).join('')||'<tr><td colspan="9">Sem colaboradores.</td></tr>'}
+preset('semana');
+</script>
+</body>
+</html>
