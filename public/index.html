@@ -27,7 +27,7 @@
   .wrap{overflow-x:auto;border-radius:12px}
   .chip{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:600}
   .c-falta{background:var(--redbg);color:var(--red)} .c-atraso,.c-atrasado-sem-batida,.c-incompleto{background:var(--ambbg);color:var(--amb)}
-  .c-ok{background:var(--grnbg);color:var(--grn)} .c-abonado,.c-feriado{background:var(--blubg);color:var(--blu)}
+  .c-ok{background:var(--grnbg);color:var(--grn)} .c-trabalhou{background:var(--blubg);color:var(--blu)} .c-abonado,.c-feriado{background:var(--blubg);color:var(--blu)}
   .c-folga,.c-futuro,.c-aguardando{background:var(--bg);color:var(--mut)}
   .detail td{background:var(--bg);padding:0} .detail table{border:0;border-radius:0} .detail td,.detail th{padding:6px 12px;cursor:default}
   #msg{padding:14px 16px;border-radius:10px;margin-bottom:16px;display:none} #msg.err{display:block;background:var(--redbg);color:var(--red)} #msg.load{display:block;background:var(--blubg);color:var(--blu)}
@@ -90,11 +90,15 @@
 </main>
 <main id="pg2" style="display:none">
   <div id="hmsg" class="hint" style="display:none;background:var(--redbg);color:var(--red)"></div>
-  <div class="hint">Cadastre o horário de cada pessoa: marque os dias que ela trabalha, a entrada e a saída. O painel passa a usar este horário no lugar da escala do Tangerino. Use <b>6x1</b> / <b>5x2</b> para marcar os dias mais rápido e ajuste o dia de folga se precisar.</div>
-  <div class="ctl" style="margin-bottom:12px"><input id="hq" placeholder="Buscar funcionário…" oninput="renderH()"><span id="hcount" style="color:var(--mut)"></span></div>
+  <div class="hint">Para cada pessoa, escolha o <b>contrato</b>:<br>
+    <b>6x1</b> — marque os 6 dias de trabalho (1 folga), entrada e saída.<br>
+    <b>12x36</b> — trabalha dia sim, dia não: informe um dia em que a pessoa trabalha (referência), entrada e saída (aceita turno noturno, ex.: 19:00 às 07:00).<br>
+    <b>Intermitente</b> — sem horário fixo: o painel conta só as horas trabalhadas, sem falta, atraso ou saldo.</div>
+  <div class="ctl" style="margin-bottom:12px"><input id="hq" placeholder="Buscar funcionário…" oninput="renderH()"><span id="hcount" style="color:var(--mut)"></span>
+    <label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="showex" onchange="renderH()"> Mostrar excluídos (<span id="excnt">0</span>)</label></div>
   <div class="bulk">Definir hub para <b>todos os listados</b> (use a busca para filtrar): <input id="bulkhub" list="hublist" placeholder="Nome do hub"> <button class="ghost mini" onclick="bulkHub()">Aplicar aos listados</button></div>
   <datalist id="hublist"></datalist>
-  <div class="wrap"><table><thead><tr><th>Funcionário</th><th>Hub</th><th>Dias</th><th>Entrada</th><th>Saída</th><th>Pausa (min)</th><th></th></tr></thead><tbody id="hb"></tbody></table></div>
+  <div class="wrap"><table><thead><tr><th>Funcionário</th><th>Hub</th><th>Contrato</th><th>Dias / referência</th><th>Entrada</th><th>Saída</th><th>Pausa (min)</th><th></th></tr></thead><tbody id="hb"></tbody></table></div>
   <div class="foot">Salvo no armazenamento do Netlify (fica guardado mesmo com o seu computador desligado). "Pausa" é o intervalo não remunerado descontado das horas previstas (deixe 0 se não houver).</div>
 </main>
 <script>
@@ -108,7 +112,7 @@ async function logout(){await fetch('/api/logout');showLogin()}
 const $=id=>document.getElementById(id); let DATA=null, sort={k:'absences',dir:-1}, open=new Set();
 const iso=d=>d.toISOString().slice(0,10), WD=['','Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 const hm=m=>{const s=m<0?'-':'';m=Math.abs(Math.round(m));return s+String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')};
-const LBL={ok:'OK',falta:'Falta',atraso:'Atraso','atrasado-sem-batida':'Não bateu (atrasado)',incompleto:'Saída sem batida',abonado:'Abonado',feriado:'Feriado',folga:'Folga',futuro:'—',aguardando:'Aguardando'};
+const LBL={trabalhou:'Trabalhou',ok:'OK',falta:'Falta',atraso:'Atraso','atrasado-sem-batida':'Não bateu (atrasado)',incompleto:'Saída sem batida',abonado:'Abonado',feriado:'Feriado',folga:'Folga',futuro:'—',aguardando:'Aguardando'};
 function preset(p){const t=new Date();let a=new Date(t);
   if(p==='semana'){a.setDate(t.getDate()-((t.getDay()+6)%7))} if(p==='mes'){a=new Date(t.getFullYear(),t.getMonth(),1)}
   $('d0').value=iso(a);$('d1').value=iso(t);load()}
@@ -145,35 +149,56 @@ async function loadH(){const m=$('hmsg');
     if(!r.ok||!j.employees)throw new Error(j.error==='not found'?'A função da API não respondeu. Verifique se o deploy no Netlify terminou sem erro.':(j.error||'Erro ao carregar os funcionários'));
     HE=j.employees;m.style.display='none';renderH()}
   catch(e){m.style.display='block';m.textContent='⚠ '+e.message;HE=[];renderH()}}
-function renderH(){const q=$('hq').value.toLowerCase();const list=HE.filter(e=>e.name.toLowerCase().includes(q));
-  $('hcount').textContent=`${HE.filter(e=>e.horario).length} de ${HE.length} com horário cadastrado`;
+function renderH(){const q=$('hq').value.toLowerCase();const showEx=$('showex').checked,ativos=HE.filter(e=>!e.excluded);const list=HE.filter(e=>e.name.toLowerCase().includes(q)&&(showEx||!e.excluded));
+  $('hcount').textContent=`${ativos.filter(e=>e.horario).length} de ${ativos.length} com horário cadastrado`;$('excnt').textContent=HE.length-ativos.length;
   $('hublist').innerHTML=hubNames().map(h=>`<option value="${h}">`).join('');
-  $('hb').innerHTML=list.map(e=>{const h=e.horario||{days:[],start:'08:00',end:'17:00',break_min:0};
-    const dias=[1,2,3,4,5,6,7].map(d=>`<label><input type="checkbox" data-d="${d}" ${h.days.includes(d)?'checked':''}><span>${WD[d][0]}</span></label>`).join('');
+  $('hb').innerHTML=list.map(e=>{if(e.excluded)return `<tr class="hrow" id="h${e.id}" style="opacity:.65"><td><b>${e.name}</b> <span class="badge">excluído</span></td><td colspan="6"><small style="color:var(--mut)">Fora do painel, dos hubs e dos comparativos.</small></td><td><button class="ghost mini" onclick="restaurar(${e.id})">Restaurar</button></td></tr>`;
+    const h=e.horario||{type:'6x1',days:[],start:'08:00',end:'17:00',break_min:0},ty=h.type||'6x1';
+    const dias=[1,2,3,4,5,6,7].map(d=>`<label><input type="checkbox" data-d="${d}" ${(h.days||[]).includes(d)?'checked':''}><span>${WD[d][0]}</span></label>`).join('');
+    const op=(v,t)=>`<option value="${v}" ${ty===v?'selected':''}>${t}</option>`;
     return `<tr class="hrow" id="h${e.id}"><td><b>${e.name}</b><br><small style="color:var(--mut)">Tangerino: ${e.tangerino}</small></td>
     <td><input class="hubin" list="hublist" style="width:130px" placeholder="Hub" value="${(e.hub||'').replace(/"/g,'&quot;')}" onchange="saveHub(${e.id},this.value)"></td>
-    <td><div class="days">${dias}</div><div style="margin-top:4px"><button class="ghost mini" onclick="pre(${e.id},[2,3,4,5,6,7])">6x1</button> <button class="ghost mini" onclick="pre(${e.id},[2,3,4,5,6])">5x2</button></div></td>
-    <td><input type="time" class="st" value="${h.start}"></td><td><input type="time" class="en" value="${h.end}"></td>
-    <td><input type="number" class="bk" min="0" step="5" value="${h.break_min}"></td>
-    <td><button class="mini" onclick="saveH(${e.id})">Salvar</button> <button class="ghost mini" onclick="copyAll(${e.id})" title="Aplica este horário a todos que ainda não têm">Copiar p/ sem horário</button>
-      ${e.horario?`<button class="ghost mini" onclick="clearH(${e.id})">Limpar</button>`:''}<div class="ok2" id="m${e.id}"></div></td></tr>`}).join('')}
+    <td><select class="ct" onchange="ctChange(${e.id})">${op('6x1','6x1')}${op('12x36','12x36')}${op('intermitente','Intermitente')}</select></td>
+    <td><div class="b6"><div class="days">${dias}</div><div style="margin-top:4px"><button class="ghost mini" onclick="pre(${e.id},[2,3,4,5,6,7])">Seg–Sáb</button></div></div>
+      <div class="b12"><small style="color:var(--mut)">Um dia em que trabalha</small><br><input type="date" class="an" value="${h.anchor||''}"></div>
+      <div class="bi"><small style="color:var(--mut)">Sem horário fixo: conta só as horas trabalhadas</small></div></td>
+    <td><input type="time" class="st" value="${h.start||'08:00'}"></td><td><input type="time" class="en" value="${h.end||'17:00'}"></td>
+    <td><input type="number" class="bk" min="0" step="5" value="${h.break_min||0}"></td>
+    <td><button class="mini" onclick="saveH(${e.id})">Salvar</button> <button class="ghost mini" onclick="copyAll(${e.id})" title="Aplica esta configuração a todos que ainda não têm">Copiar p/ sem horário</button>
+      ${e.horario?`<button class="ghost mini" onclick="clearH(${e.id})">Limpar</button>`:''} <button class="ghost mini" style="color:var(--red)" onclick="excluir(${e.id})" title="Tira esta pessoa do painel (não apaga nada no Tangerino)">Excluir</button><div class="ok2" id="m${e.id}"></div></td></tr>`}).join('');
+  list.filter(e=>!e.excluded).forEach(e=>ctChange(e.id,true))}
+function ctChange(id,init){const r=$('h'+id);if(!r)return;const t=r.querySelector('.ct').value;
+  r.querySelector('.b6').style.display=t==='6x1'?'':'none';r.querySelector('.b12').style.display=t==='12x36'?'':'none';r.querySelector('.bi').style.display=t==='intermitente'?'':'none';
+  ['.st','.en','.bk'].forEach(c=>r.querySelector(c).style.visibility=t==='intermitente'?'hidden':'');
+  if(t==='12x36'&&!init){const st=r.querySelector('.st'),en=r.querySelector('.en');if(st.value==='08:00'&&en.value==='17:00'){st.value='07:00';en.value='19:00'}}}
 function pre(id,days){document.querySelectorAll(`#h${id} .days input`).forEach(i=>i.checked=days.includes(+i.dataset.d))}
-function readRow(id){const r=$('h'+id);return{days:[...r.querySelectorAll('.days input:checked')].map(i=>+i.dataset.d),start:r.querySelector('.st').value,end:r.querySelector('.en').value,break_min:+r.querySelector('.bk').value||0}}
+function readRow(id){const r=$('h'+id),t=r.querySelector('.ct').value;
+  return{type:t,days:t==='6x1'?[...r.querySelectorAll('.days input:checked')].map(i=>+i.dataset.d):[],start:r.querySelector('.st').value,end:r.querySelector('.en').value,
+    break_min:+r.querySelector('.bk').value||0,anchor:t==='12x36'?r.querySelector('.an').value:undefined}}
+function rowError(h){if(h.type==='intermitente')return '';if(!h.start||!h.end)return 'Preencha entrada e saída';
+  if(h.type==='6x1'&&h.days.length!==6)return '6x1: marque exatamente 6 dias (1 folga)';if(h.type==='12x36'&&!h.anchor)return '12x36: informe um dia em que a pessoa trabalha';return ''}
 async function post(body,path='/api/horarios'){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();if(!r.ok)throw new Error(j.error);return j}
-async function saveH(id){const h=readRow(id);if(!h.days.length||!h.start||!h.end){$('m'+id).textContent='Marque os dias e preencha entrada e saída';$('m'+id).style.color='var(--red)';return}
-  try{await post({id,horario:h});await loadH();const m=$('m'+id);if(m){m.style.color='';m.textContent='✔ salvo'}}catch(e){alert(e.message)}}
+async function saveH(id){const h=readRow(id),m=$('m'+id),err=rowError(h);
+  if(err){m.textContent=err;m.style.color='var(--red)';return}
+  try{await post({id,horario:h});await loadH();const m2=$('m'+id);if(m2){m2.style.color='';m2.textContent='✔ salvo'}}catch(e){alert(e.message)}}
 async function saveHub(id,hub){try{await post({id,hub},'/api/hubs');const e=HE.find(x=>x.id===id);if(e)e.hub=hub.trim();fillHubs();$('hublist').innerHTML=hubNames().map(h=>`<option value="${h}">`).join('')}catch(err){alert(err.message)}}
-async function bulkHub(){const hub=$('bulkhub').value.trim();const q=$('hq').value.toLowerCase();const ids=HE.filter(e=>e.name.toLowerCase().includes(q)).map(e=>e.id);
+async function bulkHub(){const hub=$('bulkhub').value.trim();const q=$('hq').value.toLowerCase();const ids=HE.filter(e=>e.name.toLowerCase().includes(q)&&!e.excluded).map(e=>e.id);
   if(!ids.length)return;if(!confirm(`${hub?`Definir o hub "${hub}"`:'Remover o hub'} de ${ids.length} funcionário(s) listados?`))return;
   await post({ids,hub},'/api/hubs');await loadH()}
-function hubNames(){return [...new Set((HE.length?HE:(DATA?DATA.employees:[])).map(e=>e.hub).filter(Boolean))].sort()}
+function hubNames(){return [...new Set((HE.length?HE.filter(e=>!e.excluded):(DATA?DATA.employees:[])).map(e=>e.hub).filter(Boolean))].sort()}
 function fillHubs(){const cur=$('hubf').value;const names=[...new Set((DATA?DATA.employees:HE).map(e=>e.hub).filter(Boolean))].sort();
   const hasNo=(DATA?DATA.employees:HE).some(e=>!e.hub);
   $('hubf').innerHTML='<option value="">Todos os hubs</option>'+names.concat(hasNo&&names.length?['Sem hub']:[]).map(h=>`<option ${h===cur?'selected':''}>${h}</option>`).join('')}
+async function excluir(id){const e=HE.find(x=>x.id===id);if(!e)return;
+  if(!confirm('Excluir "'+e.name+'" da lista?\n\nA pessoa deixa de aparecer no painel, nos hubs e nesta aba. Nada é apagado no Tangerino, e dá para restaurar depois (marque "Mostrar excluídos").'))return;
+  try{await post({id,excluir:true},'/api/excluir');await loadH();load()}catch(err){alert(err.message)}}
+async function restaurar(id){try{await post({id,excluir:false},'/api/excluir');await loadH();load()}catch(err){alert(err.message)}}
 async function clearH(id){await post({id,horario:null});await loadH()}
-async function copyAll(id){const h=readRow(id);const ids=HE.filter(e=>!e.horario&&e.id!==id).map(e=>e.id);
-  if(!h.days.length||!ids.length)return alert('Nada para copiar.');if(!confirm(`Aplicar este horário a ${ids.length} funcionários que ainda não têm horário?`))return;
-  await post({ids:[id,...ids],horario:h});await loadH()}
+async function copyAll(id){const h=readRow(id),err=rowError(h);const ids=HE.filter(e=>!e.horario&&!e.excluded&&e.id!==id).map(e=>e.id);
+  if(err)return alert(err);if(!ids.length)return alert('Nada para copiar.');
+  const aviso=h.type==='12x36'?'\n\nAtenção: todos ficarão com o mesmo dia de referência (trabalham nos mesmos dias). Depois, ajuste quem estiver na outra turma.':'';
+  if(!confirm(`Aplicar esta configuração (${h.type}) a ${ids.length} funcionários que ainda não têm horário?${aviso}`))return;
+  try{await post({ids:[id,...ids],horario:h});await loadH()}catch(e){alert(e.message)}}
 
 /* ===================== INSIGHTS DE HUBS ===================== */
 const pct=v=>(v*100).toFixed(1).replace('.',',')+'%', GOOD=['ok','atraso','incompleto','falta'];
