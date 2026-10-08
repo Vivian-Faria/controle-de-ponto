@@ -101,8 +101,8 @@ const hmFmt = m => { const s = m < 0 ? "-" : ""; m = Math.abs(Math.round(m)); re
 
 // ------------------------------------------------------------ análise
 async function analyze(d0, d1) {
-  const [empsAll, schedules, hor, hubs, punches, adjs] = await Promise.all([loadEmployees(), loadSchedules(), readKey("horarios"), readKey("hubs"), loadPunches(d0, d1), loadAdjustments(d0, d1)]);
-  const emps = empsAll.filter(e => pick(e, "active", "ativo") !== false && !e.fired);
+  const [empsAll, schedules, hor, hubs, punches, adjs, exc] = await Promise.all([loadEmployees(), loadSchedules(), readKey("horarios"), readKey("hubs"), loadPunches(d0, d1), loadAdjustments(d0, d1), readKey("excluidos")]);
+  const emps = empsAll.filter(e => pick(e, "active", "ativo") !== false && !e.fired && !exc[String(e.id)]);
   const nowMs = Date.now(), nowP = localParts(nowMs), today = isoOf(nowMs), nowMin = nowP.h * 60 + nowP.mi;
 
   const byEmpDay = new Map();
@@ -243,9 +243,9 @@ export default async (req) => {
       return json(await analyze(d0, d1));
     }
     if (path === "/api/horarios" && req.method === "GET") {
-      const [emps, sch, hor, hubs] = await Promise.all([loadEmployees(), loadSchedules(), readKey("horarios"), readKey("hubs")]);
+      const [emps, sch, hor, hubs, exc] = await Promise.all([loadEmployees(), loadSchedules(), readKey("horarios"), readKey("hubs"), readKey("excluidos")]);
       const out = emps.filter(e => !e.fired).map(e => { const ws = pick(e, "currentWorkSchedule", "workSchedule"); const wid = ws && typeof ws === "object" ? ws.id : ws;
-        return { id: e.id, name: e.name ?? `#${e.id}`, tangerino: sch[wid]?.name || "—", horario: hor[String(e.id)] || null, hub: hubs[String(e.id)] || "" }; })
+        return { id: e.id, name: e.name ?? `#${e.id}`, tangerino: sch[wid]?.name || "—", horario: hor[String(e.id)] || null, hub: hubs[String(e.id)] || "", excluded: !!exc[String(e.id)] }; })
         .sort((a, b) => a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" }));
       return json({ employees: out });
     }
@@ -258,6 +258,13 @@ export default async (req) => {
       const body = await req.json(); const ids = body.ids || [body.id]; const hub = String(body.hub || "").trim().slice(0, 60); const data = await readKey("hubs");
       for (const i of ids) { if (hub) data[String(i)] = hub; else delete data[String(i)]; }
       await writeKey("hubs", data); return json({ ok: true });
+    }
+    if (path === "/api/excluir" && req.method === "POST") {
+      const body = await req.json(); const ids = body.ids || [body.id];
+      if (!ids.length || !ids.every(i => Number.isInteger(Number(i)))) return json({ error: "Colaborador inválido" }, 400);
+      const data = await readKey("excluidos");
+      for (const i of ids) { if (body.excluir === false) delete data[String(i)]; else data[String(i)] = isoOf(Date.now()); }
+      await writeKey("excluidos", data); return json({ ok: true });
     }
     if (path === "/api/diagnose" && req.method === "GET") {
       const redact = o => { const bad = ["cpf", "email", "pis", "phone", "ctps", "name", "birth", "lat", "lon", "photo", "image", "address", "pin"];
