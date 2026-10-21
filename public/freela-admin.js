@@ -21,6 +21,7 @@
       <input id="fq" placeholder="Buscar nome…">
       <button id="fgo">Atualizar</button>
       <button class="ghost" id="fsend">Enviar / reenviar pendentes ao DP</button>
+      <button class="ghost" id="ftest">Testar conexão com o DP</button>
       <button class="ghost" id="fcsv">Exportar CSV</button>
     </div>
     <div class="kpis" id="fk"></div>
@@ -40,7 +41,7 @@
     try {
       D = await api(`/api/freela/admin/jornadas?start=${$("f0").value}&end=${$("f1").value}`);
       if (!$("fun").dataset.ok) { $("fun").innerHTML = '<option value="">Todas as unidades</option>' + D.unidades.map(u => `<option>${esc(u)}</option>`).join(""); $("fun").dataset.ok = 1; }
-      msg(D.dp_configurado ? "" : "<b>Integração com o DP ainda não configurada.</b> As jornadas concluídas ficam guardadas como “Pendente de envio”. Para ativar, defina <code>DP_API_URL</code> e <code>DP_API_TOKEN</code> nas variáveis de ambiente do Netlify (e, se o DP não usar “Bearer”, <code>DP_AUTH_SCHEME</code>). Enquanto isso, use “Exportar CSV”.", true);
+      msg(D.dp_configurado ? "" : "<b>Integração com o DP ainda não ativada.</b> As jornadas concluídas ficam guardadas como “Pendente de envio”. Para ativar, defina <code>DP_API_TOKEN</code> nas variáveis de ambiente do Netlify (Site configuration → Environment variables) e faça um novo deploy. Enquanto isso, use “Exportar CSV”.", true);
       draw();
     } catch (e) { msg(esc(e.message), true); }
   };
@@ -87,6 +88,13 @@
   $("fsend").onclick = async () => {
     try { msg("Enviando…"); const r = await api(`/api/freela/admin/enviar?start=${$("f0").value}&end=${$("f1").value}`, {});
       await loadF(); if (r.error) msg(esc(r.error), true); else msg(`Envio concluído: ${r.enviados} enviado(s), ${r.falhas} com falha${r.restantes ? `, ${r.restantes} restante(s) — clique de novo` : ""}.`, r.falhas > 0);
+    } catch (e) { msg(esc(e.message), true); }
+  };
+  $("ftest").onclick = async () => {
+    try { msg("Testando…"); const r = await api("/api/freela/admin/dp-teste");
+      if (!r.ok) return msg(esc(r.error), true);
+      const sem = r.unidades.filter(u => !u.hub_no_dp).map(u => u.unidade);
+      msg(`<b>Conexão com o DP OK.</b> Hubs no DP: ${r.hubs.map(esc).join(", ")}.${sem.length ? ` <b>Atenção:</b> sem hub correspondente no DP: ${sem.map(esc).join(", ")} — essas jornadas não serão enviadas até o hub existir no DP (ou definir <code>DP_HUB_MAP</code>).` : ""}`, sem.length > 0);
     } catch (e) { msg(esc(e.message), true); }
   };
   $("fcsv").onclick = () => { location.href = `/api/freela/admin/export.csv?start=${$("f0").value}&end=${$("f1").value}`; };
