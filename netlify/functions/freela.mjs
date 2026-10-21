@@ -87,7 +87,9 @@ async function hubsDP(forcar = false) {
 function hubIdPara(unidade, hubs) {
   let map = {}; try { map = JSON.parse(process.env.DP_HUB_MAP || "{}"); } catch { /* ignora */ }
   if (map[unidade]) return map[unidade];
-  return hubs.find(h => normTxt(h.nome) === normTxt(unidade))?.id || null;
+  const alias = { "expedicao sion": "Sion", "castelo": "Pampulha" };      // unidade do ponto -> nome do hub no DP, quando os nomes diferem
+  const nome = alias[normTxt(unidade)] || unidade;
+  return hubs.find(h => normTxt(h.nome) === normTxt(nome))?.id || null;
 }
 export function payloadDP(j, hubId) {      // formato da documentação do DP; NÃO envia valor (o DP calcula)
   const m = j.marks, o = { tipo: "freelancer", nome: j.nome, cpf: j.cpf, data_trabalho: j.data, hub_id: hubId, pix: j.pix, entrada: hhmm(m.entrada), saida: hhmm(m.saida_final), observacoes: `Ponto eletrônico · jornada ${j.id}` };
