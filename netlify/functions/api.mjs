@@ -73,8 +73,31 @@ const PUNCH_VARIANTS = [
   { name: "dd/MM/aaaa-hora", mk: (a, b) => ({ startDate: isoOf(a).split("-").reverse().join("/") + " 00:00:00", endDate: isoOf(b).split("-").reverse().join("/") + " 23:59:59" }) },
   { name: "data-dd/MM/aaaa", mk: (a, b) => ({ startDate: isoOf(a).split("-").reverse().join("/"), endDate: isoOf(b).split("-").reverse().join("/") }) },
 ];
+// O GET / da API de pontos do Tangerino está quebrado no servidor deles (HQL com "INTERVAL" -> HTTP 500). O endpoint /daily-activity funciona, mas só aceita janela de 1 dia.
+const brToMs = s => { const m = /^(\d\d)\/(\d\d)\/(\d{4}) (\d\d):(\d\d)/.exec(s || ""); return m ? isoToLocalStartMs(m[3] + "-" + m[2] + "-" + m[1]) + (+m[4] * 60 + +m[5]) * 60000 : null; };
+const dayCache = new Map();
+async function punchesDoDia(iso) {
+  const h = dayCache.get(iso), ttl = iso >= isoOf(Date.now()) ? 90000 : 1800000;
+  if (h && Date.now() - h.t < ttl) return h.v;
+  const a = isoToLocalStartMs(iso), b = isoToLocalStartMs(addDays(iso, 1)) - 1;
+  const r = await httpGet(PUNCH_BASES[0] + "daily-activity", { startDate: a, endDate: b, punchList: true });
+  const out = [];
+  for (const e of (r || [])) for (const p of (e.punchs || [])) for (const x of (p.records || [])) {
+    if (x.status === "REPROVED" || typeof x.startDateLong !== "number") continue;
+    out.push({ employee: { id: e.id }, dateIn: x.startDateLong, dateOut: brToMs(x.endDate) });
+  }
+  dayCache.set(iso, { t: Date.now(), v: out }); return out;
+}
+async function fetchPunchesDaily(a, b) {
+  const dias = []; for (let d = isoOf(a); d <= isoOf(b); d = addDays(d, 1)) dias.push(d);
+  const out = [];
+  for (let i = 0; i < dias.length; i += 8) { const got = await Promise.all(dias.slice(i, i + 8).map(punchesDoDia)); for (const g of got) out.push(...g); }
+  return out.filter(p => p.dateIn >= a && p.dateIn <= b);
+}
 async function fetchPunches(a, b) {
   const tried = [];
+  try { return await fetchPunchesDaily(a, b); }
+  catch (e) { if (e.status === 504 || e.upstream === 401 || e.upstream === 403) throw e; tried.push("daily-activity: " + e.message); }
   for (const base of (punchBase ? [punchBase] : PUNCH_BASES)) for (const v of (punchVariant ? PUNCH_VARIANTS.filter(x => x.name === punchVariant) : PUNCH_VARIANTS)) {
     try { const r = await paged(base, v.mk(a, b), v.size); punchBase = base; punchVariant = v.name; return r; }
     catch (e) { if (e.status === 504 || e.upstream === 401 || e.upstream === 403) throw e; tried.push(v.name + ": " + e.message); punchBase = punchVariant = null; }
