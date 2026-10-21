@@ -41,10 +41,11 @@ async function httpGet(url, params) {
   const u = new URL(url); for (const [k, v] of Object.entries(params || {})) u.searchParams.set(k, v);
   const left = deadline.t - Date.now(); if (left < 500) throw Object.assign(new Error("Tempo esgotado: escolha um período menor (ex.: semana)."), { status: 504 });
   const r = await fetch(u, { headers: { Authorization: "Basic " + TOKEN, Accept: "application/json" }, signal: AbortSignal.timeout(Math.min(left, 9000)) });
-  if (!r.ok) throw Object.assign(new Error(`Erro HTTP ${r.status} da API Tangerino (${u.host}${u.pathname})`), { status: 502, upstream: r.status });
+  if (!r.ok) { const body = (await r.text().catch(() => "")).replace(/\s+/g, " ").replace(/[0-9]{11,}/g, "***").slice(0, 160); throw Object.assign(new Error(`Erro HTTP ${r.status} da API Tangerino (${u.host}${u.pathname})${body ? " → " + body : ""}`), { status: 502, upstream: r.status }); }
   const t = await r.text(); return t ? JSON.parse(t) : null;
 }
 async function paged(url, params = {}, size = 200) {
+  if (size === null) { const r = await httpGet(url, params); return Array.isArray(r) ? r : (r?.content || []); }   // sem paginação
   const first = await httpGet(url, { ...params, page: 0, size });
   if (Array.isArray(first) || !first) return first || [];
   const items = [...(first.content || [])];
@@ -64,11 +65,16 @@ let punchBase = null, punchVariant = null;
 const PUNCH_VARIANTS = [
   { name: "InMillis", mk: (a, b) => ({ startDateInMillis: a, endDateInMillis: b }) },
   { name: "startDate-ms", mk: (a, b) => ({ startDate: a, endDate: b }) },
+  { name: "InMillis-size50", size: 50, mk: (a, b) => ({ startDateInMillis: a, endDateInMillis: b }) },
+  { name: "InMillis-sem-paginacao", size: null, mk: (a, b) => ({ startDateInMillis: a, endDateInMillis: b }) },
+  { name: "data-ISO", mk: (a, b) => ({ startDate: isoOf(a), endDate: isoOf(b) }) },
+  { name: "data-hora-ISO", mk: (a, b) => ({ startDate: isoOf(a) + "T00:00:00", endDate: isoOf(b) + "T23:59:59" }) },
+  { name: "data-dd/MM/aaaa", mk: (a, b) => ({ startDate: isoOf(a).split("-").reverse().join("/"), endDate: isoOf(b).split("-").reverse().join("/") }) },
 ];
 async function fetchPunches(a, b) {
   const tried = [];
   for (const base of (punchBase ? [punchBase] : PUNCH_BASES)) for (const v of (punchVariant ? PUNCH_VARIANTS.filter(x => x.name === punchVariant) : PUNCH_VARIANTS)) {
-    try { const r = await paged(base, v.mk(a, b)); punchBase = base; punchVariant = v.name; return r; }
+    try { const r = await paged(base, v.mk(a, b), v.size); punchBase = base; punchVariant = v.name; return r; }
     catch (e) { if (e.status === 504 || e.upstream === 401 || e.upstream === 403) throw e; tried.push(v.name + ": " + e.message); punchBase = punchVariant = null; }
   }
   throw Object.assign(new Error("Não consegui acessar a API de pontos. Tentativas: " + tried.join(" | ")), { status: 502 });
@@ -304,7 +310,7 @@ export default async (req) => {
       const a = isoToLocalStartMs(d0), b = isoToLocalStartMs(addDays(d1, 1)) - 1, testes = [];
       for (const base of PUNCH_BASES) for (const v of PUNCH_VARIANTS) {
         deadline.t = Date.now() + 8000;
-        try { const raw = await paged(base, v.mk(a, b)), ts = raw.map(p => pick(p, "dateIn", "startDate", "date", "punchDate")).filter(x => typeof x === "number").sort((x, y) => x - y), perDay = {};
+        try { const raw = await paged(base, v.mk(a, b), v.size), ts = raw.map(p => pick(p, "dateIn", "startDate", "date", "punchDate")).filter(x => typeof x === "number").sort((x, y) => x - y), perDay = {};
           for (const m of ts) perDay[isoOf(m)] = (perDay[isoOf(m)] || 0) + 1;
           testes.push({ base, parametros: v.name, ok: true, total: raw.length, primeira_batida: ts.length ? isoOf(ts[0]) : null, ultima_batida: ts.length ? isoOf(ts[ts.length - 1]) : null, por_dia: perDay });
         } catch (e) { testes.push({ base, parametros: v.name, ok: false, erro: e.message }); }
