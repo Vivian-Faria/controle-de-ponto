@@ -2,6 +2,7 @@
 import { getStore } from "@netlify/blobs";
 import crypto from "node:crypto";
 import HIST from "./historico.json";
+import { rotaFreela } from "./freela.mjs";
 
 // ------------------------------------------------------------ configuração (variáveis de ambiente do Netlify)
 const env = (k, d = "") => (process.env[k] ?? d).toString().trim();
@@ -231,6 +232,13 @@ function validSession(req) {
   const [exp, sig] = m[1].split("."); if (!exp || !sig || Number(exp) < Date.now()) return false;
   const a = Buffer.from(sig), b = Buffer.from(sign(exp)); return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
+// sessão do freelancer: cookie próprio, assinatura própria, vale SÓ para /api/freela/* (não abre o painel administrativo)
+const makeFreela = () => { const exp = Date.now() + 14 * HOUR; return `${exp}.${sign("freela:" + exp)}`; };
+function validFreela(req) {
+  const m = /(?:^|;\s*)freela_session=([^;]+)/.exec(req.headers.get("cookie") || ""); if (!m) return false;
+  const [exp, sig] = m[1].split("."); if (!exp || !sig || Number(exp) < Date.now()) return false;
+  const a = Buffer.from(sig), b = Buffer.from(sign("freela:" + exp)); return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 const safeEq = (a, b) => { const x = crypto.createHash("sha256").update(a).digest(), y = crypto.createHash("sha256").update(b).digest(); return crypto.timingSafeEqual(x, y); };
 let fails = 0, failWindow = 0;
 
@@ -249,6 +257,8 @@ export default async (req) => {
       return json({ ok: true }, 200, { "Set-Cookie": `ponto_session=${makeSession()}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${7 * 86400}` });
     }
     if (path === "/api/logout") return json({ ok: true }, 200, { "Set-Cookie": "ponto_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0" });
+    if (path.startsWith("/api/freela")) return await rotaFreela(req, path, { json, secret: SECRET, isAdmin: validSession, isFreela: validFreela,
+      freelaCookie: () => `freela_session=${makeFreela()}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${14 * 3600}` });
     if (!validSession(req)) return json({ error: "Não autorizado" }, 401);
 
     if (path === "/api/report" && req.method === "GET") {

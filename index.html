@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ponto — Acesso</title>
+<meta name="robots" content="noindex,nofollow">
+<style>
+  :root{--bg:#f5f6f8;--card:#fff;--tx:#1d2330;--mut:#6b7385;--bd:#e3e6ec;--pri:#5b2a86;--red:#c62828;--redbg:#fdecec}
+  @media(prefers-color-scheme:dark){:root{--bg:#14161b;--card:#1d2027;--tx:#e8eaf0;--mut:#9aa1b2;--bd:#2c303a;--red:#ff8a80;--redbg:#3a1d1f}}
+  *{box-sizing:border-box} body{margin:0;min-height:100vh;font:15px/1.45 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 16px}
+  h1{font-size:22px;color:var(--pri);margin:0 0 4px} p.sub{color:var(--mut);margin:0 0 24px;text-align:center}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;width:min(760px,100%)}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:12px}
+  .card h2{margin:0;font-size:18px} .card p{margin:0;color:var(--mut)}
+  input,button{font:inherit;padding:12px 14px;border:1px solid var(--bd);border-radius:10px;background:var(--card);color:var(--tx)}
+  button{cursor:pointer;background:var(--pri);color:#fff;border-color:var(--pri);font-weight:600}
+  button:disabled{opacity:.6;cursor:wait} .err{color:var(--red);min-height:20px;font-size:13px}
+</style>
+</head>
+<body>
+  <h1>⏱ Controle de Ponto</h1>
+  <p class="sub">Escolha como você vai acessar</p>
+  <div class="grid">
+    <form class="card" id="fa" autocomplete="off">
+      <h2>Administrativo / Liderança</h2><p>Painel completo: atrasos, faltas, horários, hubs e envio de freelancers ao DP.</p>
+      <input type="password" id="pw" placeholder="Senha administrativa" autocomplete="current-password" required>
+      <button type="submit" id="ba">Entrar</button><div class="err" id="ea"></div>
+    </form>
+    <div class="card">
+      <h2>Freelancers</h2><p>Registre sua entrada, almoço e saída e veja quanto você tem a receber pela jornada.</p>
+      <button type="button" id="bf" style="margin-top:auto">Registrar ponto</button><div class="err" id="ef"></div>
+    </div>
+  </div>
+<script>
+const $=id=>document.getElementById(id);
+async function go(btn,err,path,body,dest){btn.disabled=true;err.textContent='';
+  try{const r=await fetch(path,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||'Erro '+r.status);location.href=dest}catch(e){err.textContent=e.message;btn.disabled=false}}
+$('fa').onsubmit=e=>{e.preventDefault();go($('ba'),$('ea'),'/api/login',{password:$('pw').value},'/painel.html')};
+$('bf').onclick=()=>go($('bf'),$('ef'),'/api/freela/entrar',{},'/freela.html');
+</script>
+</body>
+</html>

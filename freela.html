@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ponto Freelancer</title>
+<meta name="robots" content="noindex,nofollow">
+<style>
+  :root{--bg:#f5f6f8;--card:#fff;--tx:#1d2330;--mut:#6b7385;--bd:#e3e6ec;--pri:#5b2a86;--red:#c62828;--grn:#1b7a3d;--amb:#b26a00;--redbg:#fdecec;--grnbg:#e6f5ec;--ambbg:#fff3df;--blubg:#e8f0fc;--blu:#1f5fbf}
+  @media(prefers-color-scheme:dark){:root{--bg:#14161b;--card:#1d2027;--tx:#e8eaf0;--mut:#9aa1b2;--bd:#2c303a;--red:#ff8a80;--grn:#7fd99b;--amb:#ffc266;--redbg:#3a1d1f;--grnbg:#16301f;--ambbg:#3a2c14;--blubg:#17283f;--blu:#8ab8ff}}
+  *{box-sizing:border-box} body{margin:0;font:16px/1.45 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx)}
+  header{padding:14px 18px;background:var(--card);border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center}
+  h1{font-size:18px;margin:0;color:var(--pri)} header a{color:var(--mut);font-size:14px}
+  main{max-width:720px;margin:0 auto;padding:16px 16px 60px;display:flex;flex-direction:column;gap:18px}
+  h2{font-size:16px;margin:0 0 10px} section{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px}
+  input,select,button{font:inherit;padding:13px 14px;border:1px solid var(--bd);border-radius:10px;background:var(--card);color:var(--tx);width:100%}
+  button{cursor:pointer;background:var(--pri);color:#fff;border-color:var(--pri);font-weight:700} button.ghost{background:var(--card);color:var(--tx);border-color:var(--bd);font-weight:500}
+  button:disabled{opacity:.55;cursor:wait} form{display:flex;flex-direction:column;gap:10px} label{font-size:13px;color:var(--mut);display:block;margin-bottom:3px}
+  .person{display:flex;justify-content:space-between;align-items:center;gap:10px;text-align:left;background:var(--card);color:var(--tx);border:1px solid var(--bd);font-weight:500;margin-bottom:8px}
+  .person small{color:var(--mut);display:block} .chip{border-radius:99px;padding:2px 10px;font-size:12px;font-weight:700;white-space:nowrap}
+  .atividade{background:var(--grnbg);color:var(--grn)} .intervalo{background:var(--ambbg);color:var(--amb)}
+  .err{background:var(--redbg);color:var(--red);padding:12px 14px;border-radius:10px;display:none} .okm{background:var(--grnbg);color:var(--grn);padding:12px 14px;border-radius:10px;display:none}
+  .acts{display:grid;gap:10px;margin-top:12px} .acts button{padding:18px;font-size:18px} .acts button.fin{background:var(--red);border-color:var(--red)}
+  dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0} dt{color:var(--mut)} dd{margin:0;font-weight:600;text-align:right;word-break:break-word}
+  .total{font-size:26px;color:var(--grn)} .aviso{font-size:13px;color:var(--mut);margin-top:10px}
+  .hide{display:none!important}
+</style>
+</head>
+<body>
+<header><h1>⏱ Ponto Freelancer</h1><a href="/">Início</a></header>
+<main>
+  <div class="err" id="err" role="alert"></div>
+
+  <section id="vResumo" class="hide"></section>
+
+  <section id="vAcao" class="hide">
+    <h2 id="aNome"></h2><div id="aInfo" style="color:var(--mut)"></div>
+    <div class="acts" id="aBtns"></div>
+    <button class="ghost" style="margin-top:12px" onclick="voltar()">Voltar à lista</button>
+  </section>
+
+  <div id="vLista">
+    <section>
+      <h2>Freelancers em aberto hoje</h2>
+      <input id="busca" placeholder="Buscar meu nome…" oninput="desenha()" style="margin-bottom:10px">
+      <div id="lista"><span style="color:var(--mut)">Carregando…</span></div>
+      <div style="color:var(--mut);font-size:13px;margin-top:6px">Já bateu a entrada? Toque no seu nome para registrar almoço ou saída.</div>
+    </section>
+    <section style="margin-top:18px">
+      <h2>Iniciar jornada (primeira batida do dia)</h2>
+      <form id="fEntrada" autocomplete="off">
+        <div><label for="nome">Nome completo</label><input id="nome" required minlength="5" autocomplete="name"></div>
+        <div><label for="cpf">CPF</label><input id="cpf" required inputmode="numeric" maxlength="14" placeholder="000.000.000-00"></div>
+        <div><label for="pix">Chave Pix</label><input id="pix" required placeholder="CPF, e-mail, telefone ou chave aleatória"></div>
+        <div><label for="unidade">Unidade</label><select id="unidade" required><option value="">Escolha…</option></select></div>
+        <button type="submit" id="bEntrada">Registrar entrada</button>
+      </form>
+    </section>
+  </div>
+</main>
+<script>
+const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let ABERTOS=[], SEL=null, busy=false, resumoAberto=false;
+function erro(m){const e=$('err');e.textContent=m||'';e.style.display=m?'block':'none';if(m)window.scrollTo({top:0,behavior:'smooth'})}
+async function api(path,body){const r=await fetch(path,{credentials:'same-origin',...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})});
+  const j=await r.json().catch(()=>({}));if(r.status===401){await fetch('/api/freela/entrar',{method:'POST',credentials:'same-origin'});if(!api.retry){api.retry=1;try{return await api(path,body)}finally{api.retry=0}}}
+  if(!r.ok)throw new Error(j.error||'Erro '+r.status);return j}
+async function carrega(){try{const j=await api('/api/freela/abertos');ABERTOS=j.abertos;
+    if(!$('unidade').dataset.ok){$('unidade').innerHTML='<option value="">Escolha…</option>'+j.unidades.map(u=>`<option>${esc(u)}</option>`).join('');$('unidade').dataset.ok=1}
+    if(SEL){const a=ABERTOS.find(x=>x.id===SEL.id);if(a&&!busy){SEL=a;desenhaAcao()}}desenha()}catch(e){if(!resumoAberto)erro(e.message)}}
+function desenha(){const q=$('busca').value.toLowerCase(),L=ABERTOS.filter(a=>a.nome.toLowerCase().includes(q));
+  $('lista').innerHTML=L.length?L.map(a=>`<button class="person" onclick="escolhe('${esc(a.id)}')"><span><b>${esc(a.nome)}</b><small>${esc(a.unidade)} · desde ${a.data.split('-').reverse().slice(0,2).join('/')}${a.ultima?' · última: '+esc(a.ultima.rotulo)+' '+esc(a.ultima.hora):''}</small></span><span class="chip ${a.status}">${esc(a.statusRotulo)}</span></button>`).join(''):
+    `<span style="color:var(--mut)">${ABERTOS.length?'Nenhum nome encontrado.':'Ninguém com jornada em aberto agora.'}</span>`}
+function escolhe(id){SEL=ABERTOS.find(a=>a.id===id);if(!SEL)return;erro('');$('vLista').classList.add('hide');$('vAcao').classList.remove('hide');desenhaAcao()}
+function desenhaAcao(){$('aNome').textContent=SEL.nome;$('aInfo').innerHTML=`${esc(SEL.unidade)} · <span class="chip ${SEL.status}">${esc(SEL.statusRotulo)}</span>${SEL.ultima?'<br>Última batida: '+esc(SEL.ultima.rotulo)+' às '+esc(SEL.ultima.hora):''}`;
+  $('aBtns').innerHTML=SEL.proximos.map(p=>`<button class="${p.tipo==='saida_final'?'fin':''}" onclick="bate('${p.tipo}')" ${busy?'disabled':''}>${esc(p.rotulo)}</button>`).join('')}
+function voltar(){SEL=null;resumoAberto=false;$('vAcao').classList.add('hide');$('vResumo').classList.add('hide');$('vLista').classList.remove('hide');erro('');carrega()}
+async function bate(tipo){if(busy)return;busy=true;erro('');desenhaAcao();
+  try{const j=await api('/api/freela/bater',{id:SEL.id,tipo});if(j.concluida)return mostraResumo(j.resumo);SEL=j.jornada;desenhaAcao()}
+  catch(e){erro(e.message);carrega()}finally{busy=false;if(SEL)desenhaAcao()}}
+function mostraResumo(r){resumoAberto=true;SEL=null;$('vAcao').classList.add('hide');$('vLista').classList.add('hide');const v=$('vResumo');v.classList.remove('hide');
+  v.innerHTML=`<h2>✅ Jornada concluída</h2><dl><dt>Nome</dt><dd>${esc(r.nome)}</dd><dt>CPF</dt><dd>${esc(r.cpf)}</dd><dt>Chave Pix</dt><dd>${esc(r.pix)}</dd><dt>Unidade</dt><dd>${esc(r.unidade)}</dd><dt>Data</dt><dd>${esc(r.data.split('-').reverse().join('/'))}</dd>
+  ${r.horarios.map(h=>`<dt>${esc(h.rotulo)}</dt><dd>${esc(h.hora)}</dd>`).join('')}
+  ${r.intervalo_min?`<dt>Intervalo</dt><dd>${r.intervalo_min} min ${r.intervalo_descontado?'(descontado)':'(até 30 min, não descontado)'}</dd>`:''}
+  <dt>Horas trabalhadas</dt><dd>${esc(r.horas)}</dd><dt>Valor da hora</dt><dd>${esc(r.valor_hora)}</dd><dt>Valor calculado a receber</dt><dd class="total">${esc(r.valor_total)}</dd></dl>
+  <div class="aviso">${esc(r.aviso)} Seu registro foi salvo e será conferido pelo DP.</div><button style="margin-top:14px" onclick="voltar()">Concluir</button>`;window.scrollTo({top:0})}
+$('cpf').addEventListener('input',e=>{let d=e.target.value.replace(/\D/g,'').slice(0,11);e.target.value=d.replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d{1,2})$/,'$1-$2')});
+$('fEntrada').onsubmit=async e=>{e.preventDefault();if(busy)return;busy=true;erro('');$('bEntrada').disabled=true;
+  try{const j=await api('/api/freela/entrada',{nome:$('nome').value,cpf:$('cpf').value,pix:$('pix').value,unidade:$('unidade').value});
+    $('fEntrada').reset();await carrega();escolhe(j.jornada.id)}catch(err){erro(err.message)}finally{busy=false;$('bEntrada').disabled=false;if(SEL)desenhaAcao()}};
+api('/api/freela/entrar',{}).then(carrega).catch(e=>erro(e.message));setInterval(()=>{if(!document.hidden&&!SEL&&!resumoAberto)carrega()},15000);
+</script>
+</body>
+</html>
