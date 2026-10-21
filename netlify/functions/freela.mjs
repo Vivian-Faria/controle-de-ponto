@@ -110,8 +110,9 @@ async function enviarLote(js) {
   try {
     const r = await dpFetch("/api/integracao/pagamentos-avulsos", { method: "POST", body: JSON.stringify(itens) });
     if (r.status === 401) { for (const j of envio) marca(j, "falha", "Token do DP recusado (401)."); return { erro: "Token do DP recusado (401). Confira DP_API_TOKEN no Netlify." }; }
-    if (!r.ok) { const t = (await r.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 160); for (const j of envio) marca(j, "falha", `HTTP ${r.status}: ${t}`); return { erro: `O DP respondeu HTTP ${r.status}.` }; }
-    const res = (await r.json()).resultados || [], vistos = new Set();
+    const txt = await r.text().catch(() => ""); let corpo = null; try { corpo = JSON.parse(txt); } catch { /* ignora */ }
+    if (!Array.isArray(corpo?.resultados)) { const t = txt.replace(/\s+/g, " ").slice(0, 160); for (const j of envio) marca(j, "falha", `HTTP ${r.status}: ${t}`); return { erro: `O DP respondeu HTTP ${r.status}.` }; }
+    const res = corpo.resultados, vistos = new Set();   // o DP também devolve "resultados" item a item em HTTP 422 (ex.: horário inválido)
     for (const x of res) { const j = envio[x.indice]; if (!j) continue; vistos.add(x.indice);
       if (x.status === "criado") marca(j, "enviado"); else if (x.status === "duplicado") marca(j, "enviado", "O DP já tinha este registro (duplicado)."); else marca(j, "falha", x.erro || "O DP recusou o registro."); }
     envio.forEach((j, i) => { if (!vistos.has(i)) marca(j, "falha", "O DP não devolveu resultado para este registro."); });
