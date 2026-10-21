@@ -41,7 +41,7 @@ async function httpGet(url, params) {
   const u = new URL(url); for (const [k, v] of Object.entries(params || {})) u.searchParams.set(k, v);
   const left = deadline.t - Date.now(); if (left < 500) throw Object.assign(new Error("Tempo esgotado: escolha um período menor (ex.: semana)."), { status: 504 });
   const r = await fetch(u, { headers: { Authorization: "Basic " + TOKEN, Accept: "application/json" }, signal: AbortSignal.timeout(Math.min(left, 9000)) });
-  if (!r.ok) throw Object.assign(new Error(`Erro HTTP ${r.status} da API Tangerino`), { status: 502, upstream: r.status });
+  if (!r.ok) throw Object.assign(new Error(`Erro HTTP ${r.status} da API Tangerino (${u.host}${u.pathname})`), { status: 502, upstream: r.status });
   const t = await r.text(); return t ? JSON.parse(t) : null;
 }
 async function paged(url, params = {}, size = 200) {
@@ -60,10 +60,14 @@ async function paged(url, params = {}, size = 200) {
 const memo = new Map();
 async function cached(key, ttl, fn) { const h = memo.get(key); if (h && Date.now() - h.t < ttl) return h.v; const v = await fn(); memo.set(key, { t: Date.now(), v }); return v; }
 let punchBase = null;
-async function punchUrl() {
-  if (punchBase) return punchBase; let last;
-  for (const b of PUNCH_BASES) { try { await httpGet(b, { page: 0, size: 1 }); punchBase = b; return b; } catch (e) { last = e; } }
-  throw new Error("Não consegui acessar a API de pontos: " + (last?.message || ""));
+// busca as batidas já com as datas reais (um teste sem datas dava 404 em alguns endereços); tenta cada endereço e lembra o que funcionou
+async function fetchPunches(a, b) {
+  const tried = [];
+  for (const base of (punchBase ? [punchBase] : PUNCH_BASES)) {
+    try { const r = await paged(base, { startDate: a, endDate: b }); punchBase = base; return r; }
+    catch (e) { if (e.status === 504 || e.upstream === 401 || e.upstream === 403) throw e; tried.push(e.message); punchBase = null; }
+  }
+  throw Object.assign(new Error("Não consegui acessar a API de pontos. Tentativas: " + tried.join(" | ")), { status: 502 });
 }
 const loadEmployees = () => cached("emp", 600000, () => paged(EMPLOYER + "/employee/find-all"));
 const loadSchedules = () => cached("sch", 600000, async () => Object.fromEntries((await paged(EMPLOYER + "/work-schedule")).map(s => [s.id, s])));
@@ -79,7 +83,7 @@ async function withHistory(api, a, b) {
   }
   return api.concat(extra);
 }
-const loadPunches = (d0, d1) => { const a = isoToLocalStartMs(d0), b = isoToLocalStartMs(addDays(d1, 1)) - 1; return cached(`p${a}-${b}`, 120000, async () => withHistory(await paged(await punchUrl(), { startDate: a, endDate: b }), a, b)); };
+const loadPunches = (d0, d1) => { const a = isoToLocalStartMs(d0), b = isoToLocalStartMs(addDays(d1, 1)) - 1; return cached(`p${a}-${b}`, 120000, async () => withHistory(await fetchPunches(a, b), a, b)); };
 const loadAdjustments = (d0, d1) => { const a = isoToLocalStartMs(d0), b = isoToLocalStartMs(addDays(d1, 1)) - 1;
   return cached(`a${a}-${b}`, 300000, async () => { try { return await paged(EMPLOYER + "/adjustment/find-all", { startDate: a, endDate: b }); } catch { return []; } }); };
 
@@ -293,7 +297,7 @@ export default async (req) => {
     }
     if (path === "/api/probe" && req.method === "GET") {       // quanto de histórico a API realmente devolve (sem dados pessoais)
       const q = new URL(req.url).searchParams, t = isoOf(Date.now()), d0 = /^\d{4}-\d\d-\d\d$/.test(q.get("d0") || "") ? q.get("d0") : "2026-09-01", d1 = q.get("d1") || t;
-      const a = isoToLocalStartMs(d0), b = isoToLocalStartMs(addDays(d1, 1)) - 1, raw = await paged(await punchUrl(), { startDate: a, endDate: b });
+      const a = isoToLocalStartMs(d0), b = isoToLocalStartMs(addDays(d1, 1)) - 1, raw = await fetchPunches(a, b);
       const ts = raw.map(p => pick(p, "dateIn", "startDate", "date", "punchDate")).filter(x => x != null).sort((x, y) => x - y), perDay = {};
       for (const m of ts) perDay[isoOf(m)] = (perDay[isoOf(m)] || 0) + 1;
       return json({ pedido: { d0, d1 }, api_total: raw.length, primeira_batida: ts.length ? isoOf(ts[0]) : null, ultima_batida: ts.length ? isoOf(ts[ts.length - 1]) : null, por_dia: perDay, historico_importado: Object.values(HIST).reduce((s, v) => s + v.length, 0) });
