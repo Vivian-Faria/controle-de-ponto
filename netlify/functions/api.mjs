@@ -1,6 +1,8 @@
 // Painel de Ponto — API (Netlify Function v2). Port do server.py.
 import { getStore } from "@netlify/blobs";
 import crypto from "node:crypto";
+import HIST from "./historico.json";
+import { rotaFreela } from "./freela.mjs";
 
 // ------------------------------------------------------------ configuração (variáveis de ambiente do Netlify)
 const env = (k, d = "") => (process.env[k] ?? d).toString().trim();
@@ -39,7 +41,7 @@ async function httpGet(url, params) {
   const u = new URL(url); for (const [k, v] of Object.entries(params || {})) u.searchParams.set(k, v);
   const left = deadline.t - Date.now(); if (left < 500) throw Object.assign(new Error("Tempo esgotado: escolha um período menor (ex.: semana)."), { status: 504 });
   const r = await fetch(u, { headers: { Authorization: "Basic " + TOKEN, Accept: "application/json" }, signal: AbortSignal.timeout(Math.min(left, 9000)) });
-  if (!r.ok) throw Object.assign(new Error(`Erro HTTP ${r.status} da API Tangerino`), { status: 502, upstream: r.status });
+  if (!r.ok) throw Object.assign(new Error(`Erro HTTP ${r.status} da API Tangerino (${u.host}${u.pathname})`), { status: 502, upstream: r.status });
   const t = await r.text(); return t ? JSON.parse(t) : null;
 }
 async function paged(url, params = {}, size = 200) {
@@ -57,15 +59,35 @@ async function paged(url, params = {}, size = 200) {
 }
 const memo = new Map();
 async function cached(key, ttl, fn) { const h = memo.get(key); if (h && Date.now() - h.t < ttl) return h.v; const v = await fn(); memo.set(key, { t: Date.now(), v }); return v; }
-let punchBase = null;
-async function punchUrl() {
-  if (punchBase) return punchBase; let last;
-  for (const b of PUNCH_BASES) { try { await httpGet(b, { page: 0, size: 1 }); punchBase = b; return b; } catch (e) { last = e; } }
-  throw new Error("Não consegui acessar a API de pontos: " + (last?.message || ""));
+let punchBase = null, punchVariant = null;
+// Swagger oficial (apis.tangerino.com.br/punch): startDate/endDate são TEXTO; o filtro em milissegundos é startDateInMillis/endDateInMillis.
+const PUNCH_VARIANTS = [
+  { name: "InMillis", mk: (a, b) => ({ startDateInMillis: a, endDateInMillis: b }) },
+  { name: "startDate-ms", mk: (a, b) => ({ startDate: a, endDate: b }) },
+];
+async function fetchPunches(a, b) {
+  const tried = [];
+  for (const base of (punchBase ? [punchBase] : PUNCH_BASES)) for (const v of (punchVariant ? PUNCH_VARIANTS.filter(x => x.name === punchVariant) : PUNCH_VARIANTS)) {
+    try { const r = await paged(base, v.mk(a, b)); punchBase = base; punchVariant = v.name; return r; }
+    catch (e) { if (e.status === 504 || e.upstream === 401 || e.upstream === 403) throw e; tried.push(v.name + ": " + e.message); punchBase = punchVariant = null; }
+  }
+  throw Object.assign(new Error("Não consegui acessar a API de pontos. Tentativas: " + tried.join(" | ")), { status: 502 });
 }
 const loadEmployees = () => cached("emp", 600000, () => paged(EMPLOYER + "/employee/find-all"));
 const loadSchedules = () => cached("sch", 600000, async () => Object.fromEntries((await paged(EMPLOYER + "/work-schedule")).map(s => [s.id, s])));
-const loadPunches = (d0, d1) => { const a = isoToLocalStartMs(d0), b = isoToLocalStartMs(addDays(d1, 1)) - 1; return cached(`p${a}-${b}`, 120000, async () => paged(await punchUrl(), { startDate: a, endDate: b })); };
+const normName = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+// histórico importado do Tangerino (relatório "Coleta de Pontos Originais", setembro/2026): só entra onde a API não trouxe a batida
+async function withHistory(api, a, b) {
+  const emps = await loadEmployees(), idByName = new Map(emps.map(e => [normName(pick(e, "name", "nome")), e.id]));
+  const have = new Set(api.map(p => empId(p) + "|" + Math.floor(pick(p, "dateIn", "startDate", "date", "punchDate") / 60000)));
+  const extra = [];
+  for (const [n, pairs] of Object.entries(HIST)) {
+    const id = idByName.get(n); if (id == null) continue;
+    for (const [i, o] of pairs) if (i >= a && i <= b && !have.has(id + "|" + Math.floor(i / 60000))) extra.push({ employee: { id }, dateIn: i, dateOut: o, _hist: true });
+  }
+  return api.concat(extra);
+}
+const loadPunches = (d0, d1) => { const a = isoToLocalStartMs(d0), b = isoToLocalStartMs(addDays(d1, 1)) - 1; return cached(`p${a}-${b}`, 120000, async () => withHistory(await fetchPunches(a, b), a, b)); };
 const loadAdjustments = (d0, d1) => { const a = isoToLocalStartMs(d0), b = isoToLocalStartMs(addDays(d1, 1)) - 1;
   return cached(`a${a}-${b}`, 300000, async () => { try { return await paged(EMPLOYER + "/adjustment/find-all", { startDate: a, endDate: b }); } catch { return []; } }); };
 
@@ -148,6 +170,7 @@ async function analyze(d0, d1) {
         }
       }
     }
+    const admRaw = pick(e, "admissionDate", "admission"); const admIso = typeof admRaw === "number" ? isoOf(admRaw) : (typeof admRaw === "string" && /^\d{4}-\d\d-\d\d/.test(admRaw) ? admRaw.slice(0, 10) : null);
     const tot = { early: 0, early_min: 0, late: 0, late_min: 0, absences: 0, expected: 0, worked: 0, incomplete: 0 };
     const days = [];
     for (let cur = d0; cur <= d1; cur = addDays(cur, 1)) {
@@ -155,6 +178,7 @@ async function analyze(d0, d1) {
       let expected = segs.length ? Math.max(0, segs.reduce((s, [a, b]) => s + b - a, 0) - brk) : 0;
       const marks = [...(byEmpDay.get(eid + "|" + cur) || [])].sort((x, y) => x[0] - y[0]);
       const adj = adjDays.get(eid + "|" + cur);
+      const pre = admIso && cur < admIso && !marks.length; if (pre) expected = 0;     // antes da admissão: não conta falta
       const rec = { date: cur, weekday: apiDay(cur), expected, status: "folga", marks: [] };
       let worked = 0, firstIn = null, open = false;
       for (const [din, dout] of marks) {
@@ -178,7 +202,7 @@ async function analyze(d0, d1) {
         if (rec.status === "abonado") expected = 0;
       }
       else if (cur > today) { rec.status = "futuro"; expected = 0; }
-      else if (expected > 0 && !marks.length) {
+      else if (expected > 0 && !marks.length && !pre) {
         if (cur === today) {
           rec.status = nowMin > segs[0][0] + TOL ? "atrasado-sem-batida" : "aguardando";
           if (rec.status === "atrasado-sem-batida") tot.late++;
@@ -216,6 +240,13 @@ function validSession(req) {
   const [exp, sig] = m[1].split("."); if (!exp || !sig || Number(exp) < Date.now()) return false;
   const a = Buffer.from(sig), b = Buffer.from(sign(exp)); return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
+// sessão do freelancer: cookie próprio, assinatura própria, vale SÓ para /api/freela/* (não abre o painel administrativo)
+const makeFreela = () => { const exp = Date.now() + 14 * HOUR; return `${exp}.${sign("freela:" + exp)}`; };
+function validFreela(req) {
+  const m = /(?:^|;\s*)freela_session=([^;]+)/.exec(req.headers.get("cookie") || ""); if (!m) return false;
+  const [exp, sig] = m[1].split("."); if (!exp || !sig || Number(exp) < Date.now()) return false;
+  const a = Buffer.from(sig), b = Buffer.from(sign("freela:" + exp)); return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 const safeEq = (a, b) => { const x = crypto.createHash("sha256").update(a).digest(), y = crypto.createHash("sha256").update(b).digest(); return crypto.timingSafeEqual(x, y); };
 let fails = 0, failWindow = 0;
 
@@ -234,6 +265,8 @@ export default async (req) => {
       return json({ ok: true }, 200, { "Set-Cookie": `ponto_session=${makeSession()}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${7 * 86400}` });
     }
     if (path === "/api/logout") return json({ ok: true }, 200, { "Set-Cookie": "ponto_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0" });
+    if (path.startsWith("/api/freela")) return await rotaFreela(req, path, { json, secret: SECRET, isAdmin: validSession, isFreela: validFreela,
+      freelaCookie: () => `freela_session=${makeFreela()}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${14 * 3600}` });
     if (!validSession(req)) return json({ error: "Não autorizado" }, 401);
 
     if (path === "/api/report" && req.method === "GET") {
@@ -265,6 +298,18 @@ export default async (req) => {
       const data = await readKey("excluidos");
       for (const i of ids) { if (body.excluir === false) delete data[String(i)]; else data[String(i)] = isoOf(Date.now()); }
       await writeKey("excluidos", data); return json({ ok: true });
+    }
+    if (path === "/api/probe" && req.method === "GET") {       // testa cada endereço/parâmetro da API de pontos e mostra o que volta (sem dados pessoais)
+      const q = new URL(req.url).searchParams, t = isoOf(Date.now()), d0 = /^\d{4}-\d\d-\d\d$/.test(q.get("d0") || "") ? q.get("d0") : "2026-09-01", d1 = /^\d{4}-\d\d-\d\d$/.test(q.get("d1") || "") ? q.get("d1") : t;
+      const a = isoToLocalStartMs(d0), b = isoToLocalStartMs(addDays(d1, 1)) - 1, testes = [];
+      for (const base of PUNCH_BASES) for (const v of PUNCH_VARIANTS) {
+        deadline.t = Date.now() + 8000;
+        try { const raw = await paged(base, v.mk(a, b)), ts = raw.map(p => pick(p, "dateIn", "startDate", "date", "punchDate")).filter(x => typeof x === "number").sort((x, y) => x - y), perDay = {};
+          for (const m of ts) perDay[isoOf(m)] = (perDay[isoOf(m)] || 0) + 1;
+          testes.push({ base, parametros: v.name, ok: true, total: raw.length, primeira_batida: ts.length ? isoOf(ts[0]) : null, ultima_batida: ts.length ? isoOf(ts[ts.length - 1]) : null, por_dia: perDay });
+        } catch (e) { testes.push({ base, parametros: v.name, ok: false, erro: e.message }); }
+      }
+      return json({ pedido: { d0, d1 }, usando: { base: punchBase, parametros: punchVariant }, testes, historico_importado: Object.values(HIST).reduce((s, v) => s + v.length, 0) });
     }
     if (path === "/api/diagnose" && req.method === "GET") {
       const redact = o => { const bad = ["cpf", "email", "pis", "phone", "ctps", "name", "birth", "lat", "lon", "photo", "image", "address", "pin"];
