@@ -319,6 +319,26 @@ export default async (req) => {
       }
       return json({ pedido: { d0, d1 }, usando: { base: punchBase, parametros: punchVariant }, testes, historico_importado: Object.values(HIST).reduce((s, v) => s + v.length, 0) });
     }
+    if (path === "/api/probe2" && req.method === "GET") {      // testa outros endpoints do Tangerino (o GET / está quebrado no servidor deles) e mostra só a ESTRUTURA da resposta
+      const q = new URL(req.url).searchParams, t = isoOf(Date.now()), d0 = /^\d{4}-\d\d-\d\d$/.test(q.get("d0") || "") ? q.get("d0") : "2026-09-01", d1 = /^\d{4}-\d\d-\d\d$/.test(q.get("d1") || "") ? q.get("d1") : t;
+      const a = isoToLocalStartMs(d0), b = isoToLocalStartMs(addDays(d1, 1)) - 1, base = PUNCH_BASES[0], emp = q.get("emp");
+      const shape = (o, d = 0) => Array.isArray(o) ? { "[n]": o.length, "[0]": o.length && d < 5 ? shape(o[0], d + 1) : null } : (o && typeof o === "object") ? (d > 5 ? "{...}" : Object.fromEntries(Object.entries(o).map(([k, v]) => [k, shape(v, d + 1)]))) : (typeof o === "string" ? "str" : o === null ? "null" : typeof o);
+      const alvos = [
+        ["daily-activity", base + "daily-activity", { startDate: a, endDate: b, punchList: true, adjustmentList: true }],
+        ["daily-activity-pag", base + "daily-activity", { startDate: a, endDate: b, punchList: true, pageNumber: 0, pageSize: 50 }],
+        ["summary", base + "summary", { startDateInMillis: a, endDateInMillis: b, page: 0, size: 20 }],
+        ["workData", base + "workData", { startDateInMillis: a, endDateInMillis: b }],
+        ["daily-summary", base + "daily-summary/", { startDate: a, endDate: Math.min(b, 2147483647) }],
+        ["hoursBalance", base + "hoursBalance", { startDate: a, endDate: b }],
+      ];
+      if (emp) { alvos.push(["punch-por-funcionario", base, { startDateInMillis: a, endDateInMillis: b, employeeId: emp, page: 0, size: 20 }]); alvos.push(["daily-activity-func", base + "daily-activity", { startDate: a, endDate: b, punchList: true, employeeId: emp }]); }
+      const testes = [];
+      for (const [nome, url, params] of alvos) {
+        deadline.t = Date.now() + 8000;
+        try { const r = await httpGet(url, params); testes.push({ nome, ok: true, estrutura: shape(r) }); } catch (e) { testes.push({ nome, ok: false, erro: e.message }); }
+      }
+      return json({ pedido: { d0, d1 }, testes });
+    }
     if (path === "/api/diagnose" && req.method === "GET") {
       const redact = o => { const bad = ["cpf", "email", "pis", "phone", "ctps", "name", "birth", "lat", "lon", "photo", "image", "address", "pin"];
         if (Array.isArray(o)) return o.map(redact); if (o && typeof o === "object") return Object.fromEntries(Object.entries(o).map(([k, v]) => [k, bad.some(b => k.toLowerCase().includes(b)) ? "***" : redact(v)])); return o; };
