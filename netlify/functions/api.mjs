@@ -41,7 +41,7 @@ async function httpGet(url, params) {
   const u = new URL(url); for (const [k, v] of Object.entries(params || {})) u.searchParams.set(k, v);
   const left = deadline.t - Date.now(); if (left < 500) throw Object.assign(new Error("Tempo esgotado: escolha um período menor (ex.: semana)."), { status: 504 });
   const r = await fetch(u, { headers: { Authorization: "Basic " + TOKEN, Accept: "application/json" }, signal: AbortSignal.timeout(Math.min(left, 9000)) });
-  if (!r.ok) { const body = (await r.text().catch(() => "")).replace(/\s+/g, " ").replace(/[0-9]{11,}/g, "***").slice(0, 160); throw Object.assign(new Error(`Erro HTTP ${r.status} da API Tangerino (${u.host}${u.pathname})${body ? " → " + body : ""}`), { status: 502, upstream: r.status }); }
+  if (!r.ok) { const body = (await r.text().catch(() => "")).replace(/\s+/g, " ").replace(/[0-9]{11,}/g, "***").slice(0, 700); throw Object.assign(new Error(`Erro HTTP ${r.status} da API Tangerino (${u.host}${u.pathname})${body ? " → " + body : ""}`), { status: 502, upstream: r.status }); }
   const t = await r.text(); return t ? JSON.parse(t) : null;
 }
 async function paged(url, params = {}, size = 200) {
@@ -69,6 +69,8 @@ const PUNCH_VARIANTS = [
   { name: "InMillis-sem-paginacao", size: null, mk: (a, b) => ({ startDateInMillis: a, endDateInMillis: b }) },
   { name: "data-ISO", mk: (a, b) => ({ startDate: isoOf(a), endDate: isoOf(b) }) },
   { name: "data-hora-ISO", mk: (a, b) => ({ startDate: isoOf(a) + "T00:00:00", endDate: isoOf(b) + "T23:59:59" }) },
+  { name: "data-hora-espaco", mk: (a, b) => ({ startDate: isoOf(a) + " 00:00:00", endDate: isoOf(b) + " 23:59:59" }) },
+  { name: "dd/MM/aaaa-hora", mk: (a, b) => ({ startDate: isoOf(a).split("-").reverse().join("/") + " 00:00:00", endDate: isoOf(b).split("-").reverse().join("/") + " 23:59:59" }) },
   { name: "data-dd/MM/aaaa", mk: (a, b) => ({ startDate: isoOf(a).split("-").reverse().join("/"), endDate: isoOf(b).split("-").reverse().join("/") }) },
 ];
 async function fetchPunches(a, b) {
