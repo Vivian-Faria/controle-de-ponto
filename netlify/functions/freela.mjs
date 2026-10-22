@@ -21,7 +21,7 @@ const fmtHM = seg => `${pad(Math.floor(seg / 3600))}:${pad(Math.floor((seg % 360
 const brl = c => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 // ------------------------------------------------------------ regras de negócio (puras, testáveis)
-export function calcular(m) {
+export function calcular(m, pausas = []) {
   if (!m || !m.entrada || !m.saida_final || m.saida_final < m.entrada) return null;
   const total = m.saida_final - m.entrada;
   let intervalo = 0, descontado = 0;
@@ -29,6 +29,7 @@ export function calcular(m) {
     intervalo = m.retorno_almoco - m.saida_almoco;
     if (intervalo > LIMITE_ALMOCO_MS) descontado = intervalo;            // acima de 30 min desconta o intervalo inteiro
   }
+  for (const x of pausas) if (x.ate > x.de) descontado += x.ate - x.de;
   const seg = Math.round(Math.max(0, total - descontado) / 1000);
   return { total_seg: seg, intervalo_seg: Math.round(intervalo / 1000), descontado_seg: Math.round(descontado / 1000),
     horas_hm: fmtHM(seg), horas_decimal: Math.round(seg / 36) / 100, valor_hora_cents: VALOR_HORA_CENTS, valor_cents: Math.round(seg * VALOR_HORA_CENTS / 3600) };
@@ -52,7 +53,7 @@ const maskCPF = c => `***.${c.slice(3, 6)}.${c.slice(6, 9)}-**`;
 const maskPix = p => p.length <= 6 ? "***" : p.slice(0, 3) + "•••" + p.slice(-2);
 
 export function payloadCsv(j) {
-  const c = j.calc || calcular(j.marks), m = j.marks;
+  const c = j.calc || calcular(j.marks, j.pausas), m = j.marks;
   return { id: j.id, origem: "ponto-freelancer", nome: j.nome, cpf: j.cpf, chave_pix: j.pix, unidade: j.unidade, data: j.data,
     entrada: m.entrada ? hhmm(m.entrada) : null, saida_almoco: m.saida_almoco ? hhmm(m.saida_almoco) : null,
     retorno_almoco: m.retorno_almoco ? hhmm(m.retorno_almoco) : null, saida_final: m.saida_final ? hhmm(m.saida_final) : null,
@@ -119,7 +120,8 @@ async function enviarLote(js) {
     if (!Array.isArray(corpo?.resultados)) { const t = txt.replace(/\s+/g, " ").slice(0, 160); for (const j of envio) marca(j, "falha", `HTTP ${r.status}: ${t}`); return { erro: `O DP respondeu HTTP ${r.status}.` }; }
     const res = corpo.resultados, vistos = new Set();   // o DP também devolve "resultados" item a item em HTTP 422 (ex.: horário inválido)
     for (const x of res) { const j = envio[x.indice]; if (!j) continue; vistos.add(x.indice);
-      if (x.status === "criado") marca(j, "enviado"); else if (x.status === "duplicado") marca(j, "enviado", "O DP já tinha este registro (duplicado)."); else marca(j, "falha", x.erro || "O DP recusou o registro."); }
+      if (x.status === "criado") marca(j, "enviado"); else if (x.status === "duplicado" && j.dp?.reaberta) marca(j, "falha", "Jornada retomada após o envio: o DP já tem o registro do dia e não aceita atualização. Edite-o no DP (Editar) para saída " + hhmm(j.marks.saida_final) + " e horas " + (j.calc || calcular(j.marks, j.pausas)).horas_hm + ".");
+      else if (x.status === "duplicado") marca(j, "enviado", "O DP já tinha este registro (duplicado)."); else marca(j, "falha", x.erro || "O DP recusou o registro."); }
     envio.forEach((j, i) => { if (!vistos.has(i)) marca(j, "falha", "O DP não devolveu resultado para este registro."); });
     return {};
   } catch (e) { const m = "Falha de conexão com o DP: " + (e.name === "TimeoutError" ? "tempo esgotado" : e.message); for (const j of envio) marca(j, "falha", m); return { erro: m }; }
@@ -129,11 +131,11 @@ async function enviarLote(js) {
 const visaoAberta = j => ({ id: j.id, nome: j.nome, unidade: j.unidade, data: j.data, status: statusDe(j), statusRotulo: STATUS_ROTULO[statusDe(j)],
   ultima: (() => { const t = TIPOS.filter(k => j.marks[k]).pop(); return t ? { tipo: t, rotulo: ROTULO[t], hora: hhmm(j.marks[t]) } : null; })(),
   proximos: proximos(j).map(t => ({ tipo: t, rotulo: ROTULO[t] })) });
-const resumo = j => { const c = j.calc || calcular(j.marks); return { nome: j.nome, cpf: j.cpf, pix: j.pix, unidade: j.unidade, data: j.data,
+const resumo = j => { const c = j.calc || calcular(j.marks, j.pausas); return { nome: j.nome, cpf: j.cpf, pix: j.pix, unidade: j.unidade, data: j.data,
   horarios: TIPOS.filter(t => j.marks[t]).map(t => ({ tipo: t, rotulo: ROTULO[t], hora: hhmmss(j.marks[t]) })),
   intervalo_min: c ? Math.round(c.intervalo_seg / 60) : 0, intervalo_descontado: !!(c && c.descontado_seg), horas: c?.horas_hm, valor_hora: brl(VALOR_HORA_CENTS), valor_total: c ? brl(c.valor_cents) : null,
   aviso: "Valor calculado a receber — não é confirmação de pagamento." }; };
-const visaoAdmin = j => { const c = j.calc || calcular(j.marks), st = statusDe(j); return { id: j.id, data: j.data, nome: j.nome, cpf: maskCPF(j.cpf), pix: maskPix(j.pix), unidade: j.unidade,
+const visaoAdmin = j => { const c = j.calc || calcular(j.marks, j.pausas), st = statusDe(j); return { id: j.id, data: j.data, nome: j.nome, cpf: maskCPF(j.cpf), pix: maskPix(j.pix), unidade: j.unidade,
   status: st, statusRotulo: STATUS_ROTULO[st], marks: Object.fromEntries(TIPOS.map(t => [t, j.marks[t] ? hhmm(j.marks[t]) : null])),
   horas: c?.horas_hm || null, valor: c ? c.valor_cents / 100 : null, ajustes: j.ajustes || [], cancelada: !!j.cancelada, motivoCancel: j.motivoCancel || null,
   incompleta: st !== "concluida" && st !== "cancelada" && j.data < isoOf(Date.now()),
@@ -190,7 +192,7 @@ export async function rotaFreela(req, path, ctx) {
       if (!ok || ms > Date.now() + 5 * 60000) return erro("O horário precisa respeitar a ordem das batidas e não pode ser futuro.");
       if (b.tipo !== "entrada" && !j.marks.entrada) return erro("Jornada sem entrada.");
       j.marks[b.tipo] = ms; (j.ajustes = j.ajustes || []).push({ tipo: b.tipo, hora: hhmm(ms), data: isoOf(ms), motivo, em: Date.now() });
-      if (j.marks.saida_final) { j.calc = calcular(j.marks); j.dp = { status: "pendente", tentativas: 0 }; await store().delete("open/" + j.id); }
+      if (j.marks.saida_final) { j.calc = calcular(j.marks, j.pausas); j.dp = { status: "pendente", tentativas: 0, ...(j.dp?.reaberta ? { reaberta: true } : {}) }; await store().delete("open/" + j.id); }
       await putJ(key, j); return json({ ok: true, jornada: visaoAdmin(j) });
     }
     if (path === "/api/freela/admin/cancelar" && req.method === "POST") {      // não apaga: marca como cancelada e guarda o motivo
@@ -239,7 +241,22 @@ export async function rotaFreela(req, path, ctx) {
     try {
       const antigas = (await abertas()).find(j => j.cpf === cpf);
       if (antigas) return erro(`Você já tem uma jornada em aberto (${antigas.data.split("-").reverse().join("/")}). Selecione seu nome na lista.`, 409);
-      if (await getJ(key)) return erro("Já existe uma jornada sua registrada hoje. Se ela está em aberto, selecione seu nome na lista.", 409);
+      const ex = await getJ(key);
+      if (ex && ex.cancelada) return erro("Sua jornada de hoje foi cancelada pela administração. Procure o responsável.", 409);
+      if (ex && ex.marks.saida_final) {
+        // retomada: a pessoa encerrou o turno por engano (ou voltou a trabalhar no mesmo dia). A mesma jornada é reaberta e o tempo parado vira intervalo.
+        if (agora - ex.marks.saida_final < 10000) return erro("Batida muito rápida; aguarde alguns segundos.", 429);
+        const m = ex.marks, fim = m.saida_final;
+        if (!m.saida_almoco) { m.saida_almoco = fim; m.retorno_almoco = agora; }
+        else if (m.retorno_almoco) (ex.pausas = ex.pausas || []).push({ de: fim, ate: agora });
+        else return erro("Não foi possível retomar esta jornada. Procure o responsável.", 409);
+        delete m.saida_final; delete ex.calc;
+        (ex.retomadas = ex.retomadas || []).push({ encerradaEm: fim, retomadaEm: agora });
+        if (ex.dp?.status === "enviado") ex.dp = { status: "pendente", tentativas: 0, reaberta: true };
+        else ex.dp = { status: "aguardando", tentativas: 0 };
+        await putJ(key, ex); await putJ("open/" + id, { id }); return json({ ok: true, retomada: true, jornada: visaoAberta(ex) });
+      }
+      if (ex) return erro("Você já tem uma jornada em aberto hoje. Selecione seu nome na lista.", 409);
       const j = { id, data, nome, cpf, pix, unidade, marks: { entrada: agora }, criadoEm: agora };
       await putJ(key, j); await putJ("open/" + id, { id }); return json({ ok: true, jornada: visaoAberta(j) });
     } finally { locks.delete(id); }
@@ -254,7 +271,7 @@ export async function rotaFreela(req, path, ctx) {
       const agora = Date.now(), ult = Math.max(...Object.values(j.marks)); if (agora - ult < 10000) return erro("Batida muito rápida; aguarde alguns segundos.", 429);
       j.marks[b.tipo] = agora;
       if (b.tipo === "saida_final") {
-        j.calc = calcular(j.marks); j.dp = { status: "pendente", tentativas: 0 }; await store().delete("open/" + id);
+        j.calc = calcular(j.marks, j.pausas); j.dp = { status: "pendente", tentativas: 0, ...(j.dp?.reaberta ? { reaberta: true } : {}) }; await store().delete("open/" + id);
         if (dpConfigurado()) await enviarLote([j]);
         await putJ(key, j); return json({ ok: true, concluida: true, resumo: resumo(j) });        // CPF/Pix só aparecem aqui, para quem acabou de bater
       }
