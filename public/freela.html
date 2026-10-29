@@ -24,6 +24,10 @@
   dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0} dt{color:var(--mut)} dd{margin:0;font-weight:600;text-align:right;word-break:break-word}
   .total{font-size:26px;color:var(--grn)} .aviso{font-size:13px;color:var(--mut);margin-top:10px}
   .hide{display:none!important}
+  #cam{position:fixed;inset:0;background:#000d;z-index:50;display:none;align-items:center;justify-content:center;padding:14px}
+  #cam .box{background:var(--card);border-radius:16px;padding:14px;max-width:420px;width:100%;display:flex;flex-direction:column;gap:10px}
+  #cam video{width:100%;border-radius:12px;background:#000;transform:scaleX(-1);aspect-ratio:3/4;object-fit:cover}
+  #cam .st{font-size:13px;color:var(--mut)} #cam .st b{color:var(--tx)}
 </style>
 </head>
 <body>
@@ -58,9 +62,34 @@
     </section>
   </div>
 </main>
+<div id="cam" role="dialog" aria-modal="true"><div class="box">
+  <h2 id="camT" style="margin:0">Tire uma foto para registrar</h2>
+  <video id="camV" playsinline muted autoplay></video>
+  <div class="st" id="camS"></div>
+  <div class="err" id="camE" style="display:none"></div>
+  <button id="camB" type="button">📷 Tirar foto e registrar</button>
+  <button class="ghost" id="camC" type="button">Cancelar</button>
+</div></div>
 <script>
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let ABERTOS=[], SEL=null, busy=false, resumoAberto=false;
+// foto ao vivo (só pela câmera, sem galeria) + localização do celular, exigidas em toda batida
+function capturar(titulo){return new Promise(resolve=>{
+  const box=$('cam'),v=$('camV'),B=$('camB'),E=$('camE'),S=$('camS');let stream=null,geo=null,geoSt='buscando',fim=false;
+  const stat=()=>{S.innerHTML='📍 Localização: <b>'+(geoSt==='ok'?'obtida':geoSt==='buscando'?'obtendo…':'não permitida')+'</b>'};
+  const fecha=r=>{if(fim)return;fim=true;if(stream)stream.getTracks().forEach(t=>t.stop());v.srcObject=null;box.style.display='none';resolve(r)};
+  const falha=m=>{E.textContent=m;E.style.display='block'};
+  $('camT').textContent=titulo||'Tire uma foto para registrar';E.style.display='none';B.disabled=true;box.style.display='flex';stat();
+  $('camC').onclick=()=>fecha(null);
+  if(navigator.geolocation)navigator.geolocation.getCurrentPosition(p=>{geo={lat:p.coords.latitude,lon:p.coords.longitude,prec:p.coords.accuracy};geoSt='ok';stat()},()=>{geoSt='negada';stat()},{enableHighAccuracy:true,timeout:15000,maximumAge:0});else{geoSt='negada';stat()}
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){falha('Este navegador não permite usar a câmera. Abra o endereço no Chrome ou Safari do celular.');return}
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:720},height:{ideal:960}},audio:false}).then(s=>{if(fim){s.getTracks().forEach(t=>t.stop());return}stream=s;v.srcObject=s;v.play().catch(()=>{});B.disabled=false})
+    .catch(()=>falha('Permita o uso da câmera nas configurações do navegador para registrar o ponto.'));
+  B.onclick=async()=>{if(!v.videoWidth)return falha('A câmera ainda não carregou. Aguarde um instante.');B.disabled=true;B.textContent='Registrando…';
+    const w=480,hh=Math.round(w*v.videoHeight/v.videoWidth),c=document.createElement('canvas');c.width=w;c.height=hh;c.getContext('2d').drawImage(v,0,0,w,hh);
+    const foto=c.toDataURL('image/jpeg',0.6);
+    for(let i=0;i<30&&geoSt==='buscando';i++)await new Promise(r=>setTimeout(r,200));      // espera até 6 s pela localização
+    B.textContent='📷 Tirar foto e registrar';fecha({foto,geo,ua:navigator.userAgent})}})}
 function erro(m){const e=$('err');e.textContent=m||'';e.style.display=m?'block':'none';if(m)window.scrollTo({top:0,behavior:'smooth'})}
 async function api(path,body){const r=await fetch(path,{credentials:'same-origin',...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})});
   const j=await r.json().catch(()=>({}));if(r.status===401){await fetch('/api/freela/entrar',{method:'POST',credentials:'same-origin'});if(!api.retry){api.retry=1;try{return await api(path,body)}finally{api.retry=0}}}
@@ -76,17 +105,19 @@ function desenhaAcao(){$('aNome').textContent=SEL.nome;$('aInfo').innerHTML=`${e
   $('aBtns').innerHTML=SEL.proximos.map(p=>`<button class="${p.tipo==='saida_final'?'fin':''}" onclick="bate('${p.tipo}')" ${busy?'disabled':''}>${esc(p.rotulo)}</button>`).join('')}
 function voltar(){SEL=null;resumoAberto=false;$('vAcao').classList.add('hide');$('vResumo').classList.add('hide');$('vLista').classList.remove('hide');erro('');carrega()}
 async function bate(tipo){if(busy)return;busy=true;erro('');desenhaAcao();
-  try{const j=await api('/api/freela/bater',{id:SEL.id,tipo});if(j.concluida)return mostraResumo(j.resumo);SEL=j.jornada;desenhaAcao()}
+  try{const ev=await capturar(SEL.proximos.find(p=>p.tipo===tipo)?.rotulo);if(!ev){busy=false;desenhaAcao();return}
+    const j=await api('/api/freela/bater',{id:SEL.id,tipo,...ev});if(j.concluida)return mostraResumo(j.resumo);SEL=j.jornada;desenhaAcao()}
   catch(e){erro(e.message);carrega()}finally{busy=false;if(SEL)desenhaAcao()}}
 function mostraResumo(r){resumoAberto=true;SEL=null;$('vAcao').classList.add('hide');$('vLista').classList.add('hide');const v=$('vResumo');v.classList.remove('hide');
   v.innerHTML=`<h2>✅ Jornada concluída</h2><dl><dt>Nome</dt><dd>${esc(r.nome)}</dd><dt>CPF</dt><dd>${esc(r.cpf)}</dd><dt>Chave Pix</dt><dd>${esc(r.pix)}</dd><dt>Unidade</dt><dd>${esc(r.unidade)}</dd><dt>Data</dt><dd>${esc(r.data.split('-').reverse().join('/'))}</dd>
   ${r.horarios.map(h=>`<dt>${esc(h.rotulo)}</dt><dd>${esc(h.hora)}</dd>`).join('')}
-  ${r.intervalo_min?`<dt>Intervalo</dt><dd>${r.intervalo_min} min ${r.intervalo_descontado?'(descontado)':'(até 30 min, não descontado)'}</dd>`:''}
+  ${r.intervalo_min?`<dt>Intervalo</dt><dd>${r.intervalo_min} min ${r.intervalo_descontado?'(desconta só o que passou de 30 min)':'(até 30 min, pago)'}</dd>`:''}
   <dt>Horas trabalhadas</dt><dd>${esc(r.horas)}</dd><dt>Valor da hora</dt><dd>${esc(r.valor_hora)}</dd><dt>Valor calculado a receber</dt><dd class="total">${esc(r.valor_total)}</dd></dl>
   <div class="aviso">${esc(r.aviso)} Seu registro foi salvo e será conferido pelo DP.</div><button style="margin-top:14px" onclick="voltar()">Concluir</button>`;window.scrollTo({top:0})}
 $('cpf').addEventListener('input',e=>{let d=e.target.value.replace(/\D/g,'').slice(0,11);e.target.value=d.replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d{1,2})$/,'$1-$2')});
 $('fEntrada').onsubmit=async e=>{e.preventDefault();if(busy)return;busy=true;erro('');$('bEntrada').disabled=true;
-  try{const j=await api('/api/freela/entrada',{nome:$('nome').value,cpf:$('cpf').value,pix:$('pix').value,unidade:$('unidade').value});
+  try{const ev=await capturar('Entrada — tire uma foto');if(!ev){busy=false;$('bEntrada').disabled=false;return}
+    const j=await api('/api/freela/entrada',{nome:$('nome').value,cpf:$('cpf').value,pix:$('pix').value,unidade:$('unidade').value,...ev});
     $('fEntrada').reset();await carrega();escolhe(j.jornada.id)}catch(err){erro(err.message)}finally{busy=false;$('bEntrada').disabled=false;if(SEL)desenhaAcao()}};
 api('/api/freela/entrar',{}).then(carrega).catch(e=>erro(e.message));setInterval(()=>{if(!document.hidden&&!SEL&&!resumoAberto)carrega()},15000);
 </script>
