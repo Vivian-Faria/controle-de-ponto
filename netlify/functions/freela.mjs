@@ -116,10 +116,16 @@ export function payloadDP(j, hubId) {      // formato da documentação do DP; N
   const ref = ge || gs; if (ref?.ua) o.dispositivo = ref.ua; if (ref?.ip && ref.ip !== "?") o.ip = ref.ip;
   return o;
 }
-// envia um lote (até 500) numa única chamada e trata o resultado item a item, na mesma ordem do envio
-async function enviarLote(js) {
-  js = js.filter(j => !j.cancelada && statusDe(j) === "concluida" && j.dp?.status !== "enviado");
-  const marca = (j, st, erro) => { const dp = j.dp = j.dp || { tentativas: 0 }; dp.status = st; dp.erro = erro || null; dp.ultimaTentativa = Date.now(); if (st === "enviado") dp.enviadoEm = Date.now(); };
+// fotos das batidas (JPEG em base64) nos campos do DP; as do intervalo só vão se o intervalo foi enviado
+async function fotosDe(j) {
+  const p = payloadDP(j, "x"), campos = [["entrada", "entrada_foto"], ["saida_final", "saida_foto"]];
+  if (p.saida_intervalo) campos.push(["saida_almoco", "saida_intervalo_foto"], ["retorno_almoco", "retorno_intervalo_foto"]);
+  const o = {}; await Promise.all(campos.map(async ([t, c]) => { if (j.meta?.[t]?.foto) { const f = await getFoto(j.id, t); if (f) o[c] = f; } }));
+  return o;
+}
+// envia um lote (em grupos de 10, por causa das fotos) e trata o resultado item a item, na mesma ordem do envio
+async function enviarLote(js, forcar = false) {      // forcar: reenvia jornadas já enviadas (o DP só acrescenta as fotos que faltam)
+  js = js.filter(j => !j.cancelada && statusDe(j) === "concluida" && (forcar || j.dp?.status !== "enviado"));
   if (!dpConfigurado()) { for (const j of js) marca(j, "pendente", "DP não configurado: defina DP_API_TOKEN nas variáveis do Netlify."); return { configurado: false }; }
   let hubs; try { hubs = await hubsDP(); } catch (e) { for (const j of js) { (j.dp = j.dp || {}).tentativas = ((j.dp || {}).tentativas || 0) + 1; marca(j, "falha", e.message); } return { erro: e.message }; }
   const envio = [], itens = [];
@@ -127,9 +133,16 @@ async function enviarLote(js) {
     if (Math.floor(j.marks.entrada / 60000) >= Math.floor(j.marks.saida_final / 60000)) { marca(j, "falha", "Jornada com menos de 1 minuto: o DP exige a saída depois da entrada (em horas e minutos)."); continue; }
     const hub = hubIdPara(j.unidade, hubs);
     if (!hub) { marca(j, "falha", `A unidade "${j.unidade}" não existe como hub no DP. Cadastre o hub no DP ou defina DP_HUB_MAP no Netlify.`); continue; }
-    (j.dp = j.dp || {}).tentativas = (j.dp.tentativas || 0) + 1; envio.push(j); itens.push(payloadDP(j, hub));
+    (j.dp = j.dp || {}).tentativas = (j.dp.tentativas || 0) + 1; envio.push(j); itens.push({ ...payloadDP(j, hub), ...(await fotosDe(j)) });
   }
   if (!itens.length) return {};
+  const out = {};                       // o DP aceita no máximo 10 lançamentos com foto por requisição (limite de 4 MB)
+  for (let k = 0; k < itens.length; k += LOTE_FOTO) { const r = await enviarGrupo(envio.slice(k, k + LOTE_FOTO), itens.slice(k, k + LOTE_FOTO)); if (r.erro) out.erro = r.erro; }
+  return out;
+}
+const LOTE_FOTO = 10;
+const marca = (j, st, erro) => { const dp = j.dp = j.dp || { tentativas: 0 }; dp.status = st; dp.erro = erro || null; dp.ultimaTentativa = Date.now(); if (st === "enviado") dp.enviadoEm = Date.now(); };
+async function enviarGrupo(envio, itens) {
   try {
     const r = await dpFetch("/api/integracao/pagamentos-avulsos", { method: "POST", body: JSON.stringify(itens) });
     if (r.status === 401) { for (const j of envio) marca(j, "falha", "Token do DP recusado (401)."); return { erro: "Token do DP recusado (401). Confira DP_API_TOKEN no Netlify." }; }
@@ -138,7 +151,7 @@ async function enviarLote(js) {
     const res = corpo.resultados, vistos = new Set();   // o DP também devolve "resultados" item a item em HTTP 422 (ex.: horário inválido)
     for (const x of res) { const j = envio[x.indice]; if (!j) continue; vistos.add(x.indice);
       if (x.status === "criado") marca(j, "enviado"); else if (x.status === "duplicado" && j.dp?.reaberta) marca(j, "falha", "Jornada retomada após o envio: o DP já tem o registro do dia e não aceita atualização. Edite-o no DP (Editar) para saída " + hhmmss(j.marks.saida_final) + " e horas " + (calcular(j.marks, j.pausas)).horas_hm + ".");
-      else if (x.status === "duplicado") marca(j, "enviado", "O DP já tinha este registro (duplicado)."); else marca(j, "falha", x.erro || "O DP recusou o registro."); }
+      else if (x.status === "duplicado") marca(j, "enviado", j.dp?.fotosReenviadas ? "Fotos reenviadas ao DP." : "O DP já tinha este registro (duplicado)."); else marca(j, "falha", x.erro || "O DP recusou o registro."); }
     envio.forEach((j, i) => { if (!vistos.has(i)) marca(j, "falha", "O DP não devolveu resultado para este registro."); });
     return {};
   } catch (e) { const m = "Falha de conexão com o DP: " + (e.name === "TimeoutError" ? "tempo esgotado" : e.message); for (const j of envio) marca(j, "falha", m); return { erro: m }; }
@@ -222,12 +235,13 @@ export async function rotaFreela(req, path, ctx) {
       if (j.dp?.status === "enviado") return erro("Jornada já enviada ao DP; corrija direto no DP.");
       j.cancelada = true; j.motivoCancel = motivo; await store().delete("open/" + j.id); await putJ(key, j); return json({ ok: true });
     }
-    if (path === "/api/freela/admin/enviar" && req.method === "POST") {        // envia/reenvia (pendentes e com falha), até 500 por chamada
+    if (path === "/api/freela/admin/enviar" && req.method === "POST") {        // envia/reenvia (pendentes e com falha), até 30 por chamada (cada lançamento leva fotos)
       const b = await body(); let alvo;
       if (Array.isArray(b.ids)) alvo = (await Promise.all(b.ids.map(i => { const k = keyOfId(i); return k ? getJ(k) : null; }))).filter(Boolean);
       else alvo = await listarPeriodo(d0, d1);
-      alvo = alvo.filter(j => statusDe(j) === "concluida" && j.dp?.status !== "enviado"); const restantes = Math.max(0, alvo.length - 500); alvo = alvo.slice(0, 500);
-      const r = await enviarLote(alvo); for (const j of alvo) await putJ(keyOfId(j.id), j);
+      const forc = !!(b.forcar && Array.isArray(b.ids)); alvo = alvo.filter(j => statusDe(j) === "concluida" && (forc || j.dp?.status !== "enviado")); const restantes = Math.max(0, alvo.length - 30); alvo = alvo.slice(0, 30);
+      if (b.forcar && Array.isArray(b.ids)) for (const j of alvo) (j.dp = j.dp || {}).fotosReenviadas = Date.now();
+      const r = await enviarLote(alvo, !!(b.forcar && Array.isArray(b.ids))); for (const j of alvo) await putJ(keyOfId(j.id), j);
       if (r.configurado === false) return json({ ok: false, error: "DP não configurado: defina DP_API_TOKEN nas variáveis de ambiente do Netlify. Os registros continuam pendentes e guardados.", tentados: 0 });
       const enviados = alvo.filter(j => j.dp.status === "enviado").length, falhas = alvo.length - enviados;
       return json({ ok: !r.erro, error: r.erro || null, enviados, falhas, restantes });
