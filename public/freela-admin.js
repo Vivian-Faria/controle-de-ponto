@@ -58,6 +58,7 @@
         <td class="num">${j.horas || "—"}</td><td class="num">${brl(j.valor)}</td><td>${dpTxt}</td>
         <td style="min-width:160px"><button class="ghost mini" data-a="ver" data-id="${esc(j.id)}">Ver dados</button>
         ${inc ? `<button class="ghost mini" data-a="ajustar" data-id="${esc(j.id)}">Ajustar</button>` : ""}
+        ${j.status === "concluida" && j.dp.status === "enviado" && !j.dp.reaberta ? `<button class="ghost mini" data-a="fotos" data-id="${esc(j.id)}">Reenviar fotos</button>` : ""}
         ${j.status === "concluida" && j.dp.status !== "enviado" ? `<button class="ghost mini" data-a="enviar" data-id="${esc(j.id)}">${j.dp.status === "falha" ? "Reenviar" : "Enviar"}</button>` : ""}
         ${!j.cancelada && j.dp.status !== "enviado" ? `<button class="ghost mini" style="color:var(--red)" data-a="cancelar" data-id="${esc(j.id)}">Cancelar</button>` : ""}</td></tr>`;
     }).join("") : `<tr><td colspan="11" style="text-align:center;color:var(--mut);padding:24px">Nenhuma jornada neste filtro.</td></tr>`;
@@ -79,6 +80,7 @@
         <h4 style="margin:12px 0 6px">Evidências das batidas</h4>${(f.evidencias || []).map(e => `<div style="border-top:1px solid var(--bd);padding:8px 0;font-size:13px"><b>${esc(e.rotulo)}</b> · ${esc(new Date(e.em).toLocaleTimeString("pt-BR"))}<br>
           ${e.lat != null ? `📍 <a href="https://www.google.com/maps?q=${e.lat},${e.lon}" target="_blank" rel="noopener">${e.lat.toFixed(5)}, ${e.lon.toFixed(5)}</a>${e.prec != null ? ` (±${e.prec} m)` : ""}` : `<span style="color:var(--red)">📍 sem localização</span>`} · IP ${esc(e.ip || "?")}<br>
           <small style="color:var(--mut)">${esc(e.ua || "")}</small><br>${e.foto ? `<button class="ghost mini" type="button" data-foto="${esc(e.tipo)}" data-id="${esc(f.id)}">Ver foto</button><div></div>` : ""}</div>`).join("") || "<small style='color:var(--mut)'>Sem registros (jornadas antigas não tinham foto/local).</small>"}`); }
+      if (a === "fotos") { const r = await api("/api/freela/admin/enviar", { ids: [id], forcar: true }); if (r.error) msg(esc(r.error), true); else msg("Fotos reenviadas ao DP.", false); loadF(); }
       if (a === "enviar") { const r = await api("/api/freela/admin/enviar", { ids: [id] }); if (r.error) msg(esc(r.error), true); loadF(); }
       if (a === "cancelar") dlg("Cancelar jornada de " + j.nome, `<p>A jornada não é apagada: fica registrada como cancelada e não vai ao DP.</p><input id="fmot" placeholder="Motivo (obrigatório)" style="width:100%">`, async () => { await api("/api/freela/admin/cancelar", { id, motivo: $("fmot").value }); });
       if (a === "ajustar") {
