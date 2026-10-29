@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 
 export const UNIDADES = ["Buritis", "Sion", "Cidade Nova", "Castelo", "Expedição Sion"];
 export const VALOR_HORA_CENTS = 1250;                 // R$ 12,50 por hora
-const LIMITE_ALMOCO_MS = 30 * 60000;                  // até 30 min o almoço não é descontado
+const LIMITE_ALMOCO_MS = 30 * 60000;                  // até 30 min o intervalo é pago; acima disso desconta só o excedente
 const TZ_H = parseFloat((process.env.TZ_OFFSET_HOURS ?? "-3").toString());
 const HOUR = 3600000, DAY = 86400000;
 const TIPOS = ["entrada", "saida_almoco", "retorno_almoco", "saida_final"];
@@ -27,9 +27,9 @@ export function calcular(m, pausas = []) {
   let intervalo = 0, descontado = 0;
   if (m.saida_almoco && m.retorno_almoco && m.retorno_almoco >= m.saida_almoco) {
     intervalo = m.retorno_almoco - m.saida_almoco;
-    if (intervalo > LIMITE_ALMOCO_MS) descontado = intervalo;            // acima de 30 min desconta o intervalo inteiro
+    if (intervalo > LIMITE_ALMOCO_MS) descontado = intervalo - LIMITE_ALMOCO_MS;   // até 30 min é pago; acima disso desconta só o que passar de 30 min
   }
-  for (const x of pausas) if (x.ate > x.de) descontado += x.ate - x.de;
+  for (const x of pausas) if (x.ate - x.de > LIMITE_ALMOCO_MS) descontado += x.ate - x.de - LIMITE_ALMOCO_MS;      // mesma regra para pausas extras
   const seg = Math.round(Math.max(0, total - descontado) / 1000);
   return { total_seg: seg, intervalo_seg: Math.round(intervalo / 1000), descontado_seg: Math.round(descontado / 1000),
     horas_hm: fmtHM(seg), horas_decimal: Math.round(seg / 36) / 100, valor_hora_cents: VALOR_HORA_CENTS, valor_cents: Math.round(seg * VALOR_HORA_CENTS / 3600) };
@@ -49,11 +49,21 @@ export function validarCPF(v) {
   for (const n of [9, 10]) { let s = 0; for (let i = 0; i < n; i++) s += +c[i] * (n + 1 - i); const d = ((s * 10) % 11) % 10; if (d !== +c[n]) return null; }
   return c;
 }
+// evidência da batida: foto tirada na hora (JPEG), localização e aparelho. A foto fica guardada no Netlify Blobs; não vai para o DP.
+const REQUER_GEO = () => process.env.REQUIRE_GEO === "1";
+function lerEvidencia(b, ip, ua) {
+  ip = String(ip || "?").split(",")[0].trim().slice(0, 64);
+  const f = String(b.foto || "");
+  if (!/^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+\/=]+$/.test(f) || f.length < 3000 || f.length > 190000) return { erro: "Tire a foto para registrar o ponto (a foto precisa ser feita na hora, pela câmera)." };
+  const g = b.geo || {}, lat = Number(g.lat), lon = Number(g.lon), temGeo = Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180 && !(lat === 0 && lon === 0);
+  if (!temGeo && REQUER_GEO()) return { erro: "Permita o acesso à localização do celular para registrar o ponto." };
+  return { foto: f, meta: { ...(temGeo ? { lat, lon, prec: Number.isFinite(Number(g.prec)) ? Math.round(Number(g.prec)) : null } : {}), ip, ua: String(ua || "").slice(0, 300), foto: true, em: Date.now() } };
+}
 const maskCPF = c => `***.${c.slice(3, 6)}.${c.slice(6, 9)}-**`;
 const maskPix = p => p.length <= 6 ? "***" : p.slice(0, 3) + "•••" + p.slice(-2);
 
 export function payloadCsv(j) {
-  const c = j.calc || calcular(j.marks, j.pausas), m = j.marks;
+  const c = calcular(j.marks, j.pausas), m = j.marks;
   return { id: j.id, origem: "ponto-freelancer", nome: j.nome, cpf: j.cpf, chave_pix: j.pix, unidade: j.unidade, data: j.data,
     entrada: m.entrada ? hhmm(m.entrada) : null, saida_almoco: m.saida_almoco ? hhmm(m.saida_almoco) : null,
     retorno_almoco: m.retorno_almoco ? hhmm(m.retorno_almoco) : null, saida_final: m.saida_final ? hhmm(m.saida_final) : null,
@@ -64,6 +74,8 @@ export function payloadCsv(j) {
 const store = () => getStore({ name: "freela", consistency: "strong" });
 const getJ = async key => { try { return await store().get(key, { type: "json" }); } catch { return null; } };
 const putJ = (key, v) => store().set(key, JSON.stringify(v));
+const putFoto = (id, tipo, f) => store().set(`foto/${id}/${tipo}`, f);
+const getFoto = async (id, tipo) => { try { return await store().get(`foto/${id}/${tipo}`, { type: "text" }); } catch { return null; } };
 // o identificador da jornada NUNCA contém o CPF: usa um código opaco (HMAC do CPF) — igual para o mesmo CPF, impossível de reverter
 let SEGREDO = "freela";
 const hashCpf = cpf => crypto.createHmac("sha256", SEGREDO).update("cpf:" + cpf).digest("hex").slice(0, 16);
@@ -93,10 +105,15 @@ function hubIdPara(unidade, hubs) {
   return hubs.find(h => normTxt(h.nome) === normTxt(nome))?.id || null;
 }
 export function payloadDP(j, hubId) {      // formato da documentação do DP; NÃO envia valor (o DP calcula)
-  const m = j.marks, o = { tipo: "freelancer", nome: j.nome, cpf: j.cpf, data_trabalho: j.data, hub_id: hubId, pix: j.pix, entrada: hhmm(m.entrada), saida: hhmm(m.saida_final), observacoes: `Ponto eletrônico · jornada ${j.id}` };
+  const m = j.marks, o = { tipo: "freelancer", nome: j.nome, cpf: j.cpf, data_trabalho: j.data, hub_id: hubId, pix: j.pix, entrada: hhmmss(m.entrada), saida: hhmmss(m.saida_final), observacoes: `Ponto eletrônico · jornada ${j.id}` };
   // O DP compara só HH:mm e exige ordem estritamente crescente. Intervalo "colado" na entrada/saída (mesmo minuto) é descartado: dura menos de 1 min, então não é descontado e o valor não muda.
   const mn = ms => Math.floor(ms / 60000);
-  if (m.saida_almoco && m.retorno_almoco && mn(m.entrada) < mn(m.saida_almoco) && mn(m.saida_almoco) < mn(m.retorno_almoco) && mn(m.retorno_almoco) < mn(m.saida_final)) { o.saida_intervalo = hhmm(m.saida_almoco); o.retorno_intervalo = hhmm(m.retorno_almoco); }
+  if (m.saida_almoco && m.retorno_almoco && mn(m.entrada) < mn(m.saida_almoco) && mn(m.saida_almoco) < mn(m.retorno_almoco) && mn(m.retorno_almoco) < mn(m.saida_final)) { o.saida_intervalo = hhmmss(m.saida_almoco); o.retorno_intervalo = hhmmss(m.retorno_almoco); }
+  // onde e em qual aparelho cada batida foi feita (opcionais no DP)
+  const ge = j.meta?.entrada, gs = j.meta?.saida_final, n6 = v => typeof v === "number" ? Math.round(v * 1e6) / 1e6 : undefined;
+  if (ge?.lat != null) { o.entrada_latitude = n6(ge.lat); o.entrada_longitude = n6(ge.lon); }
+  if (gs?.lat != null) { o.saida_latitude = n6(gs.lat); o.saida_longitude = n6(gs.lon); }
+  const ref = ge || gs; if (ref?.ua) o.dispositivo = ref.ua; if (ref?.ip && ref.ip !== "?") o.ip = ref.ip;
   return o;
 }
 // envia um lote (até 500) numa única chamada e trata o resultado item a item, na mesma ordem do envio
@@ -120,7 +137,7 @@ async function enviarLote(js) {
     if (!Array.isArray(corpo?.resultados)) { const t = txt.replace(/\s+/g, " ").slice(0, 160); for (const j of envio) marca(j, "falha", `HTTP ${r.status}: ${t}`); return { erro: `O DP respondeu HTTP ${r.status}.` }; }
     const res = corpo.resultados, vistos = new Set();   // o DP também devolve "resultados" item a item em HTTP 422 (ex.: horário inválido)
     for (const x of res) { const j = envio[x.indice]; if (!j) continue; vistos.add(x.indice);
-      if (x.status === "criado") marca(j, "enviado"); else if (x.status === "duplicado" && j.dp?.reaberta) marca(j, "falha", "Jornada retomada após o envio: o DP já tem o registro do dia e não aceita atualização. Edite-o no DP (Editar) para saída " + hhmm(j.marks.saida_final) + " e horas " + (j.calc || calcular(j.marks, j.pausas)).horas_hm + ".");
+      if (x.status === "criado") marca(j, "enviado"); else if (x.status === "duplicado" && j.dp?.reaberta) marca(j, "falha", "Jornada retomada após o envio: o DP já tem o registro do dia e não aceita atualização. Edite-o no DP (Editar) para saída " + hhmmss(j.marks.saida_final) + " e horas " + (calcular(j.marks, j.pausas)).horas_hm + ".");
       else if (x.status === "duplicado") marca(j, "enviado", "O DP já tinha este registro (duplicado)."); else marca(j, "falha", x.erro || "O DP recusou o registro."); }
     envio.forEach((j, i) => { if (!vistos.has(i)) marca(j, "falha", "O DP não devolveu resultado para este registro."); });
     return {};
@@ -131,13 +148,13 @@ async function enviarLote(js) {
 const visaoAberta = j => ({ id: j.id, nome: j.nome, unidade: j.unidade, data: j.data, status: statusDe(j), statusRotulo: STATUS_ROTULO[statusDe(j)],
   ultima: (() => { const t = TIPOS.filter(k => j.marks[k]).pop(); return t ? { tipo: t, rotulo: ROTULO[t], hora: hhmm(j.marks[t]) } : null; })(),
   proximos: proximos(j).map(t => ({ tipo: t, rotulo: ROTULO[t] })) });
-const resumo = j => { const c = j.calc || calcular(j.marks, j.pausas); return { nome: j.nome, cpf: j.cpf, pix: j.pix, unidade: j.unidade, data: j.data,
+const resumo = j => { const c = calcular(j.marks, j.pausas); return { nome: j.nome, cpf: j.cpf, pix: j.pix, unidade: j.unidade, data: j.data,
   horarios: TIPOS.filter(t => j.marks[t]).map(t => ({ tipo: t, rotulo: ROTULO[t], hora: hhmmss(j.marks[t]) })),
   intervalo_min: c ? Math.round(c.intervalo_seg / 60) : 0, intervalo_descontado: !!(c && c.descontado_seg), horas: c?.horas_hm, valor_hora: brl(VALOR_HORA_CENTS), valor_total: c ? brl(c.valor_cents) : null,
   aviso: "Valor calculado a receber — não é confirmação de pagamento." }; };
-const visaoAdmin = j => { const c = j.calc || calcular(j.marks, j.pausas), st = statusDe(j); return { id: j.id, data: j.data, nome: j.nome, cpf: maskCPF(j.cpf), pix: maskPix(j.pix), unidade: j.unidade,
+const visaoAdmin = j => { const c = calcular(j.marks, j.pausas), st = statusDe(j); return { id: j.id, data: j.data, nome: j.nome, cpf: maskCPF(j.cpf), pix: maskPix(j.pix), unidade: j.unidade,
   status: st, statusRotulo: STATUS_ROTULO[st], marks: Object.fromEntries(TIPOS.map(t => [t, j.marks[t] ? hhmm(j.marks[t]) : null])),
-  horas: c?.horas_hm || null, valor: c ? c.valor_cents / 100 : null, ajustes: j.ajustes || [], cancelada: !!j.cancelada, motivoCancel: j.motivoCancel || null,
+  horas: c?.horas_hm || null, valor: c ? c.valor_cents / 100 : null, ajustes: j.ajustes || [], semLocal: Object.values(j.meta || {}).some(m => m.lat == null), cancelada: !!j.cancelada, motivoCancel: j.motivoCancel || null,
   incompleta: st !== "concluida" && st !== "cancelada" && j.data < isoOf(Date.now()),
   dp: j.cancelada ? { status: "nao_aplica" } : (j.dp || { status: st === "concluida" ? "pendente" : "aguardando" }) }; };
 
@@ -160,7 +177,7 @@ export async function rotaFreela(req, path, ctx) {
   if (ctx.secret) SEGREDO = ctx.secret;
   const { json, isAdmin, isFreela, freelaCookie } = ctx, url = new URL(req.url), q = url.searchParams;
   const ip = req.headers.get("x-nf-client-connection-ip") || req.headers.get("x-forwarded-for") || "?";
-  const body = async () => { const t = await req.text(); if (t.length > 4000) throw Object.assign(new Error("Requisição grande demais"), { status: 413 }); try { return JSON.parse(t || "{}"); } catch { throw Object.assign(new Error("JSON inválido"), { status: 400 }); } };
+  const body = async (max = 4000) => { const t = await req.text(); if (t.length > max) throw Object.assign(new Error("Requisição grande demais"), { status: 413 }); try { return JSON.parse(t || "{}"); } catch { throw Object.assign(new Error("JSON inválido"), { status: 400 }); } };
   const erro = (m, s = 400) => json({ error: m }, s);
 
   // ---- acesso do freelancer: cria uma sessão que só vale para /api/freela/* (nunca para o painel administrativo)
@@ -180,7 +197,11 @@ export async function rotaFreela(req, path, ctx) {
     }
     if (path === "/api/freela/admin/jornada" && req.method === "GET") {        // dados completos de uma jornada (CPF e Pix inteiros)
       const key = keyOfId(q.get("id")), j = key && await getJ(key); if (!j) return erro("Jornada não encontrada", 404);
-      return json({ ...visaoAdmin(j), cpf_completo: j.cpf, pix_completo: j.pix });
+      return json({ ...visaoAdmin(j), cpf_completo: j.cpf, pix_completo: j.pix, evidencias: Object.entries(j.meta || {}).map(([tipo, m]) => ({ tipo, rotulo: ROTULO[tipo] || "Retomada após encerrar", lat: m.lat ?? null, lon: m.lon ?? null, prec: m.prec ?? null, ip: m.ip, ua: m.ua, foto: !!m.foto, em: m.em })) });
+    }
+    if (path === "/api/freela/admin/foto" && req.method === "GET") {              // foto de uma batida (só administrador)
+      const id = String(q.get("id") || ""), tipo = String(q.get("tipo") || ""); if (!keyOfId(id) || !/^[a-z_]+$/.test(tipo)) return erro("Pedido inválido");
+      const f = await getFoto(id, tipo); return f ? json({ foto: f }) : erro("Foto não encontrada", 404);
     }
     if (path === "/api/freela/admin/ajustar" && req.method === "POST") {      // só preenche batida que FALTA; nunca sobrescreve uma batida existente
       const b = await body(), key = keyOfId(b.id), j = key && await getJ(key); if (!j) return erro("Jornada não encontrada", 404);
@@ -232,10 +253,11 @@ export async function rotaFreela(req, path, ctx) {
   if (path === "/api/freela/abertos" && req.method === "GET") return json({ unidades: UNIDADES, agora: Date.now(), abertos: (await abertas()).map(visaoAberta).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")) });
 
   if (path === "/api/freela/entrada" && req.method === "POST") {
-    const b = await body(), nome = String(b.nome || "").replace(/\s+/g, " ").trim(), cpf = validarCPF(b.cpf), pix = String(b.pix || "").trim(), unidade = String(b.unidade || "");
+    const b = await body(200000), nome = String(b.nome || "").replace(/\s+/g, " ").trim(), cpf = validarCPF(b.cpf), pix = String(b.pix || "").trim(), unidade = String(b.unidade || "");
     if (nome.split(" ").length < 2 || nome.length < 5 || nome.length > 120) return erro("Informe o nome completo.");
     if (!cpf) return erro("CPF inválido."); if (pix.length < 5 || pix.length > 140) return erro("Informe a chave Pix.");
     if (!UNIDADES.includes(unidade)) return erro("Escolha a unidade.");
+    const ev = lerEvidencia(b, ip, req.headers.get("user-agent") || b.ua); if (ev.erro) return erro(ev.erro);
     const agora = Date.now(), data = isoOf(agora), id = idOf(data, cpf), key = keyOfId(id);
     if (locks.has(id)) return erro("Aguarde, registrando…", 429); locks.add(id);
     try {
@@ -254,22 +276,24 @@ export async function rotaFreela(req, path, ctx) {
         (ex.retomadas = ex.retomadas || []).push({ encerradaEm: fim, retomadaEm: agora });
         if (ex.dp?.status === "enviado") ex.dp = { status: "pendente", tentativas: 0, reaberta: true };
         else ex.dp = { status: "aguardando", tentativas: 0 };
+        (ex.meta = ex.meta || {}).retomada = ev.meta; await putFoto(id, "retomada", ev.foto);
         await putJ(key, ex); await putJ("open/" + id, { id }); return json({ ok: true, retomada: true, jornada: visaoAberta(ex) });
       }
       if (ex) return erro("Você já tem uma jornada em aberto hoje. Selecione seu nome na lista.", 409);
-      const j = { id, data, nome, cpf, pix, unidade, marks: { entrada: agora }, criadoEm: agora };
-      await putJ(key, j); await putJ("open/" + id, { id }); return json({ ok: true, jornada: visaoAberta(j) });
+      const j = { id, data, nome, cpf, pix, unidade, marks: { entrada: agora }, meta: { entrada: ev.meta }, criadoEm: agora };
+      await putFoto(id, "entrada", ev.foto); await putJ(key, j); await putJ("open/" + id, { id }); return json({ ok: true, jornada: visaoAberta(j) });
     } finally { locks.delete(id); }
   }
 
   if (path === "/api/freela/bater" && req.method === "POST") {
-    const b = await body(), key = keyOfId(b.id); if (!key || !TIPOS.includes(b.tipo) || b.tipo === "entrada") return erro("Pedido inválido");
+    const b = await body(200000), key = keyOfId(b.id); if (!key || !TIPOS.includes(b.tipo) || b.tipo === "entrada") return erro("Pedido inválido");
     const id = String(b.id); if (locks.has(id)) return erro("Aguarde, registrando…", 429); locks.add(id);
     try {
       const j = await getJ(key); if (!j) return erro("Jornada não encontrada", 404);
       if (!proximos(j).includes(b.tipo)) return erro(j.marks.saida_final ? "Esta jornada já foi concluída." : `Sequência inválida. Próximo registro: ${proximos(j).map(t => ROTULO[t]).join(" ou ")}.`, 409);
       const agora = Date.now(), ult = Math.max(...Object.values(j.marks)); if (agora - ult < 10000) return erro("Batida muito rápida; aguarde alguns segundos.", 429);
-      j.marks[b.tipo] = agora;
+      const ev = lerEvidencia(b, ip, req.headers.get("user-agent") || b.ua); if (ev.erro) return erro(ev.erro);
+      j.marks[b.tipo] = agora; (j.meta = j.meta || {})[b.tipo] = ev.meta; await putFoto(id, b.tipo, ev.foto);
       if (b.tipo === "saida_final") {
         j.calc = calcular(j.marks, j.pausas); j.dp = { status: "pendente", tentativas: 0, ...(j.dp?.reaberta ? { reaberta: true } : {}) }; await store().delete("open/" + id);
         if (dpConfigurado()) await enviarLote([j]);
