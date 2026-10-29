@@ -68,10 +68,17 @@
     ok.onclick = async ev => { ev.preventDefault(); try { await onOk(); d.close(); loadF(); } catch (e) { $("fde").textContent = e.message; } };
     d.showModal();
   }
+  $("fdb").addEventListener("click", async ev => {
+    const b = ev.target.closest("button[data-foto]"); if (!b) return;
+    try { const r = await api("/api/freela/admin/foto?id=" + encodeURIComponent(b.dataset.id) + "&tipo=" + encodeURIComponent(b.dataset.foto)); const i = new Image(); i.src = r.foto; i.style.cssText = "max-width:100%;border-radius:8px;margin-top:6px"; b.nextElementSibling.replaceChildren(i); b.remove(); } catch (e) { $("fde").textContent = e.message; }
+  });
   $("fb").addEventListener("click", async ev => {
     const b = ev.target.closest("button[data-a]"); if (!b) return; const id = b.dataset.id, j = D.jornadas.find(x => x.id === id), a = b.dataset.a;
     try {
-      if (a === "ver") { const f = await api("/api/freela/admin/jornada?id=" + encodeURIComponent(id)); dlg("Dados de " + f.nome, `<p>CPF: <b>${esc(f.cpf_completo)}</b><br>Chave Pix: <b>${esc(f.pix_completo)}</b><br>Unidade: ${esc(f.unidade)}<br>Código da jornada: <small>${esc(f.id)}</small></p>`); }
+      if (a === "ver") { const f = await api("/api/freela/admin/jornada?id=" + encodeURIComponent(id)); dlg("Dados de " + f.nome, `<p>CPF: <b>${esc(f.cpf_completo)}</b><br>Chave Pix: <b>${esc(f.pix_completo)}</b><br>Unidade: ${esc(f.unidade)}<br>Código da jornada: <small>${esc(f.id)}</small></p>
+        <h4 style="margin:12px 0 6px">Evidências das batidas</h4>${(f.evidencias || []).map(e => `<div style="border-top:1px solid var(--bd);padding:8px 0;font-size:13px"><b>${esc(e.rotulo)}</b> · ${esc(new Date(e.em).toLocaleTimeString("pt-BR"))}<br>
+          ${e.lat != null ? `📍 <a href="https://www.google.com/maps?q=${e.lat},${e.lon}" target="_blank" rel="noopener">${e.lat.toFixed(5)}, ${e.lon.toFixed(5)}</a>${e.prec != null ? ` (±${e.prec} m)` : ""}` : `<span style="color:var(--red)">📍 sem localização</span>`} · IP ${esc(e.ip || "?")}<br>
+          <small style="color:var(--mut)">${esc(e.ua || "")}</small><br>${e.foto ? `<button class="ghost mini" type="button" data-foto="${esc(e.tipo)}" data-id="${esc(f.id)}">Ver foto</button><div></div>` : ""}</div>`).join("") || "<small style='color:var(--mut)'>Sem registros (jornadas antigas não tinham foto/local).</small>"}`); }
       if (a === "enviar") { const r = await api("/api/freela/admin/enviar", { ids: [id] }); if (r.error) msg(esc(r.error), true); loadF(); }
       if (a === "cancelar") dlg("Cancelar jornada de " + j.nome, `<p>A jornada não é apagada: fica registrada como cancelada e não vai ao DP.</p><input id="fmot" placeholder="Motivo (obrigatório)" style="width:100%">`, async () => { await api("/api/freela/admin/cancelar", { id, motivo: $("fmot").value }); });
       if (a === "ajustar") {
