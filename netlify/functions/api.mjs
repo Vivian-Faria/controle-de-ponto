@@ -155,18 +155,28 @@ const hmFmt = m => { const s = m < 0 ? "-" : ""; m = Math.abs(Math.round(m)); re
 // ------------------------------------------------------------ análise
 async function analyze(d0, d1) {
   const [empsAll, schedules, hor, hubs, punches, adjs, exc] = await Promise.all([loadEmployees(), loadSchedules(), readKey("horarios"), readKey("hubs"), loadPunches(d0, d1), loadAdjustments(d0, d1), readKey("excluidos")]);
-  const emps = empsAll.filter(e => pick(e, "active", "ativo") !== false && !e.fired && !exc[String(e.id)]);
+  // Uma pessoa com mais de um cadastro no Tangerino (ex.: 6x1 e intermitente) vira UMA linha: as batidas de todos os cadastros dela são somadas,
+  // não importa em qual ele bateu. Vale o cadastro que não está excluído (de preferência o de escala fixa); os demais só emprestam as batidas.
+  const vivos = empsAll.filter(e => pick(e, "active", "ativo") !== false && !e.fired), grupos = new Map(), alias = new Map(), principais = new Set();
+  for (const e of vivos) { const k = normName(pick(e, "name", "nome")) || "#" + e.id; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(e); }
+  for (const g of grupos.values()) {
+    const ativos = g.filter(e => !exc[String(e.id)]); if (!ativos.length) continue;
+    const p = ativos.find(e => hor[String(e.id)] && hor[String(e.id)].type !== "intermitente") || ativos.find(e => hor[String(e.id)]?.type !== "intermitente") || ativos[0];
+    principais.add(p.id); for (const e of g) alias.set(e.id, p.id);
+  }
+  const emps = vivos.filter(e => principais.has(e.id));
   const nowMs = Date.now(), nowP = localParts(nowMs), today = isoOf(nowMs), nowMin = nowP.h * 60 + nowP.mi;
 
   const byEmpDay = new Map();
   for (const p of punches) {
     const eid = empId(p), din = pick(p, "dateIn", "startDate", "date", "punchDate"), dout = pick(p, "dateOut", "endDate");
     if (eid == null || din == null) continue;
-    const k = eid + "|" + isoOf(din); if (!byEmpDay.has(k)) byEmpDay.set(k, []); byEmpDay.get(k).push([din, dout ?? null]);
+    const k = (alias.get(eid) ?? eid) + "|" + isoOf(din); if (!byEmpDay.has(k)) byEmpDay.set(k, []);
+    if (!byEmpDay.get(k).some(x => Math.floor(x[0] / 60000) === Math.floor(din / 60000))) byEmpDay.get(k).push([din, dout ?? null]);      // mesma batida em dois cadastros conta uma vez
   }
   const adjDays = new Map();
   for (const a of adjs) {
-    const eid = empId(a), s = pick(a, "startDate"), e = pick(a, "endDate", "startDate"); if (eid == null || s == null) continue;
+    const eid = alias.get(empId(a)) ?? empId(a), s = pick(a, "startDate"), e = pick(a, "endDate", "startDate"); if (eid == null || s == null) continue;
     if (String(pick(a, "status") ?? "APROVADO").toUpperCase() === "REPROVADO") continue;
     const reason = pick(a, "adjustmentReasonDTO", "adjustmentReason") || {};
     for (let c = isoOf(s), last = isoOf(e); c <= last; c = addDays(c, 1))
@@ -368,32 +378,6 @@ export default async (req) => {
       const r = await httpGet(PUNCH_BASES[0] + "daily-activity", { startDate: a, endDate: b, punchList: true });
       const amostra = []; for (const e of r) for (const p of (e.punchs || [])) for (const x of (p.records || [])) { if (amostra.length < 4) amostra.push({ dia: p.date, markings: p.markings, startDate: x.startDate, startDateLong: x.startDateLong, endDate: x.endDate, status: x.status, workedHours: x.workedHours }); }
       return json({ dia: d, funcionarios: r.length, amostra });
-    }
-    if (path === "/api/probe4" && req.method === "GET") {      // o que o daily-activity devolve para UM funcionário em UM dia (sem dados pessoais)
-      const q = new URL(req.url).searchParams, d = /^\d{4}-\d\d-\d\d$/.test(q.get("d") || "") ? q.get("d") : isoOf(Date.now()), emp = Number(q.get("emp"));
-      const a = isoToLocalStartMs(d), b = isoToLocalStartMs(addDays(d, 1)) - 1; deadline.t = Date.now() + 8000;
-      const r = await httpGet(PUNCH_BASES[0] + "daily-activity", { startDate: a, endDate: b, punchList: true, adjustmentList: true });
-      const e = (r || []).find(x => x.id === emp), ocultar = k => /name|cpf|pis|mail|photo|image|pin|phone|address/i.test(k);
-      const lim = o => Array.isArray(o) ? o.slice(0, 6).map(lim) : (o && typeof o === "object") ? Object.fromEntries(Object.entries(o).filter(([k]) => !ocultar(k)).map(([k, v]) => [k, lim(v)])) : (typeof o === "string" ? o.slice(0, 40) : o);
-      return json({ dia: d, total_funcionarios: (r || []).length, ids: (r || []).map(x => x.id).slice(0, 60), encontrado: !!e, registro: e ? lim(e) : null });
-    }
-    if (path === "/api/probe5" && req.method === "GET") {      // summary e workData de UM funcionário num período (sem dados pessoais)
-      const q = new URL(req.url).searchParams, d0 = /^\d{4}-\d\d-\d\d$/.test(q.get("d0") || "") ? q.get("d0") : isoOf(Date.now()), d1 = /^\d{4}-\d\d-\d\d$/.test(q.get("d1") || "") ? q.get("d1") : d0, emp = Number(q.get("emp"));
-      const a = isoToLocalStartMs(d0), b = isoToLocalStartMs(addDays(d1, 1)) - 1, ocultar = k => /name|cpf|pis|mail|photo|image|pin|phone|address/i.test(k), out = { summary: [], workData: [] };
-      const lim = o => (o && typeof o === "object") ? Object.fromEntries(Object.entries(o).filter(([k]) => !ocultar(k)).map(([k, v]) => [k, typeof v === "string" ? v.slice(0, 40) : (v && typeof v === "object" ? "{..}" : v)])) : o;
-      try { const ids = new Set(); let tot = null, pgs = null; for (let pg = 0; pg < 6; pg++) { deadline.t = Date.now() + 8000; const r = await httpGet(PUNCH_BASES[0] + "summary", { startDateInMillis: a, endDateInMillis: b, page: pg, size: 200 }); tot = r.totalElements; pgs = r.totalPages; for (const x of (r.content || [])) { ids.add(x.employeeId); if (x.employeeId === emp) out.summary.push(lim(x)); } if (r.last) break; } out.summary_info = { totalElements: tot, totalPages: pgs, funcionarios: ids.size }; } catch (e) { out.summary_erro = e.message.slice(0, 200); }
-      try { deadline.t = Date.now() + 8000; const r = await httpGet(PUNCH_BASES[0] + "workData", { startDateInMillis: a, endDateInMillis: b }); out.workData_total = (r || []).length; out.workData = (r || []).filter(x => x.employeeId === emp).slice(0, 10).map(lim); } catch (e) { out.workData_erro = e.message.slice(0, 200); }
-      return json(out);
-    }
-    if (path === "/api/probe6" && req.method === "GET") {      // GET genérico (só leitura) em endereços do Tangerino, para diagnóstico: mostra a estrutura e se o funcionário aparece
-      const q = new URL(req.url).searchParams, u = q.get("u") || "", emp = q.get("emp") || "";
-      if (!/^https:\/\/(apis|employer)\.tangerino\.com\.br\//.test(u)) return json({ error: "endereço não permitido" }, 400);
-      let params = {}; try { params = JSON.parse(q.get("p") || "{}"); } catch { return json({ error: "p inválido" }, 400); }
-      deadline.t = Date.now() + 8000;
-      const shape = (o, d = 0) => Array.isArray(o) ? { "[n]": o.length, "[0]": o.length && d < 4 ? shape(o[0], d + 1) : null } : (o && typeof o === "object") ? (d > 4 ? "{...}" : Object.fromEntries(Object.entries(o).filter(([k]) => !/name|cpf|pis|mail|photo|image|pin|phone|address/i.test(k)).map(([k, v]) => [k, shape(v, d + 1)]))) : (typeof o === "string" ? "str" : o === null ? "null" : typeof o);
-      try { const r = await httpGet(u, params), txt = JSON.stringify(r); const n = emp ? txt.split(emp).length - 1 : null; const lista = Array.isArray(r) ? r : (r?.content || null);
-        const meus = emp && lista ? lista.filter(x => JSON.stringify(x).includes(emp)).slice(0, 4).map(x => JSON.stringify(x).replace(/"(name|email|cpf|pis|photo)[^"]*":"[^"]*",?/gi, "").slice(0, 600)) : null;
-        return json({ ok: true, ocorrencias_emp: n, estrutura: shape(r), meus }); } catch (e) { return json({ ok: false, erro: e.message.slice(0, 300) }); }
     }
     if (path === "/api/diagnose" && req.method === "GET") {
       const redact = o => { const bad = ["cpf", "email", "pis", "phone", "ctps", "name", "birth", "lat", "lon", "photo", "image", "address", "pin"];
