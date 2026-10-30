@@ -377,6 +377,14 @@ export default async (req) => {
       const lim = o => Array.isArray(o) ? o.slice(0, 6).map(lim) : (o && typeof o === "object") ? Object.fromEntries(Object.entries(o).filter(([k]) => !ocultar(k)).map(([k, v]) => [k, lim(v)])) : (typeof o === "string" ? o.slice(0, 40) : o);
       return json({ dia: d, total_funcionarios: (r || []).length, ids: (r || []).map(x => x.id).slice(0, 60), encontrado: !!e, registro: e ? lim(e) : null });
     }
+    if (path === "/api/probe5" && req.method === "GET") {      // summary e workData de UM funcionário num período (sem dados pessoais)
+      const q = new URL(req.url).searchParams, d0 = /^\d{4}-\d\d-\d\d$/.test(q.get("d0") || "") ? q.get("d0") : isoOf(Date.now()), d1 = /^\d{4}-\d\d-\d\d$/.test(q.get("d1") || "") ? q.get("d1") : d0, emp = Number(q.get("emp"));
+      const a = isoToLocalStartMs(d0), b = isoToLocalStartMs(addDays(d1, 1)) - 1, ocultar = k => /name|cpf|pis|mail|photo|image|pin|phone|address/i.test(k), out = { summary: [], workData: [] };
+      const lim = o => (o && typeof o === "object") ? Object.fromEntries(Object.entries(o).filter(([k]) => !ocultar(k)).map(([k, v]) => [k, typeof v === "string" ? v.slice(0, 40) : (v && typeof v === "object" ? "{..}" : v)])) : o;
+      try { const ids = new Set(); let tot = null, pgs = null; for (let pg = 0; pg < 6; pg++) { deadline.t = Date.now() + 8000; const r = await httpGet(PUNCH_BASES[0] + "summary", { startDateInMillis: a, endDateInMillis: b, page: pg, size: 200 }); tot = r.totalElements; pgs = r.totalPages; for (const x of (r.content || [])) { ids.add(x.employeeId); if (x.employeeId === emp) out.summary.push(lim(x)); } if (r.last) break; } out.summary_info = { totalElements: tot, totalPages: pgs, funcionarios: ids.size }; } catch (e) { out.summary_erro = e.message.slice(0, 200); }
+      try { deadline.t = Date.now() + 8000; const r = await httpGet(PUNCH_BASES[0] + "workData", { startDateInMillis: a, endDateInMillis: b }); out.workData_total = (r || []).length; out.workData = (r || []).filter(x => x.employeeId === emp).slice(0, 10).map(lim); } catch (e) { out.workData_erro = e.message.slice(0, 200); }
+      return json(out);
+    }
     if (path === "/api/diagnose" && req.method === "GET") {
       const redact = o => { const bad = ["cpf", "email", "pis", "phone", "ctps", "name", "birth", "lat", "lon", "photo", "image", "address", "pin"];
         if (Array.isArray(o)) return o.map(redact); if (o && typeof o === "object") return Object.fromEntries(Object.entries(o).map(([k, v]) => [k, bad.some(b => k.toLowerCase().includes(b)) ? "***" : redact(v)])); return o; };
