@@ -369,6 +369,14 @@ export default async (req) => {
       const amostra = []; for (const e of r) for (const p of (e.punchs || [])) for (const x of (p.records || [])) { if (amostra.length < 4) amostra.push({ dia: p.date, markings: p.markings, startDate: x.startDate, startDateLong: x.startDateLong, endDate: x.endDate, status: x.status, workedHours: x.workedHours }); }
       return json({ dia: d, funcionarios: r.length, amostra });
     }
+    if (path === "/api/probe4" && req.method === "GET") {      // o que o daily-activity devolve para UM funcionário em UM dia (sem dados pessoais)
+      const q = new URL(req.url).searchParams, d = /^\d{4}-\d\d-\d\d$/.test(q.get("d") || "") ? q.get("d") : isoOf(Date.now()), emp = Number(q.get("emp"));
+      const a = isoToLocalStartMs(d), b = isoToLocalStartMs(addDays(d, 1)) - 1; deadline.t = Date.now() + 8000;
+      const r = await httpGet(PUNCH_BASES[0] + "daily-activity", { startDate: a, endDate: b, punchList: true, adjustmentList: true });
+      const e = (r || []).find(x => x.id === emp), ocultar = k => /name|cpf|pis|mail|photo|image|pin|phone|address/i.test(k);
+      const lim = o => Array.isArray(o) ? o.slice(0, 6).map(lim) : (o && typeof o === "object") ? Object.fromEntries(Object.entries(o).filter(([k]) => !ocultar(k)).map(([k, v]) => [k, lim(v)])) : (typeof o === "string" ? o.slice(0, 40) : o);
+      return json({ dia: d, total_funcionarios: (r || []).length, ids: (r || []).map(x => x.id).slice(0, 60), encontrado: !!e, registro: e ? lim(e) : null });
+    }
     if (path === "/api/diagnose" && req.method === "GET") {
       const redact = o => { const bad = ["cpf", "email", "pis", "phone", "ctps", "name", "birth", "lat", "lon", "photo", "image", "address", "pin"];
         if (Array.isArray(o)) return o.map(redact); if (o && typeof o === "object") return Object.fromEntries(Object.entries(o).map(([k, v]) => [k, bad.some(b => k.toLowerCase().includes(b)) ? "***" : redact(v)])); return o; };
