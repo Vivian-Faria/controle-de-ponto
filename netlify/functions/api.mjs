@@ -385,6 +385,16 @@ export default async (req) => {
       try { deadline.t = Date.now() + 8000; const r = await httpGet(PUNCH_BASES[0] + "workData", { startDateInMillis: a, endDateInMillis: b }); out.workData_total = (r || []).length; out.workData = (r || []).filter(x => x.employeeId === emp).slice(0, 10).map(lim); } catch (e) { out.workData_erro = e.message.slice(0, 200); }
       return json(out);
     }
+    if (path === "/api/probe6" && req.method === "GET") {      // GET genérico (só leitura) em endereços do Tangerino, para diagnóstico: mostra a estrutura e se o funcionário aparece
+      const q = new URL(req.url).searchParams, u = q.get("u") || "", emp = q.get("emp") || "";
+      if (!/^https:\/\/(apis|employer)\.tangerino\.com\.br\//.test(u)) return json({ error: "endereço não permitido" }, 400);
+      let params = {}; try { params = JSON.parse(q.get("p") || "{}"); } catch { return json({ error: "p inválido" }, 400); }
+      deadline.t = Date.now() + 8000;
+      const shape = (o, d = 0) => Array.isArray(o) ? { "[n]": o.length, "[0]": o.length && d < 4 ? shape(o[0], d + 1) : null } : (o && typeof o === "object") ? (d > 4 ? "{...}" : Object.fromEntries(Object.entries(o).filter(([k]) => !/name|cpf|pis|mail|photo|image|pin|phone|address/i.test(k)).map(([k, v]) => [k, shape(v, d + 1)]))) : (typeof o === "string" ? "str" : o === null ? "null" : typeof o);
+      try { const r = await httpGet(u, params), txt = JSON.stringify(r); const n = emp ? txt.split(emp).length - 1 : null; const lista = Array.isArray(r) ? r : (r?.content || null);
+        const meus = emp && lista ? lista.filter(x => JSON.stringify(x).includes(emp)).slice(0, 4).map(x => JSON.stringify(x).replace(/"(name|email|cpf|pis|photo)[^"]*":"[^"]*",?/gi, "").slice(0, 600)) : null;
+        return json({ ok: true, ocorrencias_emp: n, estrutura: shape(r), meus }); } catch (e) { return json({ ok: false, erro: e.message.slice(0, 300) }); }
+    }
     if (path === "/api/diagnose" && req.method === "GET") {
       const redact = o => { const bad = ["cpf", "email", "pis", "phone", "ctps", "name", "birth", "lat", "lon", "photo", "image", "address", "pin"];
         if (Array.isArray(o)) return o.map(redact); if (o && typeof o === "object") return Object.fromEntries(Object.entries(o).map(([k, v]) => [k, bad.some(b => k.toLowerCase().includes(b)) ? "***" : redact(v)])); return o; };
