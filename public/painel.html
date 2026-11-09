@@ -140,7 +140,7 @@ function render(){if(!DATA)return;const q=$('q').value.toLowerCase();
       <td>${d.marks.map(m=>m[0]+'–'+(m[1]||'?')).join(' · ')||'—'}</td><td class="num">${hm(d.worked)}</td><td class="num">${hm(d.expected)}</td>
       <td class="num ${d.balance<0?'neg':d.balance>0?'pos':''}">${d.balance?hm(d.balance):'—'}</td></tr>`).join('')+`</tbody></table></td></tr>`;
     return h}).join('')||'<tr><td colspan="8">Nenhum resultado.</td></tr>';
-  $('foot').textContent=`Período ${DATA.start} a ${DATA.end} · tolerância de atraso: ${DATA.tolerance} min · gerado em ${DATA.generated}`}
+  $('foot').textContent=`Período ${DATA.start} a ${DATA.end} · tolerância de atraso: ${DATA.tolerance} min · gerado em ${DATA.generated}`+(DATA.aviso?` · ⚠ ${DATA.aviso}`:'')}
 function tog(id){open.has(id)?open.delete(id):open.add(id);render()}
 
 function showTab(n){[1,2,3,4].forEach(i=>{if(!$('pg'+i))return;$('pg'+i).style.display=n===i?'':'none';$('t'+i).className='tab'+(n===i?' on':'')});
