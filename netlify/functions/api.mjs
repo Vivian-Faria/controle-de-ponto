@@ -59,7 +59,23 @@ async function paged(url, params = {}, size = 200) {
   return items;
 }
 const memo = new Map();
-async function cached(key, ttl, fn) { const h = memo.get(key); if (h && Date.now() - h.t < ttl) return h.v; const v = await fn(); memo.set(key, { t: Date.now(), v }); return v; }
+// Cadastro de funcionários e escalas vêm do "employer.tangerino": se ele cair (manutenção/503), usa a última cópia boa guardada e avisa na tela.
+let avisoReserva = null;
+async function cached(key, ttl, fn, reserva) {
+  const h = memo.get(key); if (h && Date.now() - h.t < ttl) return h.v;
+  let v;
+  try { v = await fn(); }
+  catch (e) {
+    if (!reserva || e.upstream === 401 || e.upstream === 403) throw e;
+    const s = await store().get("reserva_" + reserva, { type: "json" }).catch(() => null);
+    if (!s) throw e;
+    const q = localParts(s.t); avisoReserva = `Tangerino fora do ar: usando ${reserva} salvos em ${pad(q.d)}/${pad(q.m)} ${pad(q.h)}:${pad(q.mi)}`;
+    return s.v;                                    // não guarda em memória: a próxima chamada tenta o Tangerino de novo
+  }
+  memo.set(key, { t: Date.now(), v });
+  if (reserva) store().setJSON("reserva_" + reserva, { t: Date.now(), v }).catch(() => {});
+  return v;
+}
 let punchBase = null, punchVariant = null;
 // Swagger oficial (apis.tangerino.com.br/punch): startDate/endDate são TEXTO; o filtro em milissegundos é startDateInMillis/endDateInMillis.
 const PUNCH_VARIANTS = [
@@ -104,8 +120,8 @@ async function fetchPunches(a, b) {
   }
   throw Object.assign(new Error("Não consegui acessar a API de pontos. Tentativas: " + tried.join(" | ")), { status: 502 });
 }
-const loadEmployees = () => cached("emp", 600000, () => paged(EMPLOYER + "/employee/find-all"));
-const loadSchedules = () => cached("sch", 600000, async () => Object.fromEntries((await paged(EMPLOYER + "/work-schedule")).map(s => [s.id, s])));
+const loadEmployees = () => cached("emp", 600000, () => paged(EMPLOYER + "/employee/find-all"), "cadastro de funcionários");
+const loadSchedules = () => cached("sch", 600000, async () => Object.fromEntries((await paged(EMPLOYER + "/work-schedule")).map(s => [s.id, s])), "escalas");
 const normName = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 // histórico importado do Tangerino (relatório "Coleta de Pontos Originais", setembro/2026): só entra onde a API não trouxe a batida
 async function withHistory(api, a, b) {
@@ -154,6 +170,7 @@ const hmFmt = m => { const s = m < 0 ? "-" : ""; m = Math.abs(Math.round(m)); re
 
 // ------------------------------------------------------------ análise
 async function analyze(d0, d1) {
+  avisoReserva = null;
   const [empsAll, schedules, hor, hubs, punches, adjs, exc] = await Promise.all([loadEmployees(), loadSchedules(), readKey("horarios"), readKey("hubs"), loadPunches(d0, d1), loadAdjustments(d0, d1), readKey("excluidos")]);
   // Uma pessoa com mais de um cadastro no Tangerino (ex.: 6x1 e intermitente) vira UMA linha: as batidas de todos os cadastros dela são somadas,
   // não importa em qual ele bateu. Vale o cadastro que não está excluído (de preferência o de escala fixa); os demais só emprestam as batidas.
@@ -270,7 +287,7 @@ async function analyze(d0, d1) {
   }
   result.sort((a, b) => b.totals.absences - a.totals.absences || b.totals.late - a.totals.late || a.name.localeCompare(b.name));
   const np = localParts(nowMs);
-  return { start: d0, end: d1, tolerance: TOL, generated: `${pad(np.d)}/${pad(np.m)}/${np.y} ${pad(np.h)}:${pad(np.mi)}`, employees: result };
+  return { start: d0, end: d1, tolerance: TOL, generated: `${pad(np.d)}/${pad(np.m)}/${np.y} ${pad(np.h)}:${pad(np.mi)}`, aviso: avisoReserva, employees: result };
 }
 
 // ------------------------------------------------------------ autenticação (senha + cookie assinado)
