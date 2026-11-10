@@ -7,6 +7,7 @@ export const VALOR_HORA_CENTS = 1250;                 // R$ 12,50 por hora
 const LIMITE_ALMOCO_MS = 30 * 60000;                  // até 30 min o intervalo é pago; acima disso desconta só o excedente
 const TZ_H = parseFloat((process.env.TZ_OFFSET_HOURS ?? "-3").toString());
 const HOUR = 3600000, DAY = 86400000;
+const MAX_JORNADA_MS = 14 * HOUR;                // batida mais de 14 h depois da anterior = jornada esquecida aberta; só o administrador ajusta
 const TIPOS = ["entrada", "saida_almoco", "retorno_almoco", "saida_final"];
 const ROTULO = { entrada: "Entrada", saida_almoco: "Saída para almoço", retorno_almoco: "Retorno do almoço", saida_final: "Saída final" };
 const STATUS_ROTULO = { aguardando: "Aguardando início", atividade: "Em atividade", intervalo: "Em intervalo", concluida: "Jornada concluída", cancelada: "Cancelada" };
@@ -229,6 +230,24 @@ export async function rotaFreela(req, path, ctx) {
       if (j.marks.saida_final) { j.calc = calcular(j.marks, j.pausas); j.dp = { status: "pendente", tentativas: 0, ...(j.dp?.reaberta ? { reaberta: true } : {}) }; await store().delete("open/" + j.id); }
       await putJ(key, j); return json({ ok: true, jornada: visaoAdmin(j) });
     }
+    if (path === "/api/freela/admin/dividir" && req.method === "POST") {      // jornada esquecida aberta que "engoliu" o dia seguinte: separa em duas, guardando os horários originais
+      const b = await body(), key = keyOfId(b.id), j = key && await getJ(key); if (!j) return erro("Jornada não encontrada", 404);
+      const m = j.marks, motivo = String(b.motivo || "").trim(); if (motivo.length < 5) return erro("Informe o motivo (mín. 5 caracteres).");
+      if (!m.saida_almoco || !m.retorno_almoco || !m.saida_final || (j.pausas || []).length) return erro("Esta jornada não tem o formato esperado para dividir.");
+      const d2 = isoOf(m.saida_final); if (d2 <= j.data || !/^\d{2}:\d{2}$/.test(b.entrada2 || "")) return erro("A saída final precisa ser de um dia posterior e a entrada do novo dia precisa ser HH:MM.");
+      const e2 = localToMs(d2, b.entrada2); if (e2 >= m.saida_final) return erro("A entrada do novo dia precisa ser antes da saída.");
+      const id2 = idOf(d2, j.cpf), key2 = keyOfId(id2); if (await getJ(key2)) return erro("Já existe jornada neste CPF em " + d2 + ".", 409);
+      const orig = { marks: { ...m }, retomadas: j.retomadas || [], dp: j.dp || null };
+      const j2 = { id: id2, data: d2, nome: j.nome, cpf: j.cpf, pix: j.pix, unidade: j.unidade, criadoEm: Date.now(), marks: { entrada: e2, saida_final: m.saida_final },
+        meta: j.meta?.saida_final ? { saida_final: j.meta.saida_final } : {}, ajustes: [{ tipo: "entrada", hora: b.entrada2, data: d2, motivo, em: Date.now() }], divididaDe: j.id };
+      const fs = await getFoto(j.id, "saida_final"); if (fs) await putFoto(id2, "saida_final", fs);
+      j2.calc = calcular(j2.marks, []); j2.dp = { status: "pendente", tentativas: 0 };
+      j.marks = { entrada: m.entrada, saida_final: m.saida_almoco }; delete j.retomadas; delete j.meta.retomada; delete j.meta.saida_final; delete j.meta.saida_almoco; delete j.meta.retorno_almoco;
+      (j.correcoes = j.correcoes || []).push({ motivo, em: Date.now(), original: orig, novaJornada: id2 });
+      j.calc = calcular(j.marks, []); j.dp = { status: "pendente", tentativas: 0 };
+      await store().delete("open/" + j.id); await store().delete("open/" + id2); await putJ(key, j); await putJ(key2, j2);
+      return json({ ok: true, jornada: visaoAdmin(j), nova: visaoAdmin(j2) });
+    }
     if (path === "/api/freela/admin/cancelar" && req.method === "POST") {      // não apaga: marca como cancelada e guarda o motivo
       const b = await body(), key = keyOfId(b.id), j = key && await getJ(key); if (!j) return erro("Jornada não encontrada", 404);
       const motivo = String(b.motivo || "").trim(); if (motivo.length < 5) return erro("Informe o motivo (mín. 5 caracteres).");
@@ -306,6 +325,7 @@ export async function rotaFreela(req, path, ctx) {
       const j = await getJ(key); if (!j) return erro("Jornada não encontrada", 404);
       if (!proximos(j).includes(b.tipo)) return erro(j.marks.saida_final ? "Esta jornada já foi concluída." : `Sequência inválida. Próximo registro: ${proximos(j).map(t => ROTULO[t]).join(" ou ")}.`, 409);
       const agora = Date.now(), ult = Math.max(...Object.values(j.marks)); if (agora - ult < 10000) return erro("Batida muito rápida; aguarde alguns segundos.", 429);
+      if (agora - ult > MAX_JORNADA_MS) return erro("Esta jornada ficou aberta desde " + j.data.split("-").reverse().join("/") + " e não pode ser encerrada agora. Procure o responsável para ajustar o horário.", 409);
       const ev = lerEvidencia(b, ip, req.headers.get("user-agent") || b.ua); if (ev.erro) return erro(ev.erro);
       j.marks[b.tipo] = agora; (j.meta = j.meta || {})[b.tipo] = ev.meta; await putFoto(id, b.tipo, ev.foto);
       if (b.tipo === "saida_final") {
