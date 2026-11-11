@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Furo de escala</title>
+<meta name="robots" content="noindex,nofollow">
+<style>
+  :root{--bg:#f5f6f8;--card:#fff;--tx:#1d2330;--mut:#6b7385;--bd:#e3e6ec;--pri:#5b2a86;--red:#c62828;--redbg:#fdecec;--ok:#1b7f3b;--okbg:#e6f4ea;--warn:#8a5a00;--warnbg:#fff4d6}
+  @media(prefers-color-scheme:dark){:root{--bg:#14161b;--card:#1d2027;--tx:#e8eaf0;--mut:#9aa1b2;--bd:#2c303a;--red:#ff8a80;--redbg:#3a1d1f;--ok:#7fd99a;--okbg:#17301f;--warn:#ffd27a;--warnbg:#3a2f12}}
+  *{box-sizing:border-box} body{margin:0;min-height:100vh;font:16px/1.45 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx);padding:16px}
+  main{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:12px}
+  h1{margin:0;font-size:20px} .mut{color:var(--mut);font-size:14px}
+  .chip{display:inline-block;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:600}
+  .aberto{background:var(--redbg);color:var(--red)} .cuidando,.trocado{background:var(--warnbg);color:var(--warn)} .resolvido{background:var(--okbg);color:var(--ok)}
+  button,input{font:inherit;padding:14px;border-radius:12px;border:1px solid var(--bd);background:var(--card);color:var(--tx);width:100%}
+  button{cursor:pointer;font-weight:700;background:var(--pri);color:#fff;border-color:var(--pri)} button.sec{background:var(--card);color:var(--pri)} button:disabled{opacity:.6}
+  ul{list-style:none;margin:0;padding:0;font-size:14px;display:flex;flex-direction:column;gap:6px} li b{font-variant-numeric:tabular-nums}
+  .err{color:var(--red);font-size:14px;min-height:18px}
+</style>
+</head>
+<body>
+<main id="m"><div class="card">Carregando…</div></main>
+<script>
+const q=new URLSearchParams(location.search),D=q.get('d'),F=q.get('f'),T=q.get('t'),m=document.getElementById('m');
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ROT={aberto:'Aguardando você',cuidando:'Você está cuidando',trocado:'Troca informada — aguardando chegada',resolvido:'Encerrado'};
+let colab=[];
+async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({d:D,f:F,t:T,...body})}:undefined);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Erro '+r.status);return j}
+async function load(){
+  try{const j=await api(`/api/alerta/furo?d=${encodeURIComponent(D)}&f=${encodeURIComponent(F)}&t=${encodeURIComponent(T)}`);colab=j.colaboradores;draw(j.furo)}
+  catch(e){m.innerHTML=`<div class="card"><h1>Link inválido</h1><p class="mut">${esc(e.message)}</p></div>`}
+}
+function draw(f){
+  const quem=f.vazia?'Vaga sem ninguém escalado':esc(f.nome);
+  const ev=f.eventos.map(e=>`<li><b>${esc(e.hm)}</b> ${esc(e.msg)}</li>`).join('');
+  m.innerHTML=`<div class="card"><span class="chip ${f.estado}">${ROT[f.estado]||f.estado}</span>
+    <h1>${esc(f.hubNome)} · ${esc(f.turno)}</h1>
+    <div><b>${quem}</b><div class="mut">Previsto ${esc(f.inicioHm)}–${esc(f.fimHm)}${f.substituto?` · cobertura: <b>${esc(f.substituto.nome)}</b>`:''}</div></div></div>
+    ${f.estado==='resolvido'?`<div class="card"><b>Tudo certo, este furo foi encerrado.</b><div class="mut">Você não precisa fazer mais nada.</div></div>`:`
+    <div class="card"><button id="b1" ${f.estado==='cuidando'?'disabled':''}>${f.estado==='cuidando'?'✔ Já avisei que estou cuidando':'Estou cuidando'}</button>
+      <div class="mut">Avisa que você já viu e está resolvendo.</div></div>
+    <div class="card"><b>Já cobri com outra pessoa</b>
+      <input id="sub" list="lc" placeholder="Nome de quem vai cobrir" autocomplete="off"><datalist id="lc">${colab.map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+      <button id="b2" class="sec">Informar quem cobriu</button><div class="err" id="er"></div>
+      <div class="mut">Lembre de ajustar o nome na escala também. Você será avisado quando a pessoa bater o ponto.</div></div>`}
+    <div class="card"><b>Histórico</b><ul>${ev||'<li class="mut">Sem registros.</li>'}</ul></div>`;
+  const b1=document.getElementById('b1'),b2=document.getElementById('b2');
+  if(b1)b1.onclick=()=>go(b1,{acao:'cuidando'});
+  if(b2)b2.onclick=()=>go(b2,{acao:'trocou',substituto:document.getElementById('sub').value});
+}
+async function go(btn,body){btn.disabled=true;const er=document.getElementById('er');if(er)er.textContent='';
+  try{await api('/api/alerta/responder',body);await load()}catch(e){if(er)er.textContent=e.message;else alert(e.message);btn.disabled=false}}
+load();
+</script>
+</body>
+</html>
