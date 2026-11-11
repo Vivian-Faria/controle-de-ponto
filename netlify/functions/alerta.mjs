@@ -171,7 +171,7 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
       if (s.compareceu || s.cheg) continue;
       if (!s.vazia && substitutos.has(nrm(s.nome))) continue;
       const prazo = s.vazia ? s.inicio - 2 * HOUR : s.inicio + tol * 60000;
-      if (agora < prazo || agora >= s.fim) continue;
+      if (agora < prazo || agora >= s.fim || agora - Math.max(prazo, s.inicio) > 3 * HOUR) continue;      // não cria alerta atrasado demais (ex.: vigia ligado depois do início); continua visível no painel
       const f = { id: s.id, dia, hubId: s.hubId, hubNome: s.hubNome, turnoId: s.turnoId, turno: s.turno, vaga: s.vaga, nome: s.nome, vazia: s.vazia, inicio: s.inicio, fim: s.fim, estado: "aberto", criadoEm: agora, eventos: [] };
       const fora = s.vazia ? null : foraDoHub(s, pres, cfgA), atraso = Math.max(0, Math.round((agora - s.inicio) / 60000));
       const total = sit.filter(x => x.hubId === s.hubId && x.turnoId === s.turnoId).length, ok = sit.filter(x => x.hubId === s.hubId && x.turnoId === s.turnoId && (x.cheg || x.compareceu)).length;
