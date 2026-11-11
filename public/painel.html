@@ -61,7 +61,7 @@
     <input type="date" id="d0"> <span>até</span> <input type="date" id="d1">
     <select id="hubf" onchange="render()"><option value="">Todos os hubs</option></select>
     <input id="q" placeholder="Buscar funcionário…" oninput="render()">
-    <button onclick="load()">Atualizar</button> <button class="ghost" onclick="logout()">Sair</button>
+    <button onclick="load()">Atualizar</button> <button class="ghost" onclick="location.href='/central.html'">🚨 Alertas</button> <button class="ghost" onclick="logout()">Sair</button>
   </div>
 </header>
 <div class="tabs"><button class="tab on" id="t1" onclick="showTab(1)">Painel</button><button class="tab" id="t3" onclick="showTab(3)">Hubs</button><button class="tab" id="t2" onclick="showTab(2)">Horários</button><button class="tab" id="t4" onclick="showTab(4)">Freelancers</button></div>
