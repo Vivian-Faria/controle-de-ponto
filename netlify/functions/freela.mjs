@@ -176,6 +176,9 @@ const visaoAdmin = j => { const c = calcular(j.marks, j.pausas), st = statusDe(j
 const rate = new Map();
 function limite(ip, max = 90) { const w = Math.floor(Date.now() / 60000), k = ip + ":" + w; const n = (rate.get(k) || 0) + 1; rate.set(k, n); if (rate.size > 5000) for (const x of rate.keys()) if (!x.endsWith(":" + w)) rate.delete(x); return n <= max; }
 
+export async function entradasFreela(iso) {      // batidas de entrada dos freelancers em um dia (central de alertas)
+  return (await listarPeriodo(iso, iso)).filter(j => !j.cancelada && j.marks?.entrada).map(j => ({ fonte: "freela", nome: j.nome, unidade: j.unidade, t: j.marks.entrada }));
+}
 export async function listarPeriodo(d0, d1) {
   const { blobs } = await store().list({ prefix: "j/" });
   const keys = blobs.map(b => b.key).filter(k => { const d = k.split("/")[1]; return d >= d0 && d <= d1; }), out = [];
