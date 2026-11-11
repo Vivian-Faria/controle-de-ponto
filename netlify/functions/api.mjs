@@ -2,7 +2,8 @@
 import { getStore } from "@netlify/blobs";
 import crypto from "node:crypto";
 import HIST from "./historico.json";
-import { rotaFreela } from "./freela.mjs";
+import { rotaFreela, entradasFreela } from "./freela.mjs";
+import { rotaAlerta } from "./alerta.mjs";
 
 // ------------------------------------------------------------ configuração (variáveis de ambiente do Netlify)
 const env = (k, d = "") => (process.env[k] ?? d).toString().trim();
@@ -135,6 +136,14 @@ async function withHistory(api, a, b) {
   return api.concat(extra);
 }
 const loadPunches = (d0, d1) => { const a = isoToLocalStartMs(d0), b = isoToLocalStartMs(addDays(d1, 1)) - 1; return cached(`p${a}-${b}`, 120000, async () => withHistory(await fetchPunches(a, b), a, b)); };
+// quem bateu ponto em um dia (Tangerino + freelancers), com o hub de cada um: base da central de alertas de furo de escala
+export async function presencasDoDia(iso) {
+  deadline.t = Date.now() + 22000;
+  const [emps, hubs, punches] = await Promise.all([loadEmployees(), readKey("hubs"), loadPunches(iso, iso)]), byId = new Map(emps.map(e => [e.id, e])), out = [];
+  for (const p of punches) { const eid = empId(p), din = pick(p, "dateIn", "startDate", "date", "punchDate"), e = byId.get(eid); if (!e || din == null) continue;
+    out.push({ fonte: "tangerino", nome: pick(e, "name", "nome") || "", unidade: hubs[String(eid)] || "", t: din }); }
+  return out.concat(await entradasFreela(iso));
+}
 const loadAdjustments = (d0, d1) => { const a = isoToLocalStartMs(d0), b = isoToLocalStartMs(addDays(d1, 1)) - 1;
   return cached(`a${a}-${b}`, 300000, async () => { try { return await paged(EMPLOYER + "/adjustment/find-all", { startDate: a, endDate: b }); } catch { return []; } }); };
 
@@ -291,7 +300,7 @@ async function analyze(d0, d1) {
 }
 
 // ------------------------------------------------------------ autenticação (senha + cookie assinado)
-const sign = s => crypto.createHmac("sha256", SECRET).update(s).digest("base64url");
+export const sign = s => crypto.createHmac("sha256", SECRET).update(s).digest("base64url");
 const makeSession = () => { const exp = Date.now() + 7 * DAY; return `${exp}.${sign(String(exp))}`; };
 function validSession(req) {
   const m = /(?:^|;\s*)ponto_session=([^;]+)/.exec(req.headers.get("cookie") || ""); if (!m) return false;
@@ -325,6 +334,7 @@ export default async (req) => {
     if (path === "/api/logout") return json({ ok: true }, 200, { "Set-Cookie": "ponto_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0" });
     if (path.startsWith("/api/freela")) return await rotaFreela(req, path, { json, secret: SECRET, isAdmin: validSession, isFreela: validFreela,
       freelaCookie: () => `freela_session=${makeFreela()}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${14 * 3600}` });
+    if (path.startsWith("/api/alerta")) return await rotaAlerta(req, path, { json, isAdmin: validSession, sign, presencas: presencasDoDia });
     if (!validSession(req)) return json({ error: "Não autorizado" }, 401);
 
     if (path === "/api/report" && req.method === "GET") {
