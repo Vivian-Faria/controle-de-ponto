@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Central de alertas</title>
+<meta name="robots" content="noindex,nofollow">
+<style>
+  :root{--bg:#f5f6f8;--card:#fff;--tx:#1d2330;--mut:#6b7385;--bd:#e3e6ec;--pri:#5b2a86;--red:#c62828;--redbg:#fdecec;--ok:#1b7f3b;--okbg:#e6f4ea;--warn:#8a5a00;--warnbg:#fff4d6}
+  @media(prefers-color-scheme:dark){:root{--bg:#14161b;--card:#1d2027;--tx:#e8eaf0;--mut:#9aa1b2;--bd:#2c303a;--red:#ff8a80;--redbg:#3a1d1f;--ok:#7fd99a;--okbg:#17301f;--warn:#ffd27a;--warnbg:#3a2f12}}
+  *{box-sizing:border-box} body{margin:0;font:15px/1.45 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx)}
+  header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:14px 16px;background:var(--card);border-bottom:1px solid var(--bd)}
+  header h1{font-size:18px;margin:0;color:var(--pri);flex:1} a{color:var(--pri)}
+  main{max-width:1100px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:16px}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px}
+  h2{margin:0 0 10px;font-size:16px} .mut{color:var(--mut);font-size:13px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+  .chip{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:700}
+  .completo,.presente,.coberto,.resolvido,.enviado{background:var(--okbg);color:var(--ok)} .furo,.ausente,.aberto,.erro,.vaga{background:var(--redbg);color:var(--red)}
+  .aguardando,.cuidando,.trocado,.simulado{background:var(--warnbg);color:var(--warn)}
+  .turno{border-top:1px solid var(--bd);padding-top:8px;margin-top:8px} .row{display:flex;justify-content:space-between;gap:8px;align-items:center}
+  ul{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:14px} li{display:flex;justify-content:space-between;gap:8px}
+  .tl li{justify-content:flex-start} .tl b{font-variant-numeric:tabular-nums;min-width:44px}
+  input,button,select{font:inherit;padding:8px 10px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--tx)} button{background:var(--pri);color:#fff;border-color:var(--pri);font-weight:600;cursor:pointer}
+  button.sec{background:var(--card);color:var(--pri)} table{width:100%;border-collapse:collapse;font-size:14px} td,th{padding:6px;border-bottom:1px solid var(--bd);text-align:left;vertical-align:top} td input{width:100%}
+  .msg{border-top:1px solid var(--bd);padding:8px 0;white-space:pre-wrap;font-size:14px}
+</style>
+</head>
+<body>
+<header><h1>🚨 Central de alertas de escala</h1><a href="/painel.html">← Painel de ponto</a><input type="date" id="dia"><button id="atu" class="sec">Atualizar</button></header>
+<main>
+  <div class="card" id="aviso" style="display:none"></div>
+  <section><h2>Unidades — <span id="tit"></span></h2><div class="grid" id="hubs"></div></section>
+  <section class="card"><h2>Furos do dia</h2><div id="furos" class="mut">Carregando…</div></section>
+  <section class="card"><h2>Linha do tempo</h2><ul class="tl" id="tl"></ul></section>
+  <section class="card"><h2>Mensagens (<span id="prov"></span>)</h2><div class="mut">Tudo o que o sistema enviou, ou enviaria, por WhatsApp hoje.</div><div id="msgs"></div></section>
+  <section class="card"><h2>Configuração</h2><div id="cfg" class="mut">Carregando…</div></section>
+</main>
+<script>
+const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const hoje=()=>new Date(Date.now()-3*3600e3).toISOString().slice(0,10);
+$('dia').value=hoje();
+async function get(p){const r=await fetch(p,{credentials:'same-origin'});if(r.status===401){location.href='/';throw new Error('login')}const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
+const ST={completo:'Completo',furo:'Com furo',aguardando:'Aguardando',presente:'Presente',ausente:'Ausente',coberto:'Coberto','vaga vazia':'Vaga vazia'};
+async function load(){
+  const d=$('dia').value;let j;
+  try{j=await get('/api/alerta/painel?d='+d)}catch(e){$('hubs').innerHTML='<div class="card">'+esc(e.message)+'</div>';return}
+  $('tit').textContent=d.split('-').reverse().join('/');$('prov').textContent=j.provedor==='ligado'?'WhatsApp ligado':'modo simulado: nada é enviado de verdade';
+  const hubs=j.resumo?.hubs||[];
+  $('hubs').innerHTML=hubs.map(h=>{const ts=h.turnos;const tem=ts.length;const furo=ts.some(t=>t.status==='furo');const ok=tem&&ts.every(t=>t.status==='completo');
+    return `<div class="card"><div class="row"><b>${esc(h.nome)}</b><span class="chip ${furo?'furo':ok?'completo':'aguardando'}">${!tem?'Sem turno':furo?'Com furo':ok?'Completo':'Aguardando'}</span></div>
+    <div class="mut">Líder: ${esc(h.lider||'— não definido')}</div>
+    ${ts.map(t=>`<div class="turno"><div class="row"><span>${esc(t.nome)} · ${esc(t.inicio)}</span><span class="chip ${t.status}">${t.presentes}/${t.esperados} ${ST[t.status]}</span></div>
+      <ul>${t.pessoas.map(p=>`<li><span>${esc(p.nome)} <span class="mut">${esc(p.previsto)}</span></span><span><span class="mut">${esc(p.chegou||'')}</span> <span class="chip ${p.estado==='vaga vazia'?'vaga':p.estado}">${esc(ST[p.estado]||p.estado)}</span></span></li>`).join('')}</ul></div>`).join('')}</div>`}).join('')||'<div class="card mut">Sem dados para este dia ainda. O vigia roda a cada 5 minutos.</div>';
+  $('furos').innerHTML=j.furos.length?'<ul>'+j.furos.map(f=>`<li><span><b>${esc(f.hub)}</b> · ${esc(f.turno)} ${esc(f.inicio)} — ${f.vazia?'vaga sem ninguém':esc(f.nome)}${f.substituto?` → ${esc(f.substituto)}`:''}</span><span class="chip ${f.estado}">${esc(f.estado)}</span></li>`).join('')+'</ul>':'Nenhum furo neste dia. 🎉';
+  $('tl').innerHTML=j.linha.map(e=>`<li><b>${esc(e.hm)}</b><span><b style="min-width:0">${esc(e.hub)}</b> (${esc(e.turno)}): ${esc(e.msg)}</span></li>`).join('')||'<li class="mut">Sem eventos.</li>';
+  $('msgs').innerHTML=j.mensagens.map(m=>`<div class="msg"><span class="mut">${esc(m.hm)} · ${esc(m.para_quem==='gestor'?'gestora':'líder')} ${esc(m.para)} · </span><span class="chip ${m.estado||''}">${esc(m.estado||'')}</span>\n${esc(m.texto)}</div>`).join('')||'<div class="mut">Nenhuma mensagem hoje.</div>';
+}
+let CFG=null,HUBS=[];
+async function loadCfg(){
+  const [c,h]=await Promise.all([get('/api/alerta/config'),get('/api/alerta/escala-hubs').catch(()=>({hubs:[]}))]);CFG=c.config||{hubs:{},gestor:{}};HUBS=h.hubs;
+  const v=(x)=>esc(x??'');
+  $('cfg').innerHTML=`<table><tr><th>Hub na escala</th><th>Líder</th><th>WhatsApp do líder</th><th>Hub(s) no Tangerino</th><th>Unidade(s) freela</th></tr>
+  ${HUBS.map(h=>{const c=CFG.hubs[h.id]||{};return `<tr data-h="${esc(h.id)}"><td><b>${esc(h.nome)}</b></td><td><input data-k="nome" value="${v(c.lider?.nome)}"></td><td><input data-k="tel" value="${v(c.lider?.tel)}" placeholder="5531999999999"></td><td><input data-k="ponto" value="${v((c.ponto||[]).join(', '))}"></td><td><input data-k="freela" value="${v((c.freela||[]).join(', '))}"></td></tr>`}).join('')}</table>
+  <p>Gestora (relatório às <input id="rh" type="number" min="0" max="23" style="width:64px" value="${v(CFG.relatorioHora??10)}">h e escalonamento): <input id="gt" value="${v(CFG.gestor?.tel)}" placeholder="5531999999999"></p>
+  <p>Tolerância (min) <input id="tol" type="number" style="width:70px" value="${v(CFG.tolerancia??15)}"> · Subir para a gestora após (min) <input id="esc" type="number" style="width:70px" value="${v(CFG.escalarMin??15)}"> · Lembrete a cada (min) <input id="lem" type="number" style="width:70px" value="${v(CFG.lembreteMin??30)}"></p>
+  <button id="sv">Salvar configuração</button> <span id="svm" class="mut"></span>`;
+  $('sv').onclick=async()=>{const hubs={};document.querySelectorAll('tr[data-h]').forEach(tr=>{const g=k=>tr.querySelector(`[data-k=${k}]`).value.trim(),l=s=>s.split(',').map(x=>x.trim()).filter(Boolean);
+      hubs[tr.dataset.h]={lider:{nome:g('nome'),tel:g('tel')},ponto:l(g('ponto')),freela:l(g('freela'))}});
+    const r=await fetch('/api/alerta/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tolerancia:$('tol').value,escalarMin:$('esc').value,lembreteMin:$('lem').value,relatorioHora:+$('rh').value,gestor:{tel:$('gt').value.trim()},hubs})});
+    $('svm').textContent=r.ok?'Salvo ✔':'Erro ao salvar'}
+}
+$('atu').onclick=load;$('dia').onchange=load;load();loadCfg().catch(e=>$('cfg').textContent=e.message);setInterval(load,60000);
+</script>
+</body>
+</html>
