@@ -6,65 +6,184 @@
 <title>Central de alertas</title>
 <meta name="robots" content="noindex,nofollow">
 <style>
-  :root{--bg:#f5f6f8;--card:#fff;--tx:#1d2330;--mut:#6b7385;--bd:#e3e6ec;--pri:#5b2a86;--red:#c62828;--redbg:#fdecec;--ok:#1b7f3b;--okbg:#e6f4ea;--warn:#8a5a00;--warnbg:#fff4d6}
-  @media(prefers-color-scheme:dark){:root{--bg:#14161b;--card:#1d2027;--tx:#e8eaf0;--mut:#9aa1b2;--bd:#2c303a;--red:#ff8a80;--redbg:#3a1d1f;--ok:#7fd99a;--okbg:#17301f;--warn:#ffd27a;--warnbg:#3a2f12}}
-  *{box-sizing:border-box} body{margin:0;font:15px/1.45 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx)}
-  header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:14px 16px;background:var(--card);border-bottom:1px solid var(--bd)}
-  header h1{font-size:18px;margin:0;color:var(--pri);flex:1} a{color:var(--pri)}
-  main{max-width:1100px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:16px}
-  .card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px}
-  h2{margin:0 0 10px;font-size:16px} .mut{color:var(--mut);font-size:13px}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
-  .chip{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:700}
-  .completo,.presente,.coberto,.resolvido,.enviado{background:var(--okbg);color:var(--ok)} .furo,.ausente,.aberto,.erro,.vaga{background:var(--redbg);color:var(--red)}
+  :root{
+    --bg:#f4f5f9;--card:#fff;--tx:#1b2030;--mut:#707789;--bd:#e6e8ef;--soft:#f0f1f6;
+    --pri:#5b2a86;--pri2:#7a45a8;--prisoft:#f1eaf8;
+    --red:#c62828;--redbg:#fdecec;--ok:#14803a;--okbg:#e4f5ea;--warn:#8a5a00;--warnbg:#fff3d1;
+    --sh:0 1px 2px rgba(20,24,40,.05),0 4px 14px rgba(20,24,40,.05);
+  }
+  @media(prefers-color-scheme:dark){:root{
+    --bg:#101218;--card:#1a1d26;--tx:#e9ebf2;--mut:#98a0b3;--bd:#2a2e3a;--soft:#232734;
+    --pri:#b48be0;--pri2:#c8a6ee;--prisoft:#2a2038;
+    --red:#ff8f85;--redbg:#3a1e21;--ok:#7fdc9b;--okbg:#17301f;--warn:#ffd27a;--warnbg:#3a2f12;--sh:none}}
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--tx);-webkit-font-smoothing:antialiased}
+  a{color:var(--pri);text-decoration:none}
+  .num{font-variant-numeric:tabular-nums}
+
+  header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--card) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--bd)}
+  .bar{max-width:1180px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#5b2a86,#7a45a8);display:grid;place-items:center;color:#fff;font-size:18px}
+  .ttl{flex:1;min-width:180px}
+  .ttl h1{font-size:17px;margin:0;line-height:1.2}
+  .ttl .sub{font-size:12.5px;color:var(--mut);display:flex;align-items:center;gap:6px}
+  .live{width:8px;height:8px;border-radius:50%;background:var(--ok);animation:pulse 2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(20,128,58,.5)}70%{box-shadow:0 0 0 7px rgba(20,128,58,0)}100%{box-shadow:0 0 0 0 rgba(20,128,58,0)}}
+  .tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  input,button,select{font:inherit;color:var(--tx)}
+  input{padding:8px 10px;border:1px solid var(--bd);border-radius:10px;background:var(--card)}
+  input:focus{outline:2px solid color-mix(in srgb,var(--pri) 45%,transparent);outline-offset:1px}
+  .btn{display:inline-block;padding:8px 14px;border-radius:10px;border:1px solid var(--bd);background:var(--card);cursor:pointer;font-weight:600;font-size:14px;color:var(--tx)}
+  .btn:hover{background:var(--soft)}
+  .btn.pri{background:#5b2a86;border-color:#5b2a86;color:#fff}
+  .btn.pri:hover{background:#7a45a8}
+
+  main{max-width:1180px;margin:0 auto;padding:20px;display:flex;flex-direction:column;gap:22px}
+  h2{margin:0 0 12px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);font-weight:700;display:flex;align-items:center;gap:8px}
+  h2 .cnt{background:var(--soft);color:var(--tx);border-radius:99px;padding:1px 9px;font-size:12px;letter-spacing:0}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:18px;box-shadow:var(--sh)}
+  .mut{color:var(--mut);font-size:13px}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .kpi{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:14px 16px;box-shadow:var(--sh);position:relative;overflow:hidden}
+  .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c,var(--bd))}
+  .kpi b{display:block;font-size:30px;line-height:1.1;font-weight:750}
+  .kpi span{font-size:12.5px;color:var(--mut)}
+  .kpi.ok{--c:var(--ok)} .kpi.bad{--c:var(--red)} .kpi.wait{--c:#d9a400} .kpi.neu{--c:var(--pri)}
+  .kpi.bad b{color:var(--red)} .kpi.ok b{color:var(--ok)}
+
+  .chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:700;white-space:nowrap}
+  .chip::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+  .completo,.presente,.coberto,.resolvido,.enviado{background:var(--okbg);color:var(--ok)}
+  .furo,.ausente,.aberto,.erro,.vaga{background:var(--redbg);color:var(--red)}
   .aguardando,.cuidando,.trocado,.simulado{background:var(--warnbg);color:var(--warn)}
-  .turno{border-top:1px solid var(--bd);padding-top:8px;margin-top:8px} .row{display:flex;justify-content:space-between;gap:8px;align-items:center}
-  ul{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:14px} li{display:flex;justify-content:space-between;gap:8px}
-  .tl li{justify-content:flex-start} .tl b{font-variant-numeric:tabular-nums;min-width:44px}
-  input,button,select{font:inherit;padding:8px 10px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--tx)} button{background:var(--pri);color:#fff;border-color:var(--pri);font-weight:600;cursor:pointer}
-  button.sec{background:var(--card);color:var(--pri)} table{width:100%;border-collapse:collapse;font-size:14px} td,th{padding:6px;border-bottom:1px solid var(--bd);text-align:left;vertical-align:top} td input{width:100%}
-  .msg{border-top:1px solid var(--bd);padding:8px 0;white-space:pre-wrap;font-size:14px}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;align-items:start}
+  .hub{padding:0;overflow:hidden}
+  .hub.s-furo{border-top:4px solid var(--red)} .hub.s-ok{border-top:4px solid var(--ok)} .hub.s-wait{border-top:4px solid #d9a400} .hub.s-none{border-top:4px solid var(--bd)}
+  .hh{padding:14px 16px 10px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .hh b{font-size:16px}
+  .lider{display:flex;align-items:center;gap:6px;margin-top:3px;font-size:13px;color:var(--mut)}
+  .av{width:20px;height:20px;border-radius:50%;background:var(--prisoft);color:var(--pri);display:grid;place-items:center;font-size:11px;font-weight:700}
+  .turno{border-top:1px solid var(--bd);padding:12px 16px}
+  .th{display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:650;font-size:14px}
+  .th small{color:var(--mut);font-weight:500;margin-left:6px}
+  .prog{height:6px;background:var(--soft);border-radius:99px;overflow:hidden;margin:8px 0 6px}
+  .prog i{display:block;height:100%;border-radius:99px;background:var(--ok);transition:width .4s}
+  .prog.furo i{background:var(--red)} .prog.aguardando i{background:#d9a400}
+  .pc{font-size:12px;color:var(--mut);display:flex;justify-content:space-between}
+  ul{list-style:none;margin:0;padding:0}
+  .pl{margin-top:8px}
+  .pl li{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--bd);font-size:14px}
+  .pl li:last-child{border-bottom:0}
+  .pl .nm{display:flex;align-items:center;gap:8px;min-width:0}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none;background:var(--bd)}
+  .dot.presente,.dot.coberto{background:var(--ok)} .dot.ausente,.dot.vaga{background:var(--red)} .dot.aguardando{background:#d9a400}
+  .pl .hr{color:var(--mut);font-size:12.5px;white-space:nowrap}
+  .pl .cheg{font-weight:650;color:var(--ok);font-size:12.5px;font-variant-numeric:tabular-nums}
+
+  .furo-it{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;background:var(--soft);border-left:4px solid var(--red);margin-bottom:8px}
+  .furo-it.f-cuidando,.furo-it.f-trocado{border-left-color:#d9a400} .furo-it.f-resolvido{border-left-color:var(--ok)}
+  .furo-it b{font-size:14.5px} .furo-it .mut{display:block}
+  .vazio{text-align:center;padding:18px;color:var(--mut)}
+
+  .tl{position:relative;padding:0 0 0 22px}
+  .tl::before{content:"";position:absolute;left:7px;top:6px;bottom:6px;width:2px;background:var(--bd)}
+  .tl li{position:relative;display:flex;gap:12px;padding:6px 0;font-size:14px}
+  .tl li::before{content:"";position:absolute;left:-19px;top:12px;width:10px;height:10px;border-radius:50%;background:var(--pri);border:2px solid var(--card)}
+  .tl .hm{font-weight:700;min-width:46px;font-variant-numeric:tabular-nums}
+  .tl .hub-t{font-weight:650}
+
+  .msgs{display:flex;flex-direction:column;gap:12px;max-height:560px;overflow:auto;padding-right:4px}
+  .m .meta{font-size:12px;color:var(--mut);margin-bottom:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .bub{background:var(--soft);border-radius:4px 14px 14px 14px;padding:10px 13px;white-space:pre-wrap;font-size:14px;max-width:640px;overflow-wrap:anywhere}
+  .m.g .bub{background:var(--prisoft)}
+
+  details.card>summary{cursor:pointer;font-weight:700;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);list-style:none;display:flex;justify-content:space-between}
+  details.card>summary::-webkit-details-marker{display:none}
+  details.card>summary::after{content:"▾"} details[open]>summary::after{content:"▴"}
+  details .body{margin-top:14px;overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:14px;min-width:640px}
+  th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);text-align:left;padding:6px}
+  td{padding:6px;border-top:1px solid var(--bd);vertical-align:middle} td input{width:100%}
+  .cfgrow{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin:14px 0}
+  .cfgrow label{display:flex;gap:6px;align-items:center;font-size:14px;color:var(--mut)}
+
+  @media(max-width:600px){.bar{padding:10px 14px}main{padding:14px}.kpi b{font-size:26px}.grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<header><h1>🚨 Central de alertas de escala</h1><a href="/painel.html">← Painel de ponto</a><input type="date" id="dia"><button id="atu" class="sec">Atualizar</button></header>
+<header><div class="bar">
+  <div class="logo">🚨</div>
+  <div class="ttl"><h1>Central de alertas de escala</h1><div class="sub"><span class="live"></span><span id="prov">carregando…</span> · <span id="upd">—</span></div></div>
+  <div class="tools"><a class="btn" href="/painel.html">← Painel de ponto</a><input type="date" id="dia"><button id="atu" class="btn pri">Atualizar</button></div>
+</div></header>
+
 <main>
-  <div class="card" id="aviso" style="display:none"></div>
-  <section><h2>Unidades — <span id="tit"></span></h2><div class="grid" id="hubs"></div></section>
-  <section class="card"><h2>Furos do dia</h2><div id="furos" class="mut">Carregando…</div></section>
+  <section><div class="kpis" id="kpis"></div></section>
+  <section><h2>Unidades <span class="cnt" id="tit"></span></h2><div class="grid" id="hubs"></div></section>
+  <section class="card"><h2>Furos do dia <span class="cnt" id="nf">0</span></h2><div id="furos" class="mut">Carregando…</div></section>
   <section class="card"><h2>Linha do tempo</h2><ul class="tl" id="tl"></ul></section>
-  <section class="card"><h2>Mensagens (<span id="prov"></span>)</h2><div class="mut">Tudo o que o sistema enviou, ou enviaria, por WhatsApp hoje.</div><div id="msgs"></div></section>
-  <section class="card"><h2>Configuração</h2><div id="cfg" class="mut">Carregando…</div></section>
+  <section class="card"><h2>Mensagens <span class="cnt" id="nm">0</span></h2><div class="mut" style="margin:-4px 0 12px">Tudo o que o sistema enviou, ou enviaria, por WhatsApp neste dia.</div><div class="msgs" id="msgs"></div></section>
+  <details class="card"><summary>Configuração</summary><div class="body" id="cfg">Carregando…</div></details>
 </main>
+
 <script>
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const hoje=()=>new Date(Date.now()-3*3600e3).toISOString().slice(0,10);
 $('dia').value=hoje();
 async function get(p){const r=await fetch(p,{credentials:'same-origin'});if(r.status===401){location.href='/';throw new Error('login')}const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
-const ST={completo:'Completo',furo:'Com furo',aguardando:'Aguardando',presente:'Presente',ausente:'Ausente',coberto:'Coberto','vaga vazia':'Vaga vazia'};
+const ST={completo:'Completo',furo:'Com furo',aguardando:'Aguardando',presente:'Presente',ausente:'Ausente',coberto:'Coberto','vaga vazia':'Vaga vazia',aberto:'Aberto',cuidando:'Cuidando',trocado:'Trocado',resolvido:'Resolvido'};
+const ini=n=>String(n||'?').trim().charAt(0).toUpperCase();
+
 async function load(){
   const d=$('dia').value;let j;
   try{j=await get('/api/alerta/painel?d='+d)}catch(e){$('hubs').innerHTML='<div class="card">'+esc(e.message)+'</div>';return}
-  $('tit').textContent=d.split('-').reverse().join('/');$('prov').textContent=j.provedor==='ligado'?'WhatsApp ligado':'modo simulado: nada é enviado de verdade';
+  $('tit').textContent=d.split('-').reverse().join('/');
+  $('prov').textContent=j.provedor==='ligado'?'WhatsApp ligado':'Modo simulado: nada é enviado de verdade';
+  $('upd').textContent='atualizado '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   const hubs=j.resumo?.hubs||[];
+
+  let nOk=0,nFuro=0,nWait=0,vagas=0,presentes=0,esperados=0;
+  hubs.forEach(h=>{const ts=h.turnos;if(!ts.length)return;
+    if(ts.some(t=>t.status==='furo'))nFuro++;else if(ts.every(t=>t.status==='completo'))nOk++;else nWait++;
+    ts.forEach(t=>{presentes+=t.presentes;esperados+=t.esperados;vagas+=t.pessoas.filter(p=>p.estado==='vaga vazia').length})});
+  const abertos=j.furos.filter(f=>f.estado!=='resolvido').length;
+  $('kpis').innerHTML=[
+    ['ok',nOk,'Unidades completas'],['bad',nFuro,'Unidades com furo'],['wait',nWait,'Aguardando início'],
+    ['bad',abertos,'Furos em aberto'],['neu',presentes+'/'+esperados,'Presentes / esperados'],['neu',vagas,'Vagas sem ninguém']
+  ].map(([c,v,l])=>`<div class="kpi ${c}"><b class="num">${v}</b><span>${l}</span></div>`).join('');
+
   $('hubs').innerHTML=hubs.map(h=>{const ts=h.turnos;const tem=ts.length;const furo=ts.some(t=>t.status==='furo');const ok=tem&&ts.every(t=>t.status==='completo');
-    return `<div class="card"><div class="row"><b>${esc(h.nome)}</b><span class="chip ${furo?'furo':ok?'completo':'aguardando'}">${!tem?'Sem turno':furo?'Com furo':ok?'Completo':'Aguardando'}</span></div>
-    <div class="mut">Líder: ${esc(h.lider||'— não definido')}</div>
-    ${ts.map(t=>`<div class="turno"><div class="row"><span>${esc(t.nome)} · ${esc(t.inicio)}</span><span class="chip ${t.status}">${t.presentes}/${t.esperados} ${ST[t.status]}</span></div>
-      <ul>${t.pessoas.map(p=>`<li><span>${esc(p.nome)} <span class="mut">${esc(p.previsto)}</span></span><span><span class="mut">${esc(p.chegou||'')}</span> <span class="chip ${p.estado==='vaga vazia'?'vaga':p.estado}">${esc(ST[p.estado]||p.estado)}</span></span></li>`).join('')}</ul></div>`).join('')}</div>`}).join('')||'<div class="card mut">Sem dados para este dia ainda. O vigia roda a cada 5 minutos.</div>';
-  $('furos').innerHTML=j.furos.length?'<ul>'+j.furos.map(f=>`<li><span><b>${esc(f.hub)}</b> · ${esc(f.turno)} ${esc(f.inicio)} — ${f.vazia?'vaga sem ninguém':esc(f.nome)}${f.substituto?` → ${esc(f.substituto)}`:''}</span><span class="chip ${f.estado}">${esc(f.estado)}</span></li>`).join('')+'</ul>':'Nenhum furo neste dia. 🎉';
-  $('tl').innerHTML=j.linha.map(e=>`<li><b>${esc(e.hm)}</b><span><b style="min-width:0">${esc(e.hub)}</b> (${esc(e.turno)}): ${esc(e.msg)}</span></li>`).join('')||'<li class="mut">Sem eventos.</li>';
-  $('msgs').innerHTML=j.mensagens.map(m=>`<div class="msg"><span class="mut">${esc(m.hm)} · ${esc(m.para_quem==='gestor'?'gestora':'líder')} ${esc(m.para)} · </span><span class="chip ${m.estado||''}">${esc(m.estado||'')}</span>\n${esc(m.texto)}</div>`).join('')||'<div class="mut">Nenhuma mensagem hoje.</div>';
+    const cls=!tem?'s-none':furo?'s-furo':ok?'s-ok':'s-wait';
+    return `<div class="card hub ${cls}"><div class="hh"><div><b>${esc(h.nome)}</b><div class="lider"><span class="av">${esc(ini(h.lider))}</span>${h.lider?esc(h.lider):'líder não definido'}</div></div>
+      <span class="chip ${furo?'furo':ok?'completo':'aguardando'}">${!tem?'Sem turno':furo?'Com furo':ok?'Completo':'Aguardando'}</span></div>
+    ${ts.map(t=>{const pct=t.esperados?Math.round(100*t.presentes/t.esperados):0;
+      return `<div class="turno"><div class="th"><span>${esc(t.nome)}<small>${esc(t.inicio)}</small></span><span class="chip ${t.status}">${ST[t.status]||t.status}</span></div>
+      <div class="prog ${t.status}"><i style="width:${pct}%"></i></div><div class="pc"><span class="num">${t.presentes} de ${t.esperados} presentes</span><span class="num">${pct}%</span></div>
+      <ul class="pl">${t.pessoas.map(p=>{const e=p.estado==='vaga vazia'?'vaga':p.estado;return `<li><span class="nm"><i class="dot ${e}"></i><span>${esc(p.nome)}</span></span><span style="display:flex;gap:10px;align-items:center"><span class="hr">${esc(p.previsto)}</span>${p.chegou?`<span class="cheg">✓ ${esc(p.chegou)}</span>`:`<span class="chip ${e}">${esc(ST[p.estado]||p.estado)}</span>`}</span></li>`}).join('')}</ul></div>`}).join('')}</div>`}).join('')||'<div class="card vazio">Sem dados para este dia ainda. O vigia roda a cada 5 minutos.</div>';
+
+  $('nf').textContent=j.furos.length;
+  $('furos').innerHTML=j.furos.length?j.furos.map(f=>`<div class="furo-it f-${f.estado}"><div><b>${esc(f.hub)} · ${esc(f.turno)} ${esc(f.inicio)}</b><span class="mut">${f.vazia?'Vaga sem ninguém escalado':esc(f.nome)}${f.substituto?` → coberto por ${esc(f.substituto)}`:''}</span></div><span class="chip ${f.estado}">${ST[f.estado]||esc(f.estado)}</span></div>`).join(''):'<div class="vazio">🎉 Nenhum furo neste dia.</div>';
+
+  $('tl').innerHTML=j.linha.map(e=>`<li><span class="hm">${esc(e.hm)}</span><span><span class="hub-t">${esc(e.hub)}</span> <span class="mut">(${esc(e.turno)})</span> ${esc(e.msg)}</span></li>`).join('')||'<li class="mut">Sem eventos.</li>';
+
+  $('nm').textContent=j.mensagens.length;
+  $('msgs').innerHTML=j.mensagens.map(m=>`<div class="m ${m.para_quem==='gestor'?'g':''}"><div class="meta"><b>${esc(m.hm)}</b> para ${esc(m.para_quem==='gestor'?'gestora':'líder')} ${esc(m.para)} <span class="chip ${m.estado||''}">${esc(m.estado||'')}</span></div><div class="bub">${esc(m.texto)}</div></div>`).join('')||'<div class="vazio">Nenhuma mensagem neste dia.</div>';
 }
+
 let CFG=null,HUBS=[];
 async function loadCfg(){
   const [c,h]=await Promise.all([get('/api/alerta/config'),get('/api/alerta/escala-hubs').catch(()=>({hubs:[]}))]);CFG=c.config||{hubs:{},gestor:{}};HUBS=h.hubs;
   const v=(x)=>esc(x??'');
   $('cfg').innerHTML=`<table><tr><th>Hub na escala</th><th>Líder</th><th>WhatsApp do líder</th><th>Hub(s) no Tangerino</th><th>Unidade(s) freela</th></tr>
   ${HUBS.map(h=>{const c=CFG.hubs[h.id]||{};return `<tr data-h="${esc(h.id)}"><td><b>${esc(h.nome)}</b></td><td><input data-k="nome" value="${v(c.lider?.nome)}"></td><td><input data-k="tel" value="${v(c.lider?.tel)}" placeholder="5531999999999"></td><td><input data-k="ponto" value="${v((c.ponto||[]).join(', '))}"></td><td><input data-k="freela" value="${v((c.freela||[]).join(', '))}"></td></tr>`}).join('')}</table>
-  <p>Gestora (relatório às <input id="rh" type="number" min="0" max="23" style="width:64px" value="${v(CFG.relatorioHora??10)}">h e escalonamento): <input id="gt" value="${v(CFG.gestor?.tel)}" placeholder="5531999999999"></p>
-  <p>Tolerância (min) <input id="tol" type="number" style="width:70px" value="${v(CFG.tolerancia??15)}"> · Subir para a gestora após (min) <input id="esc" type="number" style="width:70px" value="${v(CFG.escalarMin??15)}"> · Lembrete a cada (min) <input id="lem" type="number" style="width:70px" value="${v(CFG.lembreteMin??30)}"></p>
-  <button id="sv">Salvar configuração</button> <span id="svm" class="mut"></span>`;
+  <div class="cfgrow"><label>Gestora (WhatsApp) <input id="gt" value="${v(CFG.gestor?.tel)}" placeholder="5531999999999"></label>
+   <label>Relatório às <input id="rh" type="number" min="0" max="23" style="width:64px" value="${v(CFG.relatorioHora??10)}"> h</label></div>
+  <div class="cfgrow"><label>Tolerância (min) <input id="tol" type="number" style="width:76px" value="${v(CFG.tolerancia??15)}"></label>
+   <label>Subir para a gestora após (min) <input id="esc" type="number" style="width:76px" value="${v(CFG.escalarMin??15)}"></label>
+   <label>Lembrete a cada (min) <input id="lem" type="number" style="width:76px" value="${v(CFG.lembreteMin??30)}"></label></div>
+  <button id="sv" class="btn pri">Salvar configuração</button> <span id="svm" class="mut"></span>`;
   $('sv').onclick=async()=>{const hubs={};document.querySelectorAll('tr[data-h]').forEach(tr=>{const g=k=>tr.querySelector(`[data-k=${k}]`).value.trim(),l=s=>s.split(',').map(x=>x.trim()).filter(Boolean);
       hubs[tr.dataset.h]={lider:{nome:g('nome'),tel:g('tel')},ponto:l(g('ponto')),freela:l(g('freela'))}});
     const r=await fetch('/api/alerta/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tolerancia:$('tol').value,escalarMin:$('esc').value,lembreteMin:$('lem').value,relatorioHora:+$('rh').value,gestor:{tel:$('gt').value.trim()},hubs})});
