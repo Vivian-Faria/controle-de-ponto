@@ -88,6 +88,10 @@
   .orbit{position:relative;width:100%;aspect-ratio:1}
   .floats{position:absolute;inset:0;pointer-events:none}
   .btn svg{width:16px;height:16px;flex:none}
+  @keyframes giro{to{transform:rotate(360deg)}}
+  .btn.spin svg{animation:giro .8s linear infinite}.btn:disabled{opacity:.7;cursor:default}
+  #toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,20px);opacity:0;pointer-events:none;transition:.25s;background:var(--lime);color:#050607;font:700 14px var(--body);padding:11px 18px;border-radius:99px;z-index:50;box-shadow:0 8px 30px rgba(186,255,26,.3)}
+  #toast.on{opacity:1;transform:translate(-50%,0)}
   .orbit>svg.rings{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
   .rot{transform-origin:235px 235px;animation:spin 70s linear infinite}
   .gauge{position:absolute;left:50%;top:50%;width:58%;aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;
@@ -425,7 +429,9 @@ async function loadCfg(){
     const r=await fetch('/api/alerta/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tolerancia:$('tol').value,escalarMin:$('esc').value,lembreteMin:$('lem').value,relatorioHora:+$('rh').value,gestor:{tel:$('gt').value.trim()},hubs})});
     $('svm').textContent=r.ok?'Salvo ✔':'Erro ao salvar'}
 }
-$('atu').onclick=load;$('dia').onchange=load;load();loadCfg().catch(e=>$('cfg').textContent=e.message);setInterval(load,60000);
+$('atu').onclick=async()=>{const b=$('atu');b.classList.add('spin');b.disabled=true;const t0=Date.now();try{await load()}finally{await new Promise(r=>setTimeout(r,Math.max(0,700-(Date.now()-t0))));b.classList.remove('spin');b.disabled=false;toast('Atualizado às '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}))}};
+function toast(m){let e=$('toast');if(!e){e=document.createElement('div');e.id='toast';document.body.appendChild(e)}e.textContent=m;e.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('on'),2200)}
+$('dia').onchange=load;load();loadCfg().catch(e=>$('cfg').textContent=e.message);setInterval(load,60000);
 </script>
 </body>
 </html>
