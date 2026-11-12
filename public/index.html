@@ -3,36 +3,61 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#050607">
 <title>Ponto — Acesso</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23050607'/><circle cx='16' cy='16' r='11' fill='none' stroke='%23baff1a' stroke-opacity='.45' stroke-width='1.8'/><circle cx='16' cy='16' r='6' fill='none' stroke='%23baff1a' stroke-opacity='.7' stroke-width='1.8'/><path d='M16 16 L25.5 9.5' stroke='%23baff1a' stroke-width='2.4' stroke-linecap='round'/><circle cx='16' cy='16' r='2.6' fill='%23baff1a'/></svg>">
 <meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root{--bg:#f5f6f8;--card:#fff;--tx:#1d2330;--mut:#6b7385;--bd:#e3e6ec;--pri:#5b2a86;--red:#c62828;--redbg:#fdecec}
-  @media(prefers-color-scheme:dark){:root{--bg:#14161b;--card:#1d2027;--tx:#e8eaf0;--mut:#9aa1b2;--bd:#2c303a;--red:#ff8a80;--redbg:#3a1d1f}}
-  *{box-sizing:border-box} body{margin:0;min-height:100vh;font:15px/1.45 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 16px}
-  h1{font-size:22px;color:var(--pri);margin:0 0 4px} p.sub{color:var(--mut);margin:0 0 24px;text-align:center}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;width:min(760px,100%)}
-  .card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:12px}
-  .card h2{margin:0;font-size:18px} .card p{margin:0;color:var(--mut)}
-  input,button{font:inherit;padding:12px 14px;border:1px solid var(--bd);border-radius:10px;background:var(--card);color:var(--tx)}
-  button{cursor:pointer;background:var(--pri);color:#fff;border-color:var(--pri);font-weight:600}
-  button:disabled{opacity:.6;cursor:wait} .err{color:var(--red);min-height:20px;font-size:13px}
+  :root{--bg:#050607;--line:rgba(255,255,255,.10);--line2:rgba(255,255,255,.18);--glass:linear-gradient(160deg,rgba(255,255,255,.06),rgba(255,255,255,.016));
+    --tx:#f5f7f6;--mut:#8d95a3;--lime:#baff1a;--limeglow:rgba(186,255,26,.38);--limebg:rgba(186,255,26,.10);--red:#ff4a4a;--redbg:rgba(255,74,74,.12);
+    --disp:"Space Grotesk","Segoe UI",system-ui,sans-serif;--body:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  *{box-sizing:border-box}
+  html{color-scheme:dark}
+  body{margin:0;min-height:100vh;font:15px/1.55 var(--body);color:var(--tx);-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 16px;overflow-x:hidden;
+    background:radial-gradient(900px 480px at 80% -10%,rgba(186,255,26,.13),transparent 62%),radial-gradient(700px 420px at -10% 40%,rgba(255,255,255,.05),transparent 62%),
+      linear-gradient(rgba(255,255,255,.028) 1px,transparent 1px) 0 0/56px 56px,linear-gradient(90deg,rgba(255,255,255,.028) 1px,transparent 1px) 0 0/56px 56px,var(--bg);background-attachment:fixed}
+  .brand{display:flex;align-items:center;gap:10px;font:700 18px var(--disp);letter-spacing:.04em}
+  .brand svg{width:26px;height:26px}.brand b{color:var(--lime)}
+  .sweep{transform-origin:16px 16px;animation:spin 3.2s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+  h1{font:700 clamp(34px,8vw,56px)/1.04 var(--disp);letter-spacing:-.035em;margin:26px 0 10px;text-align:center}
+  h1 .l{color:var(--lime)}h1 .d{color:#6a7280}
+  p.sub{color:var(--mut);margin:0 0 30px;text-align:center;max-width:420px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;width:min(780px,100%)}
+  .card{background:var(--glass);border:1px solid var(--line);border-radius:26px;padding:26px;display:flex;flex-direction:column;gap:14px;backdrop-filter:blur(10px);box-shadow:0 30px 60px -40px #000}
+  .card .ic{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:var(--limebg);border:1px solid rgba(186,255,26,.28)}
+  .card .ic svg{width:22px;height:22px;stroke:var(--lime);fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+  .card h2{margin:0;font:700 20px var(--disp);letter-spacing:-.01em}.card p{margin:0;color:var(--mut);font-size:14px}
+  input,button{font:inherit;color:var(--tx);padding:14px 18px;border:1px solid var(--line2);border-radius:99px;background:rgba(255,255,255,.04);outline:none;color-scheme:dark;width:100%}
+  input:focus{border-color:var(--lime);box-shadow:0 0 0 3px var(--limebg)}
+  input::placeholder{color:#6a7280}
+  button{cursor:pointer;font-weight:700;background:var(--lime);border-color:var(--lime);color:#071000;box-shadow:0 0 30px -10px var(--limeglow);transition:.2s}
+  button:hover{background:#d4ff5e}button:disabled{opacity:.55;cursor:wait}
+  button.ghost{background:rgba(255,255,255,.05);color:var(--tx);border-color:var(--line2);box-shadow:none}button.ghost:hover{border-color:var(--lime);color:var(--lime);background:rgba(255,255,255,.05)}
+  .err{color:var(--red);min-height:20px;font-size:13px}
+  .foot{margin-top:28px;font:11px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#5d6572}
 </style>
 </head>
 <body>
-  <h1>⏱ Controle de Ponto</h1>
-  <p class="sub">Escolha como você vai acessar</p>
+  <div class="brand"><svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="13" stroke="#baff1a" stroke-opacity=".4" stroke-width="1.6"/><circle cx="16" cy="16" r="7.5" stroke="#baff1a" stroke-opacity=".6" stroke-width="1.6"/><g class="sweep"><path d="M16 16 L28 10" stroke="#baff1a" stroke-width="2.2" stroke-linecap="round"/></g><circle cx="16" cy="16" r="2.6" fill="#baff1a"/></svg><span>PONTO<b>.</b></span></div>
+  <h1><span class="d">Controle de</span> <span class="l">ponto.</span></h1>
+  <p class="sub">Escolha como você vai acessar.</p>
   <div class="grid">
     <form class="card" id="fa" autocomplete="off">
+      <span class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span>
       <h2>Administrativo / Liderança</h2><p>Painel completo: atrasos, faltas, horários, hubs e envio de freelancers ao DP.</p>
       <input type="password" id="pw" placeholder="Senha administrativa" autocomplete="current-password" required>
       <button type="submit" id="ba">Entrar</button><div class="err" id="ea"></div>
     </form>
     <div class="card">
+      <span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></span>
       <h2>Freelancers</h2><p>Registre sua entrada, almoço e saída e veja quanto você tem a receber pela jornada.</p>
-      <button type="button" id="bf" style="margin-top:auto">Registrar ponto</button><div class="err" id="ef"></div>
+      <button type="button" id="bf" class="ghost" style="margin-top:auto">Registrar ponto</button><div class="err" id="ef"></div>
     </div>
   </div>
+  <div class="foot">Acesso restrito</div>
 <script>
 const $=id=>document.getElementById(id);
 async function go(btn,err,path,body,dest){btn.disabled=true;err.textContent='';
