@@ -152,6 +152,30 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
       s.id = idDe(dia, s.hubId, s.turnoId, s.vaga, s.pidx || 0);
       s.cheg = s.vazia ? null : chegada(s, pres, cfgA);
     }
+    // presenças sem lançamento: quem bateu o ponto no hub mas não está na escala preenche as vagas vazias do turno (e é marcado "não lançado")
+    {
+      const hubsDe = p => Object.keys(cfgA.hubs || {}).filter(h => casaHub(p, h, cfgA));
+      const nomes = sit.filter(s => !s.vazia).map(s => s.nome).concat(Object.values(furos).map(f => f.substituto?.nome).filter(Boolean));
+      const grupos = new Map(); for (const s of sit) { const k = s.hubId + "|" + s.turnoId; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(s); }
+      const candidatos = new Map();
+      for (const p of pres) {
+        if (!p.nome || nomes.some(n => mesmoNome(n, p.nome))) continue;
+        const hs = hubsDe(p); if (hs.length !== 1) continue;                  // hub ambíguo ou desconhecido: não adivinha
+        let melhor = null;
+        for (const [k, g] of grupos) { const r = g[0]; if (r.hubId !== hs[0] || p.t < r.inicio - 2 * HOUR || p.t > r.fim) continue; const d = Math.abs(p.t - r.inicio); if (!melhor || d < melhor.d) melhor = { k, d }; }
+        if (!melhor) continue;
+        const lista = candidatos.get(melhor.k) || []; if (lista.some(x => mesmoNome(x.nome, p.nome))) continue;
+        lista.push(p); candidatos.set(melhor.k, lista);
+      }
+      for (const [k, lista] of candidatos) {
+        const g = grupos.get(k), vazias = g.filter(s => s.vazia).sort((a, b) => a.vaga - b.vaga);
+        lista.sort((a, b) => a.t - b.t).forEach((p, i) => {
+          const base = vazias[i];
+          if (base) Object.assign(base, { vazia: false, nome: p.nome, cheg: { t: p.t }, semEscala: true });
+          else { const r = g[0]; sit.push({ hubId: r.hubId, hubNome: r.hubNome, turnoId: r.turnoId, turno: r.turno, vaga: 100 + i, pidx: 0, vazia: false, nome: p.nome, inicio: r.inicio, fim: r.fim, dia, marcouFalta: false, compareceu: false, split: false, semEscala: true, cheg: { t: p.t }, id: idDe(dia, r.hubId, r.turnoId, 100 + i, 0) }); }
+        });
+      }
+    }
     sit = sit.filter(s => !s.extra || s.cheg || s.compareceu);      // vagas além do previsto só entram se a pessoa apareceu
     const porId = new Map(sit.map(s => [s.id, s]));
     // 2) atualiza registros existentes
@@ -163,8 +187,9 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
       const chegou = chegSub || chegOrig;
       if (chegou) {
         f.estado = "resolvido"; f.resolvidoEm = chegou.t; const quem = chegSub ? sub : s.nome;
-        evento(f, "chegou", `${quem} bateu o ponto às ${hm(chegou.t)}${chegSub ? ` (cobrindo ${f.nome || "a vaga"})` : ""}. Furo regularizado.`);
-        aoLider(f, `🟢 ${quem} bateu o ponto às ${hm(chegou.t)}. Furo regularizado em *${f.hubNome}* (${f.turno}).`, "chegou"); continue;
+        const sem = !chegSub && s?.semEscala ? " Não estava lançado na escala: lance no app da escala." : "";
+        evento(f, "chegou", `${quem} bateu o ponto às ${hm(chegou.t)}${chegSub ? ` (cobrindo ${f.nome || "a vaga"})` : ""}. Furo regularizado.${sem}`);
+        aoLider(f, `🟢 ${quem} bateu o ponto às ${hm(chegou.t)}. Furo regularizado em *${f.hubNome}* (${f.turno}).${sem}`, "chegou"); continue;
       }
       if (s) {
         const mudou = s.vazia ? !f.vazia : ((f.vazia || !mesmoNome(s.nome, f.nome)) && !(f.substituto && mesmoNome(f.substituto.nome, s.nome)));
@@ -215,7 +240,7 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
     for (const f of Object.values(furos)) await putJ(`furo/${dia}/${f.id}`, f);
     for (const m of msgs) { await notificar(dia, m.tel, m.texto, m.meta); resultado.enviadas++; }
     const resumo = { dia, geradoEm: agora, hubs: escala.cfg.hubs.map(h => ({ id: h.id, nome: h.nome, lider: liderDe(h.id).nome || "", turnos: Object.values(completos).filter(c => c.hubId === h.id).map(c => ({ id: c.tid, nome: c.turno, inicio: hm(c.inicio), esperados: c.n, presentes: c.ok, status: c.status, furos: c.furos,
-      pessoas: sit.filter(s => s.hubId === h.id && s.turnoId === c.tid).map(s => ({ nome: s.nome || "(vaga sem ninguém)", previsto: hm(s.inicio), chegou: s.cheg ? hm(s.cheg.t) : s.compareceu ? "marcado na escala" : null, por: s.coberto ? (furos[s.id].substituto?.nome || null) : null, estado: s.cheg || s.compareceu ? "presente" : s.coberto ? "coberto" : s.vazia ? "vaga vazia" : agora < s.inicio + tol * 60000 ? "aguardando" : "ausente" })) })) })), completoAvisado: estadoDia.completoAvisado };
+      pessoas: sit.filter(s => s.hubId === h.id && s.turnoId === c.tid).map(s => ({ nome: s.nome || "(vaga sem ninguém)", previsto: hm(s.inicio), chegou: s.cheg ? hm(s.cheg.t) : s.compareceu ? "marcado na escala" : null, sem: !!s.semEscala, por: s.coberto ? (furos[s.id].substituto?.nome || null) : null, estado: s.cheg || s.compareceu ? "presente" : s.coberto ? "coberto" : s.vazia ? "vaga vazia" : agora < s.inicio + tol * 60000 ? "aguardando" : "ausente" })) })) })), completoAvisado: estadoDia.completoAvisado };
     await putJ(`dia/${dia}`, resumo); resultado.dias[dia] = { situacoes: sit.length, furos: Object.keys(furos).length };
   }
   await relatorioDiario({ agora, cfgA, escala: null });
