@@ -252,6 +252,11 @@ export async function rotaAlerta(req, path, ctx) {
       f.estado = "trocado"; f.substituto = { nome: cad, informadoEm: agora }; f.trocaEm = agora; evento(f, "troca", `${lider} informou que ${cad} cobre a vaga${f.nome ? " de " + f.nome : ""}.`, lider); await putJ(`furo/${dia}/${id}`, f);
       await notificar(dia, cfgA?.hubs?.[f.hubId]?.lider?.tel, `🔁 Troca registrada em *${f.hubNome}* (${f.turno}): *${cad}* cobre ${f.nome ? "a vaga de " + f.nome : "a vaga"}. Você será avisado quando bater o ponto. Lembre de ajustar a escala.`, { tipo: "troca", hub: f.hubNome, furo: id, dia, para_quem: "lider" }); return json({ ok: true, estado: f.estado });
     }
+    if (b.acao === "confirmou") {      // o líder garante que a vaga está coberta, mesmo sem ponto no hub (ex.: já bateu em outro lugar ou é o próprio líder)
+      f.estado = "resolvido"; f.resolvidoEm = agora; f.confirmadoPor = lider; f.confirmadoEm = agora;
+      evento(f, "confirmou", `${lider} confirmou que a vaga está coberta${f.substituto?.nome ? " por " + f.substituto.nome : ""} (confirmação manual, sem batida no hub).`, lider); await putJ(`furo/${dia}/${id}`, f);
+      await notificar(dia, cfgA?.hubs?.[f.hubId]?.lider?.tel, `✅ Cobertura confirmada em *${f.hubNome}* (${f.turno}). Furo encerrado.`, { tipo: "confirmou", hub: f.hubNome, furo: id, dia, para_quem: "lider" }); return json({ ok: true, estado: f.estado });
+    }
     return erro("Ação inválida.");
   }
   if (!isAdmin(req)) return erro("Não autorizado", 401);
