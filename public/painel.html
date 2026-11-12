@@ -42,7 +42,8 @@
   main{max-width:1240px;margin:0 auto;padding:22px 24px 70px}
   .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:22px}
   .kpi{background:var(--glass);border:1px solid var(--bd);border-radius:22px;padding:18px 20px;backdrop-filter:blur(8px)}
-  .kpi b{display:block;font:700 34px/1.1 var(--disp);letter-spacing:-.03em;margin-top:6px}
+  .kpi{min-width:0;container-type:inline-size}
+  .kpi b{display:block;font:700 clamp(16px,12cqw,34px)/1.1 var(--disp);letter-spacing:-.03em;margin-top:6px;white-space:nowrap}
   .kpi span{color:var(--mut);font:500 11px var(--mono);text-transform:uppercase;letter-spacing:.12em}
   .neg{color:var(--red)}.pos{color:var(--grn)}
   .wrap{overflow-x:auto;border-radius:22px;border:1px solid var(--bd);background:var(--glass);-webkit-overflow-scrolling:touch}
@@ -78,7 +79,7 @@
   .foot{color:var(--dim);font:11px var(--mono);letter-spacing:.06em;margin-top:16px}
   @media(max-width:700px){
     header{padding:12px 14px;gap:10px}.ctl{width:100%}.ctl input,.ctl select{flex:1 1 140px;min-width:0}
-    .tabs{padding:10px 14px}main{padding:16px 14px 60px}.kpis{grid-template-columns:1fr 1fr;gap:10px}.kpi{padding:14px 16px;border-radius:20px}.kpi b{font-size:28px}
+    .tabs{padding:10px 14px}main{padding:16px 14px 60px}.kpis{grid-template-columns:1fr 1fr;gap:10px}.kpi{padding:14px 16px;border-radius:20px}
     th,td{padding:10px 12px}
   }
 </style>
