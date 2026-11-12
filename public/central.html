@@ -425,10 +425,12 @@ async function loadCfg(){
   <div class="cfgrow"><label>Tolerância (min) <input id="tol" type="number" style="width:84px" value="${v(CFG.tolerancia??15)}"></label>
    <label>Subir para a gestora após (min) <input id="esc" type="number" style="width:84px" value="${v(CFG.escalarMin??15)}"></label>
    <label>Lembrete a cada (min) <input id="lem" type="number" style="width:84px" value="${v(CFG.lembreteMin??30)}"></label></div>
+  <div class="cfgrow"><label style="flex:1;min-width:260px">Apelidos de nomes <span class="mut">(um por linha: nome na escala = nome no ponto ou no freela)</span>
+   <textarea id="apl" rows="4" placeholder="Ana Alice = Analice Vital" style="display:block;width:100%;margin-top:6px;font:inherit;color:var(--tx);background:rgba(255,255,255,.04);border:1px solid var(--line2);border-radius:18px;padding:12px 16px;outline:none;color-scheme:dark">${esc((CFG.apelidos||[]).map(a=>a.escala+' = '+a.ponto).join('\n'))}</textarea></label></div>
   <button id="sv" class="btn pri">Salvar configuração</button> <span id="svm" class="mut"></span>`;
   $('sv').onclick=async()=>{const hubs={};document.querySelectorAll('tr[data-h]').forEach(tr=>{const g=k=>tr.querySelector(`[data-k=${k}]`).value.trim(),l=s=>s.split(',').map(x=>x.trim()).filter(Boolean);
       hubs[tr.dataset.h]={lider:{nome:g('nome'),tel:g('tel')},ponto:l(g('ponto')),freela:l(g('freela'))}});
-    const r=await fetch('/api/alerta/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tolerancia:$('tol').value,escalarMin:$('esc').value,lembreteMin:$('lem').value,relatorioHora:+$('rh').value,gestor:{tel:$('gt').value.trim()},hubs})});
+    const r=await fetch('/api/alerta/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tolerancia:$('tol').value,escalarMin:$('esc').value,lembreteMin:$('lem').value,relatorioHora:+$('rh').value,gestor:{tel:$('gt').value.trim()},hubs,apelidos:$('apl').value.split('\n').map(l=>{const i=l.indexOf('=');return i<0?null:{escala:l.slice(0,i).trim(),ponto:l.slice(i+1).trim()}}).filter(a=>a&&a.escala&&a.ponto)})});
     $('svm').textContent=r.ok?'Salvo ✔':'Erro ao salvar'}
 }
 $('atu').onclick=async()=>{const b=$('atu');b.classList.add('spin');b.disabled=true;const t0=Date.now();try{await load()}finally{await new Promise(r=>setTimeout(r,Math.max(0,700-(Date.now()-t0))));b.classList.remove('spin');b.disabled=false;toast('Atualizado às '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}))}};
