@@ -178,6 +178,7 @@
   .dot.ausente,.dot.vaga{background:var(--red);box-shadow:0 0 8px var(--redglow)} .dot.aguardando{background:var(--amb)}
   .pl .hr{color:var(--mut);font:500 12px var(--mono)}
   .pl .cheg{font:700 12.5px var(--mono);color:var(--lime)}
+  .pl .por{display:block;font:500 11.5px var(--body);color:var(--lime);opacity:.85;margin-top:1px}
 
   /* furos */
   .furo-it{display:grid;grid-template-columns:1fr auto;align-items:center;gap:12px;padding:16px 20px;border-radius:16px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-left:3px solid var(--red);margin-bottom:10px}
@@ -387,7 +388,7 @@ async function load(){
     ${h.turnos.map(t=>{const p=t.esperados?Math.round(100*t.presentes/t.esperados):0;
       return `<div class="turno"><div class="th"><span>${esc(t.nome)}<small>${esc(t.inicio)}</small></span><span class="chip ${t.status}">${ST[t.status]||t.status}</span></div>
       <div class="segs">${t.pessoas.map(x=>`<i class="sg ${x.estado==='vaga vazia'?'vaga':x.estado}"></i>`).join('')}</div><div class="pc"><span>${t.presentes} de ${t.esperados} presentes</span><span>${p}%</span></div>
-      <ul class="pl">${t.pessoas.map(x=>{const e=x.estado==='vaga vazia'?'vaga':x.estado;return `<li><span class="nm"><i class="dot ${e}"></i><span>${esc(x.nome)}</span></span><span style="display:flex;gap:10px;align-items:center"><span class="hr">${esc(x.previsto)}</span>${x.chegou?`<span class="cheg">${esc(x.chegou)}</span>`:`<span class="chip ${e}">${esc(ST[x.estado]||x.estado)}</span>`}</span></li>`}).join('')}</ul></div>`}).join('')}</div>`}).join('')||'<div class="panel vazio">Sem dados para este dia ainda. O vigia roda a cada 5 minutos.</div>';
+      <ul class="pl">${t.pessoas.map(x=>{const e=x.estado==='vaga vazia'?'vaga':x.estado;return `<li><span class="nm"><i class="dot ${e}"></i><span>${esc(x.nome)}${x.por?`<small class="por">coberto por ${esc(x.por)}</small>`:''}</span></span><span style="display:flex;gap:10px;align-items:center"><span class="hr">${esc(x.previsto)}</span>${x.chegou?`<span class="cheg">${esc(x.chegou)}</span>`:`<span class="chip ${e}">${esc(ST[x.estado]||x.estado)}</span>`}</span></li>`}).join('')}</ul></div>`}).join('')}</div>`}).join('')||'<div class="panel vazio">Sem dados para este dia ainda. O vigia roda a cada 5 minutos.</div>';
 
   // furos
   $('nf').textContent=j.furos.length;
