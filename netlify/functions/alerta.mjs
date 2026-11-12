@@ -205,7 +205,7 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
     for (const f of Object.values(furos)) await putJ(`furo/${dia}/${f.id}`, f);
     for (const m of msgs) { await notificar(dia, m.tel, m.texto, m.meta); resultado.enviadas++; }
     const resumo = { dia, geradoEm: agora, hubs: escala.cfg.hubs.map(h => ({ id: h.id, nome: h.nome, lider: liderDe(h.id).nome || "", turnos: Object.values(completos).filter(c => c.hubId === h.id).map(c => ({ id: c.tid, nome: c.turno, inicio: hm(c.inicio), esperados: c.n, presentes: c.ok, status: c.status, furos: c.furos,
-      pessoas: sit.filter(s => s.hubId === h.id && s.turnoId === c.tid).map(s => ({ nome: s.nome || "(vaga sem ninguém)", previsto: hm(s.inicio), chegou: s.cheg ? hm(s.cheg.t) : s.compareceu ? "marcado na escala" : s.coberto ? hm(furos[s.id].resolvidoEm) : null, estado: s.cheg || s.compareceu ? "presente" : s.coberto ? "coberto" : s.vazia ? "vaga vazia" : agora < s.inicio + tol * 60000 ? "aguardando" : "ausente" })) })) })), completoAvisado: estadoDia.completoAvisado };
+      pessoas: sit.filter(s => s.hubId === h.id && s.turnoId === c.tid).map(s => ({ nome: s.nome || "(vaga sem ninguém)", previsto: hm(s.inicio), chegou: s.cheg ? hm(s.cheg.t) : s.compareceu ? "marcado na escala" : null, por: s.coberto ? (furos[s.id].substituto?.nome || null) : null, estado: s.cheg || s.compareceu ? "presente" : s.coberto ? "coberto" : s.vazia ? "vaga vazia" : agora < s.inicio + tol * 60000 ? "aguardando" : "ausente" })) })) })), completoAvisado: estadoDia.completoAvisado };
     await putJ(`dia/${dia}`, resumo); resultado.dias[dia] = { situacoes: sit.length, furos: Object.keys(furos).length };
   }
   await relatorioDiario({ agora, cfgA, escala: null });
