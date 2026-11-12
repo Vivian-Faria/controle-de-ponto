@@ -81,6 +81,12 @@ export function situacoes(escala, dia, cfgA) {
           out.push({ hubId: hub.id, hubNome: hub.nome, turnoId: t.id, turno: t.nome, vaga: i, pidx, vazia: false, nome: p.nome, tipo: p.tipo, inicio: pi, fim: pf, dia, marcouFalta, compareceu, split: !!(p.inicio || p.fim) });
         }
       }
+      // nomes lançados além do nº de vagas do dia: só contam se a pessoa realmente bater o ponto (nunca geram furo)
+      for (let i = n; i < salvas.length; i++) for (const [pidx, p] of (salvas[i] || []).entries()) {
+        if (na(doc?.folgas?.[t.id], p.nome)) continue;
+        const pi = p.inicio ? toMs(dia, p.inicio) : ini; let pf = p.fim ? toMs(dia, p.fim) : fim; if (pf <= pi) pf += DAY;
+        out.push({ hubId: hub.id, hubNome: hub.nome, turnoId: t.id, turno: t.nome, vaga: i, pidx, vazia: false, nome: p.nome, tipo: p.tipo, inicio: pi, fim: pf, dia, marcouFalta: false, compareceu: na(doc?.compareceram?.[t.id], p.nome), split: !!(p.inicio || p.fim), extra: true });
+      }
     }
   }
   return out;
@@ -129,10 +135,13 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
   const cfgA = await lerConfig(); if (!cfgA?.hubs) return { ok: false, motivo: "sem configuração" };
   const tol = cfgA.tolerancia ?? 15, escalarMin = cfgA.escalarMin ?? 15, lembrar = cfgA.lembreteMin ?? 30, grace = cfgA.graceTrocaMin ?? 30;
   const hoje = isoOf(agora), dias = [addDays(hoje, -1), hoje];
-  escala = escala || await lerEscala(dias); const pres = presencas;
+  escala = escala || await lerEscala(dias);
+  // apelidos: nome na escala = nome no ponto/freela, quando são diferentes (ex.: "Ana Alice" = "Analice Vital")
+  const apel = (cfgA.apelidos || []).filter(a => a?.escala && a?.ponto);
+  const pres = apel.length ? presencas.map(p => { const a = apel.find(x => mesmoNome(p.nome, x.ponto)); return a ? { ...p, nome: a.escala } : p; }) : presencas;
   const resultado = { dias: {}, enviadas: 0 };
   for (const dia of dias) {
-    const sit = situacoes(escala, dia, cfgA), furos = Object.fromEntries((await listar(`furo/${dia}/`)).map(f => [f.id, f]));
+    let sit = situacoes(escala, dia, cfgA); const furos = Object.fromEntries((await listar(`furo/${dia}/`)).map(f => [f.id, f]));
     const liderDe = h => cfgA.hubs?.[h]?.lider || {};
     const msgs = [];                       // {tel, texto, meta}
     const aoLider = (f, texto, tipo) => msgs.push({ tel: liderDe(f.hubId).tel, texto, meta: { tipo, hub: f.hubNome, furo: f.id, dia, para_quem: "lider" } });
@@ -143,6 +152,7 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
       s.id = idDe(dia, s.hubId, s.turnoId, s.vaga, s.pidx || 0);
       s.cheg = s.vazia ? null : chegada(s, pres, cfgA);
     }
+    sit = sit.filter(s => !s.extra || s.cheg || s.compareceu);      // vagas além do previsto só entram se a pessoa apareceu
     const porId = new Map(sit.map(s => [s.id, s]));
     // 2) atualiza registros existentes
     for (const f of Object.values(furos)) {
@@ -270,7 +280,8 @@ export async function rotaAlerta(req, path, ctx) {
   if (path === "/api/alerta/config" && req.method === "GET") { const c = await lerConfig(); return json({ config: c }); }
   if (path === "/api/alerta/config" && req.method === "POST") {
     const b = await req.json().catch(() => ({})); if (!b || typeof b.hubs !== "object") return erro("Configuração inválida.");
-    await gravarConfig({ tolerancia: +b.tolerancia || 15, escalarMin: +b.escalarMin || 15, lembreteMin: +b.lembreteMin || 30, graceTrocaMin: +b.graceTrocaMin || 30, relatorioHora: b.relatorioHora ?? 10, gestor: b.gestor || null, hubs: b.hubs }); return json({ ok: true });
+    await gravarConfig({ tolerancia: +b.tolerancia || 15, escalarMin: +b.escalarMin || 15, lembreteMin: +b.lembreteMin || 30, graceTrocaMin: +b.graceTrocaMin || 30, relatorioHora: b.relatorioHora ?? 10, gestor: b.gestor || null, hubs: b.hubs,
+      apelidos: Array.isArray(b.apelidos) ? b.apelidos.map(a => ({ escala: String(a?.escala || "").trim().slice(0, 80), ponto: String(a?.ponto || "").trim().slice(0, 120) })).filter(a => a.escala && a.ponto).slice(0, 300) : ((await lerConfig())?.apelidos || []) }); return json({ ok: true });
   }
   if (path === "/api/alerta/escala-hubs" && req.method === "GET") { const e = await lerEscala([isoOf(Date.now())]); return json({ hubs: e.cfg.hubs.map(h => ({ id: h.id, nome: h.nome })) }); }
   if (path === "/api/alerta/teste" && req.method === "POST") { // manda UMA mensagem de teste, só ao número da gestão, e devolve o resultado do provedor
