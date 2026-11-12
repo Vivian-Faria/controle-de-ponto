@@ -171,7 +171,13 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
       }
       for (const [k, lista] of candidatos) {
         const g = grupos.get(k), vazias = g.filter(s => s.vazia).sort((a, b) => a.vaga - b.vaga);
-        lista.sort((a, b) => a.t - b.t).forEach((p, i) => {
+        // grafia parecida no mesmo turno (ex.: escala "Raiane", ponto "Rayane Stefany"): é a mesma pessoa escalada que bateu o ponto
+        const resto = lista.filter(p => {
+          const pt = nrm(p.nome).split(" ")[0]; if (pt.length < 5) return true;
+          const s = g.find(x => !x.vazia && !x.cheg && !x.compareceu && !x.semEscala && (() => { const st = nrm(x.nome).split(" ")[0]; return st.length >= 5 && st !== pt && lev(st, pt) <= 1; })());
+          if (!s) return true; s.cheg = { t: p.t }; s.nomeNoPonto = p.nome; return false;
+        });
+        resto.sort((a, b) => a.t - b.t).forEach((p, i) => {
           const base = vazias[i];
           if (base) Object.assign(base, { vazia: false, nome: p.nome, cheg: { t: p.t }, semEscala: true });
           else { const r = g[0]; sit.push({ hubId: r.hubId, hubNome: r.hubNome, turnoId: r.turnoId, turno: r.turno, vaga: 100 + i, pidx: 0, vazia: false, nome: p.nome, inicio: r.inicio, fim: r.fim, dia, marcouFalta: false, compareceu: false, split: false, semEscala: true, cheg: { t: p.t }, id: idDe(dia, r.hubId, r.turnoId, 100 + i, 0) }); }
