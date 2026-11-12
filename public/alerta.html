@@ -81,9 +81,14 @@ function draw(f){
     <div class="card"><h2>Já cobri com outra pessoa</h2>
       <input id="sub" list="lc" placeholder="Nome de quem vai cobrir" autocomplete="off"><datalist id="lc">${colab.map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
       <button id="b2" class="sec">Informar quem cobriu</button><div class="err" id="er"></div>
-      <div class="mut">Lembre de ajustar o nome na escala também. Você será avisado quando a pessoa bater o ponto.</div></div>`}
+      <div class="mut">Lembre de ajustar o nome na escala também. Você será avisado quando a pessoa bater o ponto.</div></div>
+    <div class="card"><h2>Vaga já coberta?</h2>
+      <button id="b3" class="sec">Confirmar cobertura e encerrar</button>
+      <div class="mut">Use quando a vaga já está coberta, mas o ponto não vai aparecer neste hub (por exemplo, a pessoa bateu em outro lugar ou é você mesmo). Fica registrado que foi você quem confirmou.</div></div>`}
     <div class="card"><h2>Histórico</h2><ul class="hist">${ev||'<li class="mut">Sem registros.</li>'}</ul></div>`;
   const b1=document.getElementById('b1'),b2=document.getElementById('b2');
+  const b3=document.getElementById('b3');
+  if(b3)b3.onclick=()=>{if(confirm('Confirmar que a vaga já está coberta e encerrar este furo?'))go(b3,{acao:'confirmou'})};
   if(b1)b1.onclick=()=>go(b1,{acao:'cuidando'});
   if(b2)b2.onclick=()=>go(b2,{acao:'trocou',substituto:document.getElementById('sub').value});
 }
