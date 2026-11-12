@@ -187,6 +187,39 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
       }
     }
     sit = sit.filter(s => !s.extra || s.cheg || s.compareceu);      // vagas além do previsto só entram se a pessoa apareceu
+    // espelhos: o mesmo turno lançado em hubs do mesmo local (ex.: 12x36 em Expedição Dia e Noite) é um turno só; a cobertura informada num hub vale no outro
+    {
+      const siteH = h => [...(cfgA.hubs[h]?.ponto || []), ...(cfgA.hubs[h]?.freela || [])].map(nrm).sort().join("|");
+      const grp = new Map();
+      for (const s of sit) { if (s.vazia || s.extra || s.semEscala || !cfgA.hubs[s.hubId]) continue; const k = siteH(s.hubId) + "|" + s.inicio + "|" + s.fim; if (!grp.has(k)) grp.set(k, []); grp.get(k).push(s); }
+      for (const lista of grp.values()) {
+        const hs = [...new Set(lista.map(s => s.hubId))]; if (hs.length < 2) continue;
+        for (let i = 0; i < hs.length; i++) for (let j = i + 1; j < hs.length; j++) {
+          const A = lista.filter(s => s.hubId === hs[i]), B = lista.filter(s => s.hubId === hs[j]), usados = new Set(), semPar = [];
+          for (const a of A) { const b = B.find(x => !usados.has(x) && mesmoNome(x.nome, a.nome)); if (b) { usados.add(b); a.espelho = b; b.espelho = a; } else semPar.push(a); }      // mesma pessoa, mesmo horário
+          const restB = B.filter(x => !usados.has(x));
+          for (const tn of new Set(semPar.map(x => nrm(x.turno)))) { const sa = semPar.filter(x => nrm(x.turno) === tn), sb = restB.filter(x => nrm(x.turno) === tn); if (sa.length === 1 && sb.length === 1) { sa[0].espelho = sb[0]; sb[0].espelho = sa[0]; } }      // nome trocado só num dos hubs: pareia se for o único do turno de mesmo nome
+        }
+      }
+      for (const s of sit) {
+        const m = s.espelho; if (!m || s.cheg || s.compareceu) continue;
+        const mesma = mesmoNome(s.nome, m.nome), fm = furos[m.id], fs = furos[s.id]; let por = null;
+        if (m.cheg || m.compareceu) por = { nome: m.nome, t: m.cheg?.t ?? agora };
+        else if (fm && fm.estado === "resolvido" && !fm.encerrado) por = { nome: fm.substituto?.nome || null, t: fm.resolvidoEm || agora };
+        if (por) {
+          if (fs && fs.estado === "resolvido") continue;
+          const quem = por.nome ? (mesma ? `${por.nome} está presente` : `${por.nome} cobriu ${s.nome}`) : `a vaga de ${s.nome} foi confirmada como coberta`;
+          const txt = `${quem} no mesmo turno de *${m.hubNome}* (${m.turno} ${hm(m.inicio)}). Ajuste o nome na escala de ${s.hubNome}.`;
+          const sub = por.nome && !mesma ? { nome: por.nome, auto: true, via: m.hubNome, informadoEm: agora } : null;
+          if (fs) { fs.estado = "resolvido"; fs.resolvidoEm = por.t; if (sub) fs.substituto = sub; evento(fs, "espelho", txt.replace(/\*/g, "")); aoLider(fs, `🔁 ${txt}`, "espelho"); }
+          else { const f = { id: s.id, dia, hubId: s.hubId, hubNome: s.hubNome, turnoId: s.turnoId, turno: s.turno, vaga: s.vaga, nome: s.nome, vazia: false, inicio: s.inicio, fim: s.fim, estado: "resolvido", criadoEm: agora, resolvidoEm: por.t, espelho: true, ...(sub ? { substituto: sub } : {}), eventos: [] };
+            evento(f, "espelho", txt.replace(/\*/g, "")); furos[f.id] = f; aoLider(f, `🔁 ${txt}`, "espelho"); }
+        } else if (fm && fs && fs.estado !== "resolvido") {      // cobertura ainda a caminho no outro hub: acompanha o estado
+          if (fm.estado === "trocado" && fm.substituto && !fs.substituto) { fs.substituto = { nome: fm.substituto.nome, auto: true, via: m.hubNome, informadoEm: agora }; fs.estado = "trocado"; evento(fs, "espelho", `${fm.substituto.nome} vai cobrir este turno (informado em ${m.hubNome}). Aguardando a chegada.`); aoLider(fs, `🔁 Em *${m.hubNome}* foi informado que *${fm.substituto.nome}* cobre o mesmo turno (${s.turno} ${hm(s.inicio)}). Ajuste a escala de ${s.hubNome}.`, "espelho"); }
+          else if (fm.estado === "cuidando" && fs.estado === "aberto") { fs.estado = "cuidando"; fs.cuidandoEm = agora; evento(fs, "espelho", `O líder de ${m.hubNome} está cuidando deste mesmo turno.`); }
+        }
+      }
+    }
     const porId = new Map(sit.map(s => [s.id, s]));
     // 2) atualiza registros existentes
     for (const f of Object.values(furos)) {
@@ -222,6 +255,7 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
     for (const s of sit) {
       if (furos[s.id]) continue;
       if (s.compareceu || s.cheg) continue;
+      if (s.espelho && !mesmoNome(s.nome, s.espelho.nome)) continue;      // vaga do mesmo turno em outro hub com outro nome: o furo nasce lá e vale para os dois
       if (!s.vazia && substitutos.has(nrm(s.nome))) continue;
       const prazo = s.vazia ? s.inicio - 2 * HOUR : s.inicio + tol * 60000;
       if (agora < prazo || agora >= s.fim || agora - Math.max(prazo, s.inicio) > 3 * HOUR) continue;      // não cria alerta atrasado demais (ex.: vigia ligado depois do início); continua visível no painel
