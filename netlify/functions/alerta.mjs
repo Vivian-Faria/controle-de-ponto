@@ -113,7 +113,8 @@ async function enviarWA(tel, texto) {
 const soDigitos = t => String(t || "").replace(/\D/g, "");
 async function notificar(dia, para, texto, meta) {
   const tel = soDigitos(para); const reg = { t: agoraMs(), para: tel ? "…" + tel.slice(-4) : "(sem telefone)", texto, ...meta };
-  if (!tel) reg.estado = "sem_telefone"; else Object.assign(reg, await enviarWA(tel.startsWith("55") ? tel : "55" + tel, texto));
+  // Trava: mensagens aos líderes só saem de verdade com WA_LIDERES=sim (as da gestão saem assim que o provedor está ligado).
+  if (!tel) reg.estado = "sem_telefone"; else if (meta?.para_quem !== "gestor" && process.env.WA_LIDERES !== "sim") reg.estado = "simulado"; else Object.assign(reg, await enviarWA(tel.startsWith("55") ? tel : "55" + tel, texto));
   await putJ(`out/${dia}/${String(reg.t).padStart(13, "0")}-${Math.random().toString(36).slice(2, 6)}`, reg); return reg;
 }
 export const tokenFuro = (sign, dia, id) => sign(`furo:${dia}:${id}`);
