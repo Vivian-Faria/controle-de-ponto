@@ -98,9 +98,16 @@ export function foraDoHub(s, pres, cfgA) { return pres.find(p => mesmoNome(p.nom
 async function enviarWA(tel, texto) {
   const url = process.env.WA_API_URL, tok = process.env.WA_API_TOKEN;
   if (!url || !tok) return { estado: "simulado" };
+  // Omni Z-API: WA_API_URL = https://api.omni.z-api.io/v1/channels/<ID_DO_CANAL>/messages e WA_API_TOKEN = Secret Key.
+  // Qualquer outra URL segue o formato do Z-API clássico (send-text), com WA_API_TOKEN como Client-Token.
+  const omni = /\/v1\/channels\/[^/]+\/messages/.test(url);
+  const headers = omni ? { "Content-Type": "application/json", Authorization: `Bearer ${tok}` } : { "Content-Type": "application/json", "Client-Token": tok };
+  const corpo = omni ? { recipient: { identifier: tel }, content: { type: "TEXT", body: { message: texto } } } : { phone: tel, message: texto };
   try {
-    const r = await fetch(url, { method: "POST", signal: AbortSignal.timeout(8000), headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}`, "Client-Token": tok }, body: JSON.stringify({ phone: tel, number: tel, to: tel, message: texto, text: texto }) });
-    return r.ok ? { estado: "enviado" } : { estado: "erro", erro: `HTTP ${r.status}` };
+    const r = await fetch(url, { method: "POST", signal: AbortSignal.timeout(8000), headers, body: JSON.stringify(corpo) });
+    if (r.ok) return { estado: "enviado" };
+    const det = (await r.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 160);
+    return { estado: "erro", erro: `HTTP ${r.status}${det ? " " + det : ""}` };
   } catch (e) { return { estado: "erro", erro: e.message }; }
 }
 const soDigitos = t => String(t || "").replace(/\D/g, "");
