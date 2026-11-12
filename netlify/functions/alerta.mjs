@@ -155,12 +155,13 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
     // presenças sem lançamento: quem bateu o ponto no hub mas não está na escala preenche as vagas vazias do turno (e é marcado "não lançado")
     {
       const hubsDe = p => Object.keys(cfgA.hubs || {}).filter(h => casaHub(p, h, cfgA));
-      const nomes = sit.filter(s => !s.vazia).map(s => s.nome).concat(Object.values(furos).map(f => f.substituto?.nome).filter(Boolean));
+      const nomes = sit.filter(s => !s.vazia).map(s => s.nome);
       const grupos = new Map(); for (const s of sit) { const k = s.hubId + "|" + s.turnoId; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(s); }
       const candidatos = new Map();
       for (const p of pres) {
         if (!p.nome || nomes.some(n => mesmoNome(n, p.nome))) continue;
         const hs = hubsDe(p); if (hs.length !== 1) continue;                  // hub ambíguo ou desconhecido: não adivinha
+        if (Object.values(furos).some(f => f.hubId === hs[0] && f.substituto && mesmoNome(f.substituto.nome, p.nome))) continue;      // substituto de um furo deste hub já é tratado pelo furo
         let melhor = null;
         for (const [k, g] of grupos) { const r = g[0]; if (r.hubId !== hs[0] || p.t < r.inicio - 2 * HOUR || p.t > r.fim) continue; const d = Math.abs(p.t - r.inicio); if (!melhor || d < melhor.d) melhor = { k, d }; }
         if (!melhor) continue;
