@@ -268,6 +268,12 @@ export async function rotaAlerta(req, path, ctx) {
     await gravarConfig({ tolerancia: +b.tolerancia || 15, escalarMin: +b.escalarMin || 15, lembreteMin: +b.lembreteMin || 30, graceTrocaMin: +b.graceTrocaMin || 30, relatorioHora: b.relatorioHora ?? 10, gestor: b.gestor || null, hubs: b.hubs }); return json({ ok: true });
   }
   if (path === "/api/alerta/escala-hubs" && req.method === "GET") { const e = await lerEscala([isoOf(Date.now())]); return json({ hubs: e.cfg.hubs.map(h => ({ id: h.id, nome: h.nome })) }); }
+  if (path === "/api/alerta/teste" && req.method === "POST") { // manda UMA mensagem de teste, só ao número da gestão, e devolve o resultado do provedor
+    const c = await lerConfig(); const tel = soDigitos(c?.gestor?.tel); if (!tel) return erro("Sem WhatsApp da gestão na configuração", 400);
+    if (!process.env.WA_API_URL) return erro("Provedor não configurado", 400);
+    const r = await enviarWA(tel.startsWith("55") ? tel : "55" + tel, "✅ Teste da Central de alertas: o WhatsApp está conectado. Pode ignorar esta mensagem.");
+    return json({ para: "…" + tel.slice(-4), ...r });
+  }
   if (path === "/api/alerta/rodar" && req.method === "POST") { const h = isoOf(Date.now()); return json(await vigiar({ sign, presencas: [...await ctx.presencas(addDays(h, -1)), ...await ctx.presencas(h)] })); }
   return erro("not found", 404);
 }
