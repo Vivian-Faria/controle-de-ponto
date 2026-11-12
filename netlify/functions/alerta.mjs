@@ -20,6 +20,8 @@ function lev(a, b) { const m = a.length, n = b.length; if (!m) return n; if (!n)
 export function mesmoNome(a, b) {
   a = nrm(a); b = nrm(b); if (!a || !b) return false; if (a === b) return true;
   if (b.startsWith(a + " ") || a.startsWith(b + " ")) return true;
+  const tok = (x, y) => !x.includes(" ") && x.length >= 4 && y.includes(" ") && y.split(" ").includes(x);      // apelido = um dos nomes (ex.: escala "Luna", ponto "Maria Luna")
+  if (tok(a, b) || tok(b, a)) return true;
   return a.includes(" ") && b.includes(" ") && lev(a, b) <= Math.max(1, Math.round(Math.min(a.length, b.length) * 0.22));
 }
 
