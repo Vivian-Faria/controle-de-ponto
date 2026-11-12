@@ -272,7 +272,8 @@ export async function rotaAlerta(req, path, ctx) {
     const c = await lerConfig(); const tel = soDigitos(c?.gestor?.tel); if (!tel) return erro("Sem WhatsApp da gestão na configuração", 400);
     if (!process.env.WA_API_URL) return erro("Provedor não configurado", 400);
     const r = await enviarWA(tel.startsWith("55") ? tel : "55" + tel, "✅ Teste da Central de alertas: o WhatsApp está conectado. Pode ignorar esta mensagem.");
-    return json({ para: "…" + tel.slice(-4), ...r });
+    const tk = process.env.WA_API_TOKEN || ""; // diagnóstico sem expor o valor: tipo (pelo prefixo), tamanho e se há espaço/quebra de linha
+    return json({ para: "…" + tel.slice(-4), ...r, token: { prefixo: tk.slice(0, 3), tamanho: tk.length, comEspaco: /\s/.test(tk) } });
   }
   if (path === "/api/alerta/rodar" && req.method === "POST") { const h = isoOf(Date.now()); return json(await vigiar({ sign, presencas: [...await ctx.presencas(addDays(h, -1)), ...await ctx.presencas(h)] })); }
   return erro("not found", 404);
