@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#050607">
+<title>Escala do turno</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23050607'/><circle cx='16' cy='16' r='11' fill='none' stroke='%23baff1a' stroke-opacity='.45' stroke-width='1.8'/><circle cx='16' cy='16' r='6' fill='none' stroke='%23baff1a' stroke-opacity='.7' stroke-width='1.8'/><path d='M16 16 L25.5 9.5' stroke='%23baff1a' stroke-width='2.4' stroke-linecap='round'/><circle cx='16' cy='16' r='2.6' fill='%23baff1a'/></svg>">
+<meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#050607;--line:rgba(255,255,255,.10);--line2:rgba(255,255,255,.18);--glass:linear-gradient(160deg,rgba(255,255,255,.06),rgba(255,255,255,.016));
+    --tx:#f5f7f6;--mut:#8d95a3;--lime:#baff1a;--limeglow:rgba(186,255,26,.38);--limebg:rgba(186,255,26,.10);
+    --red:#ff4a4a;--redglow:rgba(255,74,74,.5);--redbg:rgba(255,74,74,.12);--amb:#ffb62e;--ambbg:rgba(255,182,46,.12);
+    --disp:"Space Grotesk","Segoe UI",system-ui,sans-serif;--body:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  *{box-sizing:border-box}
+  html{color-scheme:dark}
+  body{margin:0;min-height:100vh;font:16px/1.5 var(--body);color:var(--tx);-webkit-font-smoothing:antialiased;overflow-x:hidden;
+    background:radial-gradient(800px 440px at 85% -8%,rgba(186,255,26,.12),transparent 62%),linear-gradient(rgba(255,255,255,.028) 1px,transparent 1px) 0 0/48px 48px,linear-gradient(90deg,rgba(255,255,255,.028) 1px,transparent 1px) 0 0/48px 48px,var(--bg);background-attachment:fixed}
+  main{max-width:500px;margin:0 auto;padding:18px 16px 56px;display:flex;flex-direction:column;gap:14px}
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 4px 2px;font:700 16px var(--disp);letter-spacing:.04em}
+  .brand svg{width:24px;height:24px}.brand b{color:var(--lime)}
+  .brand em{margin-left:auto;font:500 11px var(--mono);font-style:normal;letter-spacing:.14em;text-transform:uppercase;color:#5d6572}
+  .sweep{transform-origin:16px 16px;animation:spin 3.2s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+  .hero{position:relative;border-radius:28px;padding:22px;background:var(--glass);border:1px solid var(--redglow);box-shadow:0 0 0 1px rgba(255,74,74,.2),0 0 44px -14px var(--redglow);animation:pulso 2.2s ease-in-out infinite}
+  .hero.h-cuidando,.hero.h-trocado{border-color:rgba(255,182,46,.5);box-shadow:0 0 40px -16px rgba(255,182,46,.5);animation:none}
+  .hero.h-resolvido{border-color:rgba(186,255,26,.5);box-shadow:0 0 40px -16px var(--limeglow);animation:none}
+  @keyframes pulso{50%{box-shadow:0 0 0 1px rgba(255,74,74,.35),0 0 60px -8px var(--redglow)}}
+  .chip{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:99px;font:600 12.5px var(--mono);letter-spacing:.06em;text-transform:uppercase}
+  .chip i{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 10px currentColor}
+  .chip.aberto{background:var(--redbg);color:var(--red)}.chip.cuidando,.chip.trocado{background:var(--ambbg);color:var(--amb)}.chip.resolvido{background:var(--limebg);color:var(--lime)}
+  h1{margin:16px 0 0;font:700 clamp(28px,8.4vw,38px)/1.05 var(--disp);letter-spacing:-.03em}
+  h1 small{display:block;margin-top:6px;font:500 15px var(--body);letter-spacing:0;color:var(--mut)}
+  .who{display:flex;gap:14px;align-items:center;margin-top:18px;padding:14px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:20px}
+  .av{width:46px;height:46px;border-radius:50%;background:var(--limebg);border:1px solid rgba(186,255,26,.3);color:var(--lime);display:grid;place-items:center;font:700 19px var(--disp);flex:none}
+  .who b{display:block;font:700 17px var(--disp)}.who b.inl{display:inline;font:600 14px var(--body);color:var(--tx)}
+  .mut{color:var(--mut);font-size:14px}
+  .card{background:var(--glass);border:1px solid var(--line);border-radius:26px;padding:20px;display:flex;flex-direction:column;gap:14px;backdrop-filter:blur(10px)}
+  .card h2{margin:0;font:700 17px var(--disp);letter-spacing:-.01em}
+  button,input{font:inherit;color:var(--tx);padding:16px 20px;border-radius:99px;border:1px solid var(--line2);background:rgba(255,255,255,.04);width:100%;outline:none;color-scheme:dark}
+  input::placeholder{color:#6a7280}
+  input:focus{border-color:var(--lime);box-shadow:0 0 0 3px var(--limebg)}
+  button{cursor:pointer;font-weight:700;font-size:16px;background:var(--lime);border-color:var(--lime);color:#071000;box-shadow:0 0 34px -10px var(--limeglow);transition:.2s}
+  button:hover{background:#d4ff5e}
+  button.sec{background:rgba(255,255,255,.05);color:var(--tx);border-color:var(--line2);box-shadow:none}button.sec:hover{border-color:var(--lime);color:var(--lime)}
+  button:disabled{opacity:.55;cursor:default;box-shadow:none}button:active:not(:disabled){transform:scale(.99)}
+  .ok-box{display:flex;gap:14px;align-items:center}
+  .ok-box .tick{width:42px;height:42px;border-radius:50%;background:var(--limebg);border:1px solid rgba(186,255,26,.3);color:var(--lime);display:grid;place-items:center;font-size:20px;flex:none}
+  .hist{list-style:none;margin:0;padding:0 0 0 20px;position:relative;font-size:14px}
+  .hist::before{content:"";position:absolute;left:5px;top:8px;bottom:8px;width:1px;background:var(--line2)}
+  .hist li{position:relative;padding:6px 0;display:flex;gap:12px}
+  .hist li::before{content:"";position:absolute;left:-19px;top:13px;width:9px;height:9px;border-radius:50%;background:var(--lime);box-shadow:0 0 10px var(--limeglow)}
+  .hist b{font:600 13px var(--mono);color:var(--lime);min-width:44px}
+  .err{color:var(--red);font-size:14px;min-height:18px}
+  .pess{display:flex;flex-direction:column;gap:12px}
+  .pess .top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .pess .top b{font:700 18px var(--disp);letter-spacing:-.01em}
+  .row{display:flex;gap:10px}.row>*{flex:1;min-width:0}
+  .pill{display:inline-flex;padding:5px 12px;border-radius:99px;font:600 11.5px var(--mono);letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+  .pill.aberto{background:var(--redbg);color:var(--red)}.pill.cuidando,.pill.trocado{background:var(--ambbg);color:var(--amb)}.pill.resolvido{background:var(--limebg);color:var(--lime)}
+  button.peq{padding:12px 16px;font-size:15px}
+  .sub-row{display:flex;gap:10px}.sub-row input{flex:1.4;padding:12px 16px}.sub-row button{flex:1;padding:12px 14px;font-size:15px}
+</style>
+</head>
+<body>
+<main id="m"><div class="card mut">Carregando…</div></main>
+<script>
+const q=new URLSearchParams(location.search),D=q.get('d'),H=q.get('h'),I=q.get('i'),T=q.get('t'),m=document.getElementById('m');
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let colab=[],ERR='';
+const rot=f=>f.estado==='resolvido'?'Resolvido':f.estado==='trocado'?'Substituto informado':f.aCaminho?'A caminho':f.estado==='cuidando'?'Em andamento':'Sem confirmação';
+async function load(){
+  try{const r=await fetch(`/api/alerta/turno?d=${encodeURIComponent(D)}&h=${encodeURIComponent(H)}&i=${encodeURIComponent(I)}&t=${encodeURIComponent(T)}`);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Erro '+r.status);colab=j.colaboradores||[];draw(j)}
+  catch(e){m.innerHTML=`<div class="card"><h2>Link inválido</h2><div class="mut">${esc(e.message)}</div></div>`}
+}
+function draw(j){
+  const abertos=j.furos.filter(f=>f.estado!=='resolvido').length;
+  const cards=j.furos.map((f,k)=>{
+    const quem=f.vazia?'Vaga sem ninguém lançado':esc(f.nome),res=f.estado==='resolvido';
+    return `<div class="card pess" data-k="${k}"><div class="top"><b>${quem}</b><span class="pill ${f.estado}">${rot(f)}</span></div>
+      ${f.substituto?`<div class="mut">Substituto: <b class="inl">${esc(f.substituto)}</b>${res?'':' · aguardando chegada'}</div>`:''}
+      ${res?`<div class="mut">Nada a fazer aqui.</div>`:`
+      ${f.aCaminho||f.vazia?'':`<button class="sec peq" data-a="caminho">Está a caminho</button>`}
+      <div class="sub-row"><input list="lc" placeholder="Quem vai substituir?" autocomplete="off"><button class="peq" data-a="trocou">Informar substituto</button></div>
+      <button class="sec peq" data-a="confirmou">Já está coberta (confirmar)</button>`}</div>`}).join('');
+  m.innerHTML=`<div class="brand"><svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="13" stroke="#baff1a" stroke-opacity=".4" stroke-width="1.6"/><circle cx="16" cy="16" r="7.5" stroke="#baff1a" stroke-opacity=".6" stroke-width="1.6"/><g class="sweep"><path d="M16 16 L16 3" stroke="#baff1a" stroke-width="1.8" stroke-linecap="round"/></g><circle cx="16" cy="16" r="2.2" fill="#baff1a"/></svg>Escala<b>.</b><em>turno</em></div>
+    <div class="hero ${abertos?'h-cuidando':'h-resolvido'}"><span class="chip ${abertos?'cuidando':'resolvido'}"><i></i>${abertos?abertos+(abertos>1?' pendências':' pendência'):'Tudo resolvido'}</span>
+      <h1>${esc(j.hubNome)}<small>${esc((j.turnos||[]).join(' / '))} · ${esc(j.inicioHm)}</small></h1></div>
+    ${cards||'<div class="card mut">Ninguém pendente neste turno.</div>'}
+    <datalist id="lc">${colab.map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+    ${ERR?`<div class="err">${esc(ERR)}</div>`:''}
+    <div class="mut">Lembre de ajustar os nomes na escala também. Você será avisado quando cada pessoa bater o ponto.</div>`;
+  m.querySelectorAll('.pess').forEach(c=>{const f=j.furos[+c.dataset.k];c.querySelectorAll('button[data-a]').forEach(b=>b.onclick=()=>act(f,b,c));});
+}
+async function act(f,b,c){
+  const a=b.dataset.a,body={d:D,f:f.id,t:f.token,acao:a};
+  if(a==='trocou'){body.substituto=c.querySelector('input').value;if(!body.substituto.trim()){ERR='Informe o nome de quem vai substituir.';return load()}}
+  if(a==='confirmou'&&!confirm('Confirmar que esta vaga já está coberta e encerrar?'))return;
+  b.disabled=true;ERR='';
+  try{const r=await fetch('/api/alerta/responder',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Erro '+r.status)}catch(e){ERR=e.message}
+  load();
+}
+load();
+</script>
+</body>
+</html>
