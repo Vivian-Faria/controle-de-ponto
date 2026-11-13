@@ -54,7 +54,7 @@ export async function lerEscala(datas) {
   if (!c.fields) throw new Error("A escala não respondeu (config).");
   if (!Array.isArray(q)) throw new Error("A escala não respondeu (escalas).");
   const cfg = fsDoc(c), docs = {};
-  for (const r of q) if (r.document) { const d = fsDoc(r.document); docs[`${d.hubId}_${d.data}`] = d; }
+  for (const r of q) if (r.document) { const d = fsDoc(r.document); d.__upd = Date.parse(r.document.updateTime) || 0; docs[`${d.hubId}_${d.data}`] = d; }
   return { cfg: { hubs: cfg.hubs || [], turnos: cfg.turnos || [], colaboradores: cfg.colaboradores || [] }, docs };
 }
 
@@ -64,7 +64,9 @@ const partesDe = v => { const lim = p => { const nome = String(p?.nome || "").re
 const vagasDe = v => { const o = []; if (v) for (const [k, x] of Object.entries(v)) { const i = Number(k); if (Number.isInteger(i) && i >= 0) o[i] = partesDe(x); } return Array.from(o, x => x || []); };
 const na = (lista, nome) => (lista || []).some(x => mesmoNome(x, nome));
 // cada pessoa escalada (ou vaga sem ninguém) vira uma "situação" com horário previsto; presença = bateu o ponto no hub certo
-export function situacoes(escala, dia, cfgA) {
+// "compareceu" marcado na escala só vale depois do início do turno e se o documento foi editado perto/depois dele (a escala copiada de outro dia traz marcas velhas)
+const marcaValida = (doc, ini, agora) => (agora == null || agora >= ini) && (!doc?.__upd || doc.__upd >= ini - 2 * HOUR);
+export function situacoes(escala, dia, cfgA, agora = null) {      // agora: marcas de "compareceu" feitas na escala só valem depois do início do turno
   const out = [], dow = dowOf(dia);
   for (const hub of escala.cfg.hubs) {
     const doc = escala.docs[`${hub.id}_${dia}`], hc = cfgA?.hubs?.[hub.id] || {};
@@ -78,7 +80,7 @@ export function situacoes(escala, dia, cfgA) {
         if (!partes.length) { if (cred > 0) { cred--; continue; } out.push({ hubId: hub.id, hubNome: hub.nome, turnoId: t.id, turno: t.nome, vaga: i, vazia: true, nome: "", inicio: ini, fim, dia }); continue; }
         for (const [pidx, p] of partes.entries()) {
           const pi = p.inicio ? toMs(dia, p.inicio) : ini; let pf = p.fim ? toMs(dia, p.fim) : fim; if (pf <= pi) pf += DAY;
-          const folga = na(doc?.folgas?.[t.id], p.nome), marcouFalta = na(doc?.faltas?.[t.id], p.nome), compareceu = na(doc?.compareceram?.[t.id], p.nome);
+          const folga = na(doc?.folgas?.[t.id], p.nome), marcouFalta = na(doc?.faltas?.[t.id], p.nome), compareceu = na(doc?.compareceram?.[t.id], p.nome) && marcaValida(doc, pi, agora);
           if (folga) continue;
           out.push({ hubId: hub.id, hubNome: hub.nome, turnoId: t.id, turno: t.nome, vaga: i, pidx, vazia: false, nome: p.nome, tipo: p.tipo, inicio: pi, fim: pf, dia, marcouFalta, compareceu, split: !!(p.inicio || p.fim) });
         }
@@ -87,7 +89,7 @@ export function situacoes(escala, dia, cfgA) {
       for (let i = n; i < salvas.length; i++) for (const [pidx, p] of (salvas[i] || []).entries()) {
         if (na(doc?.folgas?.[t.id], p.nome)) continue;
         const pi = p.inicio ? toMs(dia, p.inicio) : ini; let pf = p.fim ? toMs(dia, p.fim) : fim; if (pf <= pi) pf += DAY;
-        out.push({ hubId: hub.id, hubNome: hub.nome, turnoId: t.id, turno: t.nome, vaga: i, pidx, vazia: false, nome: p.nome, tipo: p.tipo, inicio: pi, fim: pf, dia, marcouFalta: false, compareceu: na(doc?.compareceram?.[t.id], p.nome), split: !!(p.inicio || p.fim), extra: true });
+        out.push({ hubId: hub.id, hubNome: hub.nome, turnoId: t.id, turno: t.nome, vaga: i, pidx, vazia: false, nome: p.nome, tipo: p.tipo, inicio: pi, fim: pf, dia, marcouFalta: false, compareceu: na(doc?.compareceram?.[t.id], p.nome) && marcaValida(doc, pi, agora), split: !!(p.inicio || p.fim), extra: true });
       }
     }
   }
@@ -143,7 +145,7 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
   const pres = apel.length ? presencas.map(p => { const a = apel.find(x => mesmoNome(p.nome, x.ponto)); return a ? { ...p, nome: a.escala } : p; }) : presencas;
   const resultado = { dias: {}, enviadas: 0 };
   for (const dia of dias) {
-    let sit = situacoes(escala, dia, cfgA); const furos = Object.fromEntries((await listar(`furo/${dia}/`)).map(f => [f.id, f]));
+    let sit = situacoes(escala, dia, cfgA, agora); const furos = Object.fromEntries((await listar(`furo/${dia}/`)).map(f => [f.id, f]));
     const liderDe = h => cfgA.hubs?.[h]?.lider || {};
     const msgs = [];                       // {tel, texto, meta}
     const aoLider = (f, texto, tipo) => msgs.push({ tel: liderDe(f.hubId).tel, texto, meta: { tipo, hub: f.hubNome, furo: f.id, dia, para_quem: "lider" } });
