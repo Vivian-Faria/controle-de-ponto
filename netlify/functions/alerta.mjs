@@ -77,19 +77,19 @@ export function situacoes(escala, dia, cfgA, agora = null) {      // agora: marc
       const ini = toMs(dia, t.inicio); let fim = toMs(dia, t.fim); if (fim <= ini) fim += DAY;
       for (let i = 0; i < n; i++) {
         const partes = salvas[i] || [];
-        if (!partes.length) { if (cred > 0) { cred--; continue; } out.push({ hubId: hub.id, hubNome: hub.nome, turnoId: t.id, turno: t.nome, vaga: i, vazia: true, nome: "", inicio: ini, fim, dia }); continue; }
+        if (!partes.length) { if (cred > 0) { cred--; continue; } out.push({ hubId: hub.id, hubNome: hub.nome, turnoId: t.id, turno: t.nome, vaga: i, vazia: true, nome: "", inicio: ini, fim, dia, tIni: ini, tFim: fim }); continue; }
         for (const [pidx, p] of partes.entries()) {
           const pi = p.inicio ? toMs(dia, p.inicio) : ini; let pf = p.fim ? toMs(dia, p.fim) : fim; if (pf <= pi) pf += DAY;
           const folga = na(doc?.folgas?.[t.id], p.nome), marcouFalta = na(doc?.faltas?.[t.id], p.nome), compareceu = na(doc?.compareceram?.[t.id], p.nome) && marcaValida(doc, pi, agora);
           if (folga) continue;
-          out.push({ hubId: hub.id, hubNome: hub.nome, turnoId: t.id, turno: t.nome, vaga: i, pidx, vazia: false, nome: p.nome, tipo: p.tipo, inicio: pi, fim: pf, dia, marcouFalta, compareceu, split: !!(p.inicio || p.fim) });
+          out.push({ hubId: hub.id, hubNome: hub.nome, turnoId: t.id, turno: t.nome, vaga: i, pidx, vazia: false, nome: p.nome, tipo: p.tipo, inicio: pi, fim: pf, dia, marcouFalta, compareceu, split: !!(p.inicio || p.fim), tIni: ini, tFim: fim });
         }
       }
       // nomes lançados além do nº de vagas do dia: só contam se a pessoa realmente bater o ponto (nunca geram furo)
       for (let i = n; i < salvas.length; i++) for (const [pidx, p] of (salvas[i] || []).entries()) {
         if (na(doc?.folgas?.[t.id], p.nome)) continue;
         const pi = p.inicio ? toMs(dia, p.inicio) : ini; let pf = p.fim ? toMs(dia, p.fim) : fim; if (pf <= pi) pf += DAY;
-        out.push({ hubId: hub.id, hubNome: hub.nome, turnoId: t.id, turno: t.nome, vaga: i, pidx, vazia: false, nome: p.nome, tipo: p.tipo, inicio: pi, fim: pf, dia, marcouFalta: false, compareceu: na(doc?.compareceram?.[t.id], p.nome) && marcaValida(doc, pi, agora), split: !!(p.inicio || p.fim), extra: true });
+        out.push({ hubId: hub.id, hubNome: hub.nome, turnoId: t.id, turno: t.nome, vaga: i, pidx, vazia: false, nome: p.nome, tipo: p.tipo, inicio: pi, fim: pf, dia, marcouFalta: false, compareceu: na(doc?.compareceram?.[t.id], p.nome) && marcaValida(doc, pi, agora), split: !!(p.inicio || p.fim), extra: true, tIni: ini, tFim: fim });
       }
     }
   }
@@ -129,6 +129,56 @@ async function notificar(dia, para, texto, meta) {
 }
 export const tokenFuro = (sign, dia, id) => sign(`furo:${dia}:${id}`);
 const linkFuro = (sign, dia, id) => `${BASE_URL}/alerta.html?d=${dia}&f=${id}&t=${tokenFuro(sign, dia, id)}`;
+
+
+// ------------------------------------------------------------ cadência de mensagens por turno (pura)
+const MIN = 60000;
+export const tokenTurno = (sign, dia, hubId, ini) => sign(`turno:${dia}:${hubId}:${ini}`);
+const linkTurno = (sign, dia, hubId, ini) => `${BASE_URL}/turno.html?d=${dia}&h=${encodeURIComponent(hubId)}&i=${ini}&t=${tokenTurno(sign, dia, hubId, ini)}`;
+export function cadenciaTurnos({ dia, agora, sit, furos, cad, cfgA, sign }) {
+  const c = cfgA.cadencia || {}, off = { m1: -(c.antes ?? 30), m2: c.m2 ?? 5, m3: c.m3 ?? 10, m4: c.m4 ?? 30, m5: c.m5 ?? 40 }, msgs = [];
+  const grupos = new Map();      // um grupo por hub + horário de início do turno
+  for (const s of sit) {
+    if (s.extra || s.semEscala) continue;
+    const ini = s.tIni ?? s.inicio, k = s.hubId + "|" + ini;
+    if (!grupos.has(k)) grupos.set(k, { hubId: s.hubId, hubNome: s.hubNome, ini, fim: s.tFim ?? s.fim, itens: [] });
+    grupos.get(k).itens.push(s);
+  }
+  for (const [k, g] of grupos) {
+    const st = (cad[k] ||= {});
+    const devidos = Object.keys(off).filter(n => st[n] == null && agora >= g.ini + off[n] * MIN);
+    if (!devidos.length || agora >= g.fim) continue;
+    const n = devidos[devidos.length - 1], venceu = g.ini + off[n] * MIN;
+    for (const m of devidos) st[m] = 0;      // passos anteriores que já passaram: não se repetem
+    if (agora - venceu > 20 * MIN) continue;      // vigia ligado tarde demais: não manda mensagem atrasada
+    const lider = cfgA.hubs?.[g.hubId]?.lider || {}, link = linkTurno(sign, dia, g.hubId, g.ini);
+    const porTurno = new Map(); for (const s of g.itens) { if (!porTurno.has(s.turno)) porTurno.set(s.turno, []); porTurno.get(s.turno).push(s); }
+    const turnos = [...porTurno.keys()].join(" / "), cab = `*${g.hubNome}* — ${turnos} ${hm(g.ini)}`;
+    const status = s => { const f = furos[s.id]; return f?.aCaminho ? "a caminho (você confirmou)" : f?.substituto ? `substituto: ${f.substituto.nome}${f.estado === "trocado" ? " (aguardando chegada)" : ""}` : "sem confirmação"; };
+    const nome = s => s.vazia ? "vaga sem ninguém lançado" : s.nome;
+    const pend = g.itens.filter(s => !s.cheg && !s.compareceu && !s.coberto);
+    const lista = (arr, comStatus) => arr.map(s => `• ${nome(s)}${comStatus ? " — " + status(s) : ""}`).join("\n");
+    let texto = null, gestor = null;
+    if (n === "m1") {
+      const vazias = g.itens.filter(s => s.vazia).length, multi = porTurno.size > 1;
+      const quem = [...porTurno].map(([t, a]) => (multi ? `*${t}*\n` : "") + a.filter(s => !s.vazia).map(s => `• ${s.nome}`).join("\n")).filter(Boolean).join("\n");
+      texto = `📋 *Escala de hoje — ${g.hubNome}*\n${turnos} · ${hm(g.ini)}\n\nQuem você escalou:\n${quem || "• (ninguém lançado)"}${vazias ? `\n⚠️ ${vazias} vaga${vazias > 1 ? "s" : ""} sem ninguém lançado na escala` : ""}\n\nConfira agora se todos chegam a tempo. Se alguém não vai conseguir, providencie a cobertura antes das ${hm(g.ini)}.`;
+    } else if (pend.length) {
+      if (n === "m2") texto = `🕗 ${cab}\nAinda sem ponto batido:\n${lista(pend, false)}\n\nQuais deles já confirmaram que estão a caminho? Responda aqui:\n👉 ${link}`;
+      else if (n === "m3") texto = `⏰ ${cab}\nSeu tempo para agir está acabando. Ainda sem ponto:\n${lista(pend, pend.some(s => furos[s.id]?.aCaminho || furos[s.id]?.substituto))}\n\nVocê já teve retorno deles ou já está providenciando um freela? Atualize aqui:\n👉 ${link}`;
+      else if (n === "m4") texto = `🔁 ${cab}\nContinuam sem bater o ponto:\n${lista(pend, true)}\n\nAlguém vai substituir quem ainda não confirmou? Informe quem é o substituto:\n👉 ${link}`;
+      else {
+        texto = `🚨 ${cab}\nVocê vai ter um furo na sua escala se não corrigir isso imediatamente.\n\nFalta cobrir:\n${lista(pend, true)}\n\nInforme o substituto agora:\n👉 ${link}`;
+        gestor = `🚨 *Furo iminente — ${g.hubNome}*\n${turnos} ${hm(g.ini)}: o líder ${lider.nome || "—"} ainda não resolveu, ${Math.max(0, Math.round((agora - g.ini) / MIN))} min após o início.\n\n${lista(pend, true)}\n\n👉 ${link}`;
+      }
+    }
+    if (!texto) { st[n] = 0; continue; }      // ninguém pendente: nada a cobrar neste passo
+    st[n] = agora;
+    msgs.push({ tel: lider.tel, texto, meta: { tipo: "cad_" + n, hub: g.hubNome, dia, para_quem: "lider" } });
+    if (gestor) msgs.push({ tel: cfgA.gestor?.tel, texto: gestor, meta: { tipo: "escalou", hub: g.hubNome, dia, para_quem: "gestor" } });
+  }
+  return { msgs, cad };
+}
 
 // ------------------------------------------------------------ o vigia
 const relogio = { t: null };      // durante o vigia, o "agora" injetado (testável); fora dele, a hora real
@@ -184,7 +234,7 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
         resto.sort((a, b) => a.t - b.t).forEach((p, i) => {
           const base = vazias[i];
           if (base) Object.assign(base, { vazia: false, nome: p.nome, cheg: { t: p.t }, semEscala: true });
-          else { const r = g[0]; sit.push({ hubId: r.hubId, hubNome: r.hubNome, turnoId: r.turnoId, turno: r.turno, vaga: 100 + i, pidx: 0, vazia: false, nome: p.nome, inicio: r.inicio, fim: r.fim, dia, marcouFalta: false, compareceu: false, split: false, semEscala: true, cheg: { t: p.t }, id: idDe(dia, r.hubId, r.turnoId, 100 + i, 0) }); }
+          else { const r = g[0]; sit.push({ hubId: r.hubId, hubNome: r.hubNome, turnoId: r.turnoId, turno: r.turno, vaga: 100 + i, pidx: 0, vazia: false, nome: p.nome, inicio: r.inicio, fim: r.fim, tIni: r.tIni, tFim: r.tFim, dia, marcouFalta: false, compareceu: false, split: false, semEscala: true, cheg: { t: p.t }, id: idDe(dia, r.hubId, r.turnoId, 100 + i, 0) }); }
         });
       }
     }
@@ -214,7 +264,7 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
           const txt = `${quem} no mesmo turno de *${m.hubNome}* (${m.turno} ${hm(m.inicio)}). Ajuste o nome na escala de ${s.hubNome}.`;
           const sub = por.nome && !mesma ? { nome: por.nome, auto: true, via: m.hubNome, informadoEm: agora } : null;
           if (fs) { fs.estado = "resolvido"; fs.resolvidoEm = por.t; if (sub) fs.substituto = sub; evento(fs, "espelho", txt.replace(/\*/g, "")); aoLider(fs, `🔁 ${txt}`, "espelho"); }
-          else { const f = { id: s.id, dia, hubId: s.hubId, hubNome: s.hubNome, turnoId: s.turnoId, turno: s.turno, vaga: s.vaga, nome: s.nome, vazia: false, inicio: s.inicio, fim: s.fim, estado: "resolvido", criadoEm: agora, resolvidoEm: por.t, espelho: true, ...(sub ? { substituto: sub } : {}), eventos: [] };
+          else { const f = { id: s.id, dia, hubId: s.hubId, hubNome: s.hubNome, turnoId: s.turnoId, turno: s.turno, vaga: s.vaga, nome: s.nome, vazia: false, inicio: s.inicio, fim: s.fim, estado: "resolvido", criadoEm: agora, resolvidoEm: por.t, espelho: true, tIni: s.tIni, ...(sub ? { substituto: sub } : {}), eventos: [] };
             evento(f, "espelho", txt.replace(/\*/g, "")); furos[f.id] = f; aoLider(f, `🔁 ${txt}`, "espelho"); }
         } else if (fm && fs && fs.estado !== "resolvido") {      // cobertura ainda a caminho no outro hub: acompanha o estado
           if (fm.estado === "trocado" && fm.substituto && !fs.substituto) { fs.substituto = { nome: fm.substituto.nome, auto: true, via: m.hubNome, informadoEm: agora }; fs.estado = "trocado"; evento(fs, "espelho", `${fm.substituto.nome} vai cobrir este turno (informado em ${m.hubNome}). Aguardando a chegada.`); aoLider(fs, `🔁 Em *${m.hubNome}* foi informado que *${fm.substituto.nome}* cobre o mesmo turno (${s.turno} ${hm(s.inicio)}). Ajuste a escala de ${s.hubNome}.`, "espelho"); }
@@ -242,14 +292,7 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
         else if (mudou) { f.vazia = false; f.substituto = { nome: s.nome, auto: true, informadoEm: agora }; f.estado = "trocado"; evento(f, "escala_alterada", `Escala alterada: ${s.nome} assumiu a vaga${f.nome ? " de " + f.nome : ""}. Aguardando a chegada.`);
           aoLider(f, `🔁 Escala alterada em *${f.hubNome}* (${f.turno} ${hm(f.inicio)}): *${s.nome}* assumiu a vaga${f.nome ? " de " + f.nome : ""}. Você será avisado quando bater o ponto.`, "troca"); }
       }
-      if (f.estado === "aberto" && !f.escalouEm && agora - f.criadoEm >= escalarMin * 60000) {
-        f.escalouEm = agora; evento(f, "escalou", `Sem resposta do líder há ${escalarMin} min: avisado o gestor.`);
-        aoGestor(f, `🚨 Sem resposta há ${escalarMin} min — *${f.hubNome}* (${f.turno} ${hm(f.inicio)}): ${f.vazia ? "vaga sem ninguém" : f.nome + " não bateu o ponto"}. Líder: ${liderDe(f.hubId).nome || "—"}.`, "escalou");
-      }
-      if (agora - (f.ultimoAviso || f.criadoEm) >= lembrar * 60000 && agora < f.fim) {
-        f.ultimoAviso = agora; evento(f, "lembrete", "Lembrete enviado ao líder.");
-        aoLider(f, `⏰ *Lembrete* — furo ainda aberto em *${f.hubNome}* (${f.turno} ${hm(f.inicio)}): ${f.vazia ? "vaga sem ninguém" : f.nome} (${f.estado === "aberto" ? "sem resposta" : f.estado === "cuidando" ? "você está cuidando" : "aguardando " + (f.substituto?.nome || "a chegada")}). Feche sua escala logo.\n${linkFuro(sign, dia, f.id)}`, "lembrete");
-      }
+      // lembretes e escalada ao gestor agora seguem a cadência de mensagens por turno (cadenciaTurnos)
       if (agora >= f.fim) { f.estado = "resolvido"; f.encerrado = true; evento(f, "encerrou", "O turno terminou sem a cobertura da vaga."); }
     }
     // 3) novos furos
@@ -259,17 +302,23 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
       if (s.compareceu || s.cheg) continue;
       if (s.espelho && !mesmoNome(s.nome, s.espelho.nome)) continue;      // vaga do mesmo turno em outro hub com outro nome: o furo nasce lá e vale para os dois
       if (!s.vazia && substitutos.has(nrm(s.nome))) continue;
-      const prazo = s.vazia ? s.inicio - 2 * HOUR : s.inicio + tol * 60000;
+      const prazo = s.vazia ? s.inicio - 2 * HOUR : s.inicio + (cfgA.cadencia?.m2 ?? 5) * 60000;
       if (agora < prazo || agora >= s.fim || agora - Math.max(prazo, s.inicio) > 3 * HOUR) continue;      // não cria alerta atrasado demais (ex.: vigia ligado depois do início); continua visível no painel
-      const f = { id: s.id, dia, hubId: s.hubId, hubNome: s.hubNome, turnoId: s.turnoId, turno: s.turno, vaga: s.vaga, nome: s.nome, vazia: s.vazia, inicio: s.inicio, fim: s.fim, estado: "aberto", criadoEm: agora, eventos: [] };
+      const f = { id: s.id, dia, hubId: s.hubId, hubNome: s.hubNome, turnoId: s.turnoId, turno: s.turno, vaga: s.vaga, nome: s.nome, vazia: s.vazia, inicio: s.inicio, fim: s.fim, estado: "aberto", criadoEm: agora, tIni: s.tIni, eventos: [] };
       const fora = s.vazia ? null : foraDoHub(s, pres, cfgA), atraso = Math.max(0, Math.round((agora - s.inicio) / 60000));
       const total = sit.filter(x => x.hubId === s.hubId && x.turnoId === s.turnoId).length, ok = sit.filter(x => x.hubId === s.hubId && x.turnoId === s.turnoId && (x.cheg || x.compareceu)).length;
       evento(f, "furo", s.vazia ? "Vaga sem ninguém escalado perto do início do turno." : `${s.nome} não bateu o ponto (${atraso} min após ${hm(s.inicio)})${fora ? `; bateu em ${fora.unidade || "outro hub"}` : ""}${s.marcouFalta ? "; marcado como falta na escala" : ""}.`);
       furos[f.id] = f;
-      aoLider(f, s.vazia ? `⚠️ *Vaga sem ninguém — ${s.hubNome}*\n${s.turno} ${hm(s.inicio)}–${hm(s.fim)}: nenhum nome lançado na escala.\n👉 ${linkFuro(sign, dia, f.id)}`
-        : `⚠️ *Furo de escala — ${s.hubNome}*\n${s.turno} ${hm(s.inicio)}–${hm(s.fim)}\n*${s.nome}* deveria ter chegado às ${hm(s.inicio)} e não bateu o ponto (${atraso} min)${fora ? `. Bateu em ${fora.unidade || "outro hub"}, que não é o hub da escala` : ""}.\nPresentes: ${ok} de ${total}.\n👉 Responda e informe quem cobriu: ${linkFuro(sign, dia, f.id)}`, "furo");
+      // sem mensagem individual: o líder recebe a lista do turno pela cadência (cadenciaTurnos)
     }
     for (const s of sit) { const f = furos[s.id]; s.coberto = !!(f && f.estado === "resolvido" && !f.encerrado && !s.cheg && !s.compareceu); }
+    // cadência de mensagens por turno (07:30, +5, +10, +30, +40 min)
+    {
+      const cad = (await getJ(`cad/${dia}`)) || {};
+      const r = cadenciaTurnos({ dia, agora, sit, furos, cad, cfgA, sign });
+      for (const m of r.msgs) msgs.push(m);
+      await putJ(`cad/${dia}`, r.cad);
+    }
     // 4) turno completo depois de ter tido furo
     const completos = {};
     for (const s of sit) { const k = s.hubId + "|" + s.turnoId; const c = (completos[k] ||= { hub: s.hubNome, turno: s.turno, hubId: s.hubId, tid: s.turnoId, n: 0, ok: 0, inicio: s.inicio, ate: s.inicio + tol * 60000, aberto: false }); c.n++; if (s.cheg || s.compareceu || s.coberto) c.ok++; }
@@ -320,6 +369,14 @@ export async function rotaAlerta(req, path, ctx) {
     const esc = await lerEscala([dia]).catch(() => null);
     return json({ furo: { ...f, inicioHm: hm(f.inicio), fimHm: hm(f.fim), eventos: (f.eventos || []).map(e => ({ ...e, hm: hm(e.t) })) }, colaboradores: esc ? [...new Set(esc.cfg.colaboradores.map(c => c.nome))].sort((a, b) => a.localeCompare(b, "pt-BR")) : [] });
   }
+  if (path === "/api/alerta/turno" && req.method === "GET") {      // página do turno: lista de quem falta, com a ação de cada pessoa
+    const dia = q.get("d") || "", h = q.get("h") || "", i = Number(q.get("i")), t = q.get("t") || "";
+    if (!/^\d{4}-\d\d-\d\d$/.test(dia) || !Number.isFinite(i) || t !== tokenTurno(sign, dia, h, i)) return erro("Link inválido ou expirado.", 403);
+    const fs = (await listar(`furo/${dia}/`)).filter(f => f.hubId === h && (f.tIni ?? f.inicio) === i);
+    const esc = await lerEscala([dia]).catch(() => null), nomes = [...new Set(fs.map(f => f.turno))];
+    return json({ hubNome: fs[0]?.hubNome || "", turnos: nomes, inicioHm: hm(i), colaboradores: esc ? [...new Set(esc.cfg.colaboradores.map(c => c.nome))].sort((a, b) => a.localeCompare(b, "pt-BR")) : [],
+      furos: fs.sort((a, b) => (a.estado === "resolvido") - (b.estado === "resolvido") || String(a.nome).localeCompare(String(b.nome))).map(f => ({ id: f.id, token: tokenFuro(sign, dia, f.id), nome: f.nome, vazia: f.vazia, turno: f.turno, estado: f.estado, aCaminho: !!f.aCaminho, substituto: f.substituto?.nome || null, encerrado: !!f.encerrado })) });
+  }
   if (path === "/api/alerta/responder" && req.method === "POST") {
     const b = await req.json().catch(() => ({})), dia = String(b.d || ""), id = String(b.f || "");
     if (!/^\d{4}-\d\d-\d\d$/.test(dia) || String(b.t) !== tokenFuro(sign, dia, id)) return erro("Link inválido ou expirado.", 403);
@@ -327,6 +384,9 @@ export async function rotaAlerta(req, path, ctx) {
     const cfgA = await lerConfig(), lider = cfgA?.hubs?.[f.hubId]?.lider?.nome || "O líder", agora = Date.now();
     if (b.acao === "cuidando") { f.estado = "cuidando"; f.cuidandoEm = agora; evento(f, "cuidando", `${lider} informou que está cuidando.`, lider); await putJ(`furo/${dia}/${id}`, f);
       await notificar(dia, cfgA?.hubs?.[f.hubId]?.lider?.tel, `✅ Registrado: você está cuidando do furo em *${f.hubNome}* (${f.turno}). Quando cobrir, informe quem entrou pelo mesmo link.`, { tipo: "cuidando", hub: f.hubNome, furo: id, dia, para_quem: "lider" }); return json({ ok: true, estado: f.estado }); }
+    if (b.acao === "caminho") {      // o líder confirma que a pessoa está a caminho (sem mensagem de volta: o histórico guarda)
+      f.aCaminho = true; f.aCaminhoEm = agora; if (f.estado === "aberto") f.estado = "cuidando"; evento(f, "caminho", `${lider} confirmou que ${f.nome || "a pessoa"} está a caminho.`, lider); await putJ(`furo/${dia}/${id}`, f); return json({ ok: true, estado: f.estado });
+    }
     if (b.acao === "trocou") {
       const nome = String(b.substituto || "").replace(/\s+/g, " ").trim(); if (nome.length < 2) return erro("Informe quem vai cobrir.");
       const esc = await lerEscala([dia]).catch(() => null), cad = esc ? esc.cfg.colaboradores.map(c => c.nome).find(n => mesmoNome(n, nome)) : nome; if (!cad) return erro("Esse nome não está cadastrado na escala. Cadastre a pessoa lá primeiro.");
