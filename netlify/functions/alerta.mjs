@@ -123,8 +123,8 @@ async function enviarWA(tel, texto) {
 const soDigitos = t => String(t || "").replace(/\D/g, "");
 async function notificar(dia, para, texto, meta) {
   const tel = soDigitos(para); const reg = { t: agoraMs(), para: tel ? "…" + tel.slice(-4) : "(sem telefone)", texto, ...meta };
-  // Trava: mensagens aos líderes só saem de verdade com WA_LIDERES=sim (as da gestão saem assim que o provedor está ligado).
-  if (!tel) reg.estado = "sem_telefone"; else if (meta?.para_quem !== "gestor" && process.env.WA_LIDERES !== "sim") reg.estado = "simulado"; else Object.assign(reg, await enviarWA(tel.startsWith("55") ? tel : "55" + tel, texto));
+  // Trava: mensagens aos líderes só saem de verdade com WA_LIDERES=sim, e as aos colaboradores com WA_COLABS=sim (as da gestão saem assim que o provedor está ligado).
+  if (!tel) reg.estado = "sem_telefone"; else if (meta?.para_quem !== "gestor" && process.env[meta?.para_quem === "colab" ? "WA_COLABS" : "WA_LIDERES"] !== "sim") reg.estado = "simulado"; else Object.assign(reg, await enviarWA(tel.startsWith("55") ? tel : "55" + tel, texto));
   await putJ(`out/${dia}/${String(reg.t).padStart(13, "0")}-${Math.random().toString(36).slice(2, 6)}`, reg); return reg;
 }
 export const tokenFuro = (sign, dia, id) => sign(`furo:${dia}:${id}`);
@@ -135,8 +135,12 @@ const linkFuro = (sign, dia, id) => `${BASE_URL}/alerta.html?d=${dia}&f=${id}&t=
 const MIN = 60000;
 export const tokenTurno = (sign, dia, hubId, ini) => sign(`turno:${dia}:${hubId}:${ini}`);
 const linkTurno = (sign, dia, hubId, ini) => `${BASE_URL}/turno.html?d=${dia}&h=${encodeURIComponent(hubId)}&i=${ini}&t=${tokenTurno(sign, dia, hubId, ini)}`;
-export function cadenciaTurnos({ dia, agora, sit, furos, cad, cfgA, sign }) {
-  const c = cfgA.cadencia || {}, off = { m1: -(c.antes ?? 30), m2: c.m2 ?? 5, m3: c.m3 ?? 10, m4: c.m4 ?? 30, m5: c.m5 ?? 40 }, msgs = [];
+export const linkEquipe = (sign, hubId) => `${BASE_URL}/equipe.html?h=${encodeURIComponent(hubId)}&t=${sign(`equipe:${hubId}`)}`;
+export const tokenColab = (sign, dia, sid) => sign(`eu:${dia}:${sid}`);
+const linkColab = (sign, dia, sid) => `${BASE_URL}/eu.html?d=${dia}&s=${encodeURIComponent(sid)}&t=${tokenColab(sign, dia, sid)}`;
+const telDe = (tels, hubId, nome) => Object.values(tels?.[hubId] || {}).find(x => x?.tel && mesmoNome(x.nome, nome))?.tel || null;
+export function cadenciaTurnos({ dia, agora, sit, furos, cad, cfgA, sign, tels = null, resps = {} }) {
+  const c = cfgA.cadencia || {}, off = { m1: -(c.antes ?? 30), m2: c.m2 ?? 5, m3: c.m3 ?? 10, m4: c.m4 ?? 30, m5: c.m5 ?? 40 }, msgs = [], colabs = [];
   const grupos = new Map();      // um grupo por hub + horário de início do turno
   for (const s of sit) {
     if (s.extra || s.semEscala) continue;
@@ -154,7 +158,7 @@ export function cadenciaTurnos({ dia, agora, sit, furos, cad, cfgA, sign }) {
     const lider = cfgA.hubs?.[g.hubId]?.lider || {}, link = linkTurno(sign, dia, g.hubId, g.ini);
     const porTurno = new Map(); for (const s of g.itens) { if (!porTurno.has(s.turno)) porTurno.set(s.turno, []); porTurno.get(s.turno).push(s); }
     const turnos = [...porTurno.keys()].join(" / "), cab = `*${g.hubNome}* — ${turnos} ${hm(g.ini)}`;
-    const status = s => { const f = furos[s.id]; return f?.aCaminho ? "a caminho (você confirmou)" : f?.substituto ? `substituto: ${f.substituto.nome}${f.estado === "trocado" ? " (aguardando chegada)" : ""}` : "sem confirmação"; };
+    const status = s => { const f = furos[s.id]; return f?.naoVai ? "avisou que não vai conseguir ir" : f?.aCaminho ? (f.aCaminhoPor === "colab" ? "a caminho (ele confirmou pelo link)" : "a caminho (você confirmou)") : f?.substituto ? `substituto: ${f.substituto.nome}${f.estado === "trocado" ? " (aguardando chegada)" : ""}` : "sem confirmação"; };
     const nome = s => s.vazia ? "vaga sem ninguém lançado" : s.nome;
     const pend = g.itens.filter(s => !s.cheg && !s.compareceu && !s.coberto);
     const lista = (arr, comStatus) => arr.map(s => `• ${nome(s)}${comStatus ? " — " + status(s) : ""}`).join("\n");
@@ -162,7 +166,7 @@ export function cadenciaTurnos({ dia, agora, sit, furos, cad, cfgA, sign }) {
     if (n === "m1") {
       const vazias = g.itens.filter(s => s.vazia).length, multi = porTurno.size > 1;
       const quem = [...porTurno].map(([t, a]) => (multi ? `*${t}*\n` : "") + a.filter(s => !s.vazia).map(s => `• ${s.nome}`).join("\n")).filter(Boolean).join("\n");
-      texto = `📋 *Escala de hoje — ${g.hubNome}*\n${turnos} · ${hm(g.ini)}\n\nQuem você escalou:\n${quem || "• (ninguém lançado)"}${vazias ? `\n⚠️ ${vazias} vaga${vazias > 1 ? "s" : ""} sem ninguém lançado na escala` : ""}\n\nConfira agora se todos chegam a tempo. Se alguém não vai conseguir, providencie a cobertura antes das ${hm(g.ini)}.`;
+      texto = `📋 *Escala de hoje — ${g.hubNome}*\n${turnos} · ${hm(g.ini)}\n\nQuem você escalou:\n${quem || "• (ninguém lançado)"}${vazias ? `\n⚠️ ${vazias} vaga${vazias > 1 ? "s" : ""} sem ninguém lançado na escala` : ""}\n\nConfira agora se todos chegam a tempo. Se alguém não vai conseguir, providencie a cobertura antes das ${hm(g.ini)}.${tels && !Object.keys(tels[g.hubId] || {}).length ? `\n\n📱 Cadastre os telefones da sua equipe e cada um recebe o lembrete do turno:\n👉 ${linkEquipe(sign, g.hubId)}` : ""}`;
     } else if (pend.length) {
       if (n === "m2") texto = `🕗 ${cab}\nAinda sem ponto batido:\n${lista(pend, false)}\n\nQuais deles já confirmaram que estão a caminho? Responda aqui:\n👉 ${link}`;
       else if (n === "m3") texto = `⏰ ${cab}\nSeu tempo para agir está acabando. Ainda sem ponto:\n${lista(pend, pend.some(s => furos[s.id]?.aCaminho || furos[s.id]?.substituto))}\n\nVocê já teve retorno deles ou já está providenciando um freela? Atualize aqui:\n👉 ${link}`;
@@ -172,12 +176,23 @@ export function cadenciaTurnos({ dia, agora, sit, furos, cad, cfgA, sign }) {
         gestor = `🚨 *Furo iminente — ${g.hubNome}*\n${turnos} ${hm(g.ini)}: o líder ${lider.nome || "—"} ainda não resolveu, ${Math.max(0, Math.round((agora - g.ini) / MIN))} min após o início.\n\n${lista(pend, true)}\n\n👉 ${link}`;
       }
     }
+    if (tels && (n === "m1" || n === "m2")) {      // lembrete direto ao colaborador (só quem tem telefone cadastrado): 30 min antes e logo após o início
+      const alvo = n === "m1" ? g.itens.filter(s => !s.vazia && !s.cheg && !s.compareceu) : pend.filter(s => !s.vazia);
+      for (const s of alvo) {
+        const tel = telDe(tels, g.hubId, s.nome), r = resps[s.id]; if (!tel || r?.resp === "nao_vou") continue;
+        const pn = String(s.nome).split(" ")[0], lk = linkColab(sign, dia, s.id);
+        const t2 = n === "m1" ? `Olá, ${pn}! 👋 Seu turno em *${g.hubNome}* (${s.turno}) começa às ${hm(s.inicio)}.\n\nJá está a caminho? Confirme aqui:\n👉 ${lk}`
+          : r?.resp === "caminho" ? `${pn}, você avisou que estava a caminho, mas o seu ponto em *${g.hubNome}* ainda não foi batido. Assim que chegar, bata o ponto.`
+          : `${pn}, seu turno em *${g.hubNome}* começou às ${hm(s.inicio)} e o seu ponto ainda não foi batido. Já está chegando? Responda aqui:\n👉 ${lk}`;
+        colabs.push({ tel, texto: t2, eu: { sid: s.id, nome: s.nome, hubId: g.hubId, hubNome: g.hubNome, turnoId: s.turnoId, turno: s.turno, vaga: s.vaga, inicio: s.inicio, fim: s.fim, tIni: s.tIni ?? s.inicio }, meta: { tipo: "colab_" + n, hub: g.hubNome, dia, para_quem: "colab", nome: s.nome } });
+      }
+    }
     if (!texto) { st[n] = 0; continue; }      // ninguém pendente: nada a cobrar neste passo
     st[n] = agora;
     msgs.push({ tel: lider.tel, texto, meta: { tipo: "cad_" + n, hub: g.hubNome, dia, para_quem: "lider" } });
     if (gestor) msgs.push({ tel: cfgA.gestor?.tel, texto: gestor, meta: { tipo: "escalou", hub: g.hubNome, dia, para_quem: "gestor" } });
   }
-  return { msgs, cad };
+  return { msgs, cad, colabs };
 }
 
 // ------------------------------------------------------------ o vigia
@@ -194,6 +209,7 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
   const apel = (cfgA.apelidos || []).filter(a => a?.escala && a?.ponto);
   const pres = apel.length ? presencas.map(p => { const a = apel.find(x => mesmoNome(p.nome, x.ponto)); return a ? { ...p, nome: a.escala } : p; }) : presencas;
   const resultado = { dias: {}, enviadas: 0 };
+  const tels = {}; for (const h of Object.keys(cfgA.hubs || {})) tels[h] = (await getJ(`tel/${h}`)) || {};      // telefones dos colaboradores, por hub (só na central)
   for (const dia of dias) {
     let sit = situacoes(escala, dia, cfgA, agora); const furos = Object.fromEntries((await listar(`furo/${dia}/`)).map(f => [f.id, f]));
     const liderDe = h => cfgA.hubs?.[h]?.lider || {};
@@ -311,12 +327,15 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
       furos[f.id] = f;
       // sem mensagem individual: o líder recebe a lista do turno pela cadência (cadenciaTurnos)
     }
+    const euList = await listar(`eu/${dia}/`), resps = Object.fromEntries(euList.map(e => [e.sid, e]));
+    for (const e of euList) { const f = furos[e.sid]; if (e.resp === "caminho" && f && f.estado !== "resolvido" && !f.aCaminho) { f.aCaminho = true; f.aCaminhoEm = e.respEm || agora; f.aCaminhoPor = "colab"; if (f.estado === "aberto") f.estado = "cuidando"; evento(f, "caminho", `${f.nome || "A pessoa"} confirmou pelo link que está a caminho.`); } }
     for (const s of sit) { const f = furos[s.id]; s.coberto = !!(f && f.estado === "resolvido" && !f.encerrado && !s.cheg && !s.compareceu); }
     // cadência de mensagens por turno (07:30, +5, +10, +30, +40 min)
     {
       const cad = (await getJ(`cad/${dia}`)) || {};
-      const r = cadenciaTurnos({ dia, agora, sit, furos, cad, cfgA, sign });
+      const r = cadenciaTurnos({ dia, agora, sit, furos, cad, cfgA, sign, tels, resps });
       for (const m of r.msgs) msgs.push(m);
+      for (const c of r.colabs || []) { await putJ(`eu/${dia}/${c.eu.sid}`, { ...(resps[c.eu.sid] || {}), ...c.eu }); msgs.push({ tel: c.tel, texto: c.texto, meta: c.meta }); }
       await putJ(`cad/${dia}`, r.cad);
     }
     // 4) turno completo depois de ter tido furo
@@ -375,7 +394,7 @@ export async function rotaAlerta(req, path, ctx) {
     const fs = (await listar(`furo/${dia}/`)).filter(f => f.hubId === h && (f.tIni ?? f.inicio) === i);
     const esc = await lerEscala([dia]).catch(() => null), nomes = [...new Set(fs.map(f => f.turno))];
     return json({ hubNome: fs[0]?.hubNome || "", turnos: nomes, inicioHm: hm(i), colaboradores: esc ? [...new Set(esc.cfg.colaboradores.map(c => c.nome))].sort((a, b) => a.localeCompare(b, "pt-BR")) : [],
-      furos: fs.sort((a, b) => (a.estado === "resolvido") - (b.estado === "resolvido") || String(a.nome).localeCompare(String(b.nome))).map(f => ({ id: f.id, token: tokenFuro(sign, dia, f.id), nome: f.nome, vazia: f.vazia, turno: f.turno, estado: f.estado, aCaminho: !!f.aCaminho, substituto: f.substituto?.nome || null, encerrado: !!f.encerrado })) });
+      furos: fs.sort((a, b) => (a.estado === "resolvido") - (b.estado === "resolvido") || String(a.nome).localeCompare(String(b.nome))).map(f => ({ id: f.id, token: tokenFuro(sign, dia, f.id), nome: f.nome, vazia: f.vazia, turno: f.turno, estado: f.estado, aCaminho: !!f.aCaminho, naoVai: !!f.naoVai, substituto: f.substituto?.nome || null, encerrado: !!f.encerrado })) });
   }
   if (path === "/api/alerta/responder" && req.method === "POST") {
     const b = await req.json().catch(() => ({})), dia = String(b.d || ""), id = String(b.f || "");
@@ -400,7 +419,55 @@ export async function rotaAlerta(req, path, ctx) {
     }
     return erro("Ação inválida.");
   }
+  // cadastro de telefones da equipe: o líder usa o link do próprio hub (token assinado); cada hub só enxerga e grava os seus
+  const fmtTel = v => { let d = soDigitos(v); if (!d) return ""; if (d.startsWith("55") && d.length > 11) d = d.slice(2); return d.length === 10 || d.length === 11 ? "55" + d : null; };
+  if (path === "/api/alerta/equipe" && (req.method === "GET" || req.method === "POST")) {
+    const b = req.method === "POST" ? await req.json().catch(() => ({})) : {}, h = String(b.h ?? q.get("h") ?? ""), t = String(b.t ?? q.get("t") ?? "");
+    if (!h || t !== sign(`equipe:${h}`)) return erro("Link inválido ou expirado.", 403);
+    const esc = await lerEscala([isoOf(Date.now())]).catch(() => null), hub = esc?.cfg.hubs.find(x => x.id === h); if (!hub) return erro("Hub não encontrado.", 404);
+    const salvos = (await getJ(`tel/${h}`)) || {};
+    if (req.method === "POST") {
+      const lista = Array.isArray(b.lista) ? b.lista.slice(0, 300) : null; if (!lista) return erro("Lista inválida.");
+      const novo = {}, ruins = [];
+      for (const x of lista) {
+        const nome = String(x?.nome || "").replace(/\s+/g, " ").trim().slice(0, 80); if (nome.length < 2) continue;
+        const tel = fmtTel(x?.tel); if (tel === null) { ruins.push(nome); continue; }
+        if (tel) novo[nrm(nome)] = { nome, tel };
+      }
+      if (ruins.length) return erro(`Telefone inválido para: ${ruins.join(", ")}. Use DDD + número (ex.: 11 91234-5678).`);
+      await putJ(`tel/${h}`, novo); return json({ ok: true, total: Object.keys(novo).length });
+    }
+    const nomes = new Map(); for (const c of esc.cfg.colaboradores) if (c.hubId === h && c.nome) nomes.set(nrm(c.nome), c.nome);
+    for (const [k, v] of Object.entries(salvos)) if (!nomes.has(k)) nomes.set(k, v.nome);
+    return json({ hubNome: hub.nome, pessoas: [...nomes].map(([k, nome]) => ({ nome, tel: salvos[k]?.tel ? salvos[k].tel.replace(/^55/, "") : "" })).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")) });
+  }
+  // página do colaborador: confirma que está a caminho ou avisa que não vai (vale só para ele neste turno, pelo token do link)
+  if (path === "/api/alerta/eu" && (req.method === "GET" || req.method === "POST")) {
+    const b = req.method === "POST" ? await req.json().catch(() => ({})) : {}, dia = String(b.d ?? q.get("d") ?? ""), sid = String(b.s ?? q.get("s") ?? ""), t = String(b.t ?? q.get("t") ?? "");
+    if (!/^\d{4}-\d\d-\d\d$/.test(dia) || !sid || t !== tokenColab(sign, dia, sid)) return erro("Link inválido ou expirado.", 403);
+    const e = await getJ(`eu/${dia}/${sid}`); if (!e) return erro("Link não encontrado.", 404); const agora = Date.now();
+    if (req.method === "GET") return json({ nome: e.nome, hubNome: e.hubNome, turno: e.turno, inicioHm: hm(e.inicio), resp: e.resp || null, encerrado: agora >= e.fim });
+    if (agora >= e.fim) return erro("Este turno já terminou.", 409);
+    if (b.acao !== "caminho" && b.acao !== "nao_vou") return erro("Ação inválida.");
+    if (e.resp === b.acao) return json({ ok: true, resp: e.resp });
+    e.resp = b.acao; e.respEm = agora; await putJ(`eu/${dia}/${sid}`, e);
+    let f = await getJ(`furo/${dia}/${sid}`);
+    if (b.acao === "caminho") {
+      if (f && f.estado !== "resolvido" && !f.aCaminho) { f.aCaminho = true; f.aCaminhoEm = agora; f.aCaminhoPor = "colab"; if (f.estado === "aberto") f.estado = "cuidando"; evento(f, "caminho", `${e.nome} confirmou pelo link que está a caminho.`); await putJ(`furo/${dia}/${sid}`, f); }
+      return json({ ok: true, resp: e.resp });
+    }
+    if (f?.estado === "resolvido") return json({ ok: true, resp: e.resp });
+    if (!f) f = { id: sid, dia, hubId: e.hubId, hubNome: e.hubNome, turnoId: e.turnoId, turno: e.turno, vaga: e.vaga, nome: e.nome, vazia: false, inicio: e.inicio, fim: e.fim, estado: "aberto", criadoEm: agora, tIni: e.tIni, eventos: [] };
+    f.naoVai = true; f.aCaminho = false; evento(f, "nao_vai", `${e.nome} avisou pelo link que não vai conseguir ir ao turno.`); await putJ(`furo/${dia}/${sid}`, f);
+    const cfgA = await lerConfig();
+    await notificar(dia, cfgA?.hubs?.[e.hubId]?.lider?.tel, `⚠️ *${e.nome}* avisou que *não vai conseguir ir* ao turno de *${e.hubNome}* (${e.turno} ${hm(e.inicio)}). Providencie a cobertura agora:\n👉 ${linkTurno(sign, dia, e.hubId, e.tIni)}`, { tipo: "colab_nao_vou", hub: e.hubNome, furo: sid, dia, para_quem: "lider" });
+    return json({ ok: true, resp: e.resp });
+  }
   if (!isAdmin(req)) return erro("Não autorizado", 401);
+  if (path === "/api/alerta/equipe-links" && req.method === "GET") {      // links do cadastro de equipe, um por hub, para a gestão repassar aos líderes
+    const esc = await lerEscala([isoOf(Date.now())]);
+    return json({ hubs: await Promise.all(esc.cfg.hubs.map(async h => ({ id: h.id, nome: h.nome, link: linkEquipe(sign, h.id), cadastrados: Object.keys((await getJ(`tel/${h.id}`)) || {}).length }))) });
+  }
   if (path === "/api/alerta/painel" && req.method === "GET") {
     const dia = /^\d{4}-\d\d-\d\d$/.test(q.get("d") || "") ? q.get("d") : isoOf(Date.now());
     const [resumo, furos, out] = await Promise.all([getJ(`dia/${dia}`), listar(`furo/${dia}/`), listar(`out/${dia}/`)]);
