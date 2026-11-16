@@ -380,6 +380,7 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
     await putJ(`dia/${dia}`, resumo); resultado.dias[dia] = { situacoes: sit.length, furos: Object.keys(furos).length };
   }
   await relatorioDiario({ agora, cfgA, escala: null });
+  await cobrarCadastros({ agora, cfgA, sign }).catch(() => {});      // cobra só o líder: telefones que faltam na escala de amanhã (20h) e de hoje (7h)
   return { ok: true, ...resultado };
 }
 
@@ -389,6 +390,28 @@ export async function montarRelatorio(dia) {
   const linhas = furos.flatMap(f => (f.eventos || []).map(e => ({ t: e.t, hub: f.hubNome, turno: f.turno, ...e }))).sort((a, b) => a.t - b.t);
   return { dia, linhas, resumo };
 }
+// ------------------------------------------------------------ cobrança do cadastro de telefones (só o líder recebe; a gestão não)
+const semTelDe = (tels, hubId, nome) => Object.values(tels?.[hubId] || {}).some(x => x?.semTel && mesmoNome(x.nome, nome));
+export const faltamTel = (tels, hubId, nomes) => { const o = []; for (const n of nomes) if (n && !telDe(tels, hubId, n) && !semTelDe(tels, hubId, n) && !o.some(x => mesmoNome(x, n))) o.push(n); return o; };
+export async function cobrarCadastros({ agora, cfgA, sign }) {
+  const hoje = isoOf(agora), h = lp(agora).h;
+  const slots = [{ k: "noite", dia: addDays(hoje, 1), de: 20, ate: 23, quando: "amanhã" }, { k: "manha", dia: hoje, de: 7, ate: 10, quando: "hoje" }];
+  for (const s of slots) {
+    if (h < s.de || h >= s.ate) continue;
+    const key = `cobcad/${s.dia}/${s.k}`; if (await getJ(key)) continue;
+    const esc = await lerEscala([s.dia]).catch(() => null); if (!esc) continue;      // sem leitura da escala: tenta de novo na próxima rodada
+    await putJ(key, { t: agora });
+    const porHub = new Map();
+    for (const x of situacoes(esc, s.dia, cfgA).filter(x => !x.vazia && x.nome)) { if (!porHub.has(x.hubId)) porHub.set(x.hubId, { nome: x.hubNome, nomes: [] }); porHub.get(x.hubId).nomes.push(x.nome); }
+    for (const [hubId, g] of porHub) {
+      const tels = { [hubId]: (await getJ(`tel/${hubId}`)) || {} }, faltam = faltamTel(tels, hubId, g.nomes), lider = cfgA.hubs?.[hubId]?.lider;
+      if (!faltam.length || !lider?.tel) continue;
+      const n = faltam.length;
+      await notificar(s.dia, lider.tel, `📱 *${g.nome}* — telefones pendentes\nNa escala de ${s.quando} (${br(s.dia)}) ${n === 1 ? "1 colaborador está" : n + " colaboradores estão"} sem telefone cadastrado:\n${faltam.map(x => "• " + x).join("\n")}\n\nSem o telefone, a pessoa não recebe a confirmação do turno e você fica sem o aviso dela.\nCadastre agora (leva 1 minuto):\n👉 ${linkEquipe(sign, hubId)}\n\nQuem não tem celular: marque "Sem celular" na mesma página.`, { tipo: "cadastro_telefones", hub: g.nome, dia: s.dia, para_quem: "lider" });
+    }
+  }
+}
+
 export async function relatorioDiario({ agora, cfgA }) {
   const hoje = isoOf(agora), h = lp(agora).h, h0 = cfgA?.relatorioHora ?? 10; if (!cfgA?.gestor?.tel || h < h0 || h >= h0 + 3) return;      // envia na primeira rodada a partir da hora marcada (janela de 3 h)
   const marca = await getJ(`rel/${hoje}`); if (marca) return; await putJ(`rel/${hoje}`, { t: agora, iniciado: true });
@@ -450,6 +473,15 @@ export async function rotaAlerta(req, path, ctx) {
   }
   // cadastro de telefones da equipe: o líder usa o link do próprio hub (token assinado); cada hub só enxerga e grava os seus
   const fmtTel = v => { let d = soDigitos(v); if (!d) return ""; if (d.startsWith("55") && d.length > 11) d = d.slice(2); return d.length === 10 || d.length === 11 ? "55" + d : null; };
+  // consulta da escala (só nomes): quais destes colaboradores ainda estão sem telefone cadastrado. Não devolve telefone nem link.
+  if (path === "/api/alerta/checar") {
+    const CORS = { "Access-Control-Allow-Origin": "https://escala-operacional-orion.netlify.app", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type", Vary: "Origin" };
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+    if (req.method !== "POST") return json({ error: "Método inválido." }, 405, CORS);
+    const b = await req.json().catch(() => ({})), h = String(b.h || "").slice(0, 80), nomes = Array.isArray(b.nomes) ? b.nomes.slice(0, 300).map(x => String(x || "").slice(0, 80)) : [];
+    if (!h) return json({ error: "Hub inválido." }, 400, CORS);
+    return json({ ok: true, faltam: faltamTel({ [h]: (await getJ(`tel/${h}`)) || {} }, h, nomes) }, 200, CORS);
+  }
   if (path === "/api/alerta/equipe" && (req.method === "GET" || req.method === "POST")) {
     const b = req.method === "POST" ? await req.json().catch(() => ({})) : {}, h = String(b.h ?? q.get("h") ?? ""), t = String(b.t ?? q.get("t") ?? "");
     if (!h || t !== sign(`equipe:${h}`)) return erro("Link inválido ou expirado.", 403);
@@ -461,15 +493,16 @@ export async function rotaAlerta(req, path, ctx) {
       for (const x of lista) {
         const nome = String(x?.nome || "").replace(/\s+/g, " ").trim().slice(0, 80); if (nome.length < 2) continue;
         const tel = fmtTel(x?.tel); if (tel === null) { ruins.push(nome); continue; }
-        if (tel) novo[nrm(nome)] = { nome, tel };
+        if (x?.semTel && !tel) novo[nrm(nome)] = { nome, tel: "", semTel: true, motivo: String(x.motivo || "").replace(/\s+/g, " ").trim().slice(0, 120), em: Date.now() };
+        else if (tel) novo[nrm(nome)] = { nome, tel };
       }
       if (ruins.length) return erro(`Telefone inválido para: ${ruins.join(", ")}. Use DDD + número (ex.: 11 91234-5678).`);
-      await putJ(`tel/${h}`, novo); return json({ ok: true, total: Object.keys(novo).length });
+      await putJ(`tel/${h}`, novo); return json({ ok: true, total: Object.values(novo).filter(x => x.tel).length, semCelular: Object.values(novo).filter(x => x.semTel).length });
     }
     const nomes = new Map(); for (const c of esc.cfg.colaboradores) if (c.hubId === h && c.nome) nomes.set(nrm(c.nome), c.nome);
     for (const [k, v] of Object.entries(salvos)) if (!nomes.has(k)) nomes.set(k, v.nome);
     const hl = await getJ(`hubloc/${h}`);
-    return json({ hubNome: hub.nome, local: hl ? { em: hl.em } : null, pessoas: [...nomes].map(([k, nome]) => ({ nome, tel: salvos[k]?.tel ? salvos[k].tel.replace(/^55/, "") : "" })).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")) });
+    return json({ hubNome: hub.nome, local: hl ? { em: hl.em } : null, pessoas: [...nomes].map(([k, nome]) => ({ nome, tel: salvos[k]?.tel ? salvos[k].tel.replace(/^55/, "") : "", semTel: !!salvos[k]?.semTel, motivo: salvos[k]?.motivo || "" })).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")) });
   }
   // página do colaborador: confirma que está a caminho ou avisa que não vai (vale só para ele neste turno, pelo token do link)
   if (path === "/api/alerta/eu" && (req.method === "GET" || req.method === "POST")) {
