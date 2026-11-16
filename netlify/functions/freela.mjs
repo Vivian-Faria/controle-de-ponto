@@ -106,8 +106,13 @@ function hubIdPara(unidade, hubs) {
   const nome = alias[normTxt(unidade)] || unidade;
   return hubs.find(h => normTxt(h.nome) === normTxt(nome))?.id || null;
 }
+// aviso que segue no campo de observações do DP: o DP confere antes de pagar jornadas fora do padrão
+const avisoConferir = j => { const av = [];
+  if (j.longa) av.push(`jornada longa (${String(j.longa.horas).replace(".", ",")} h desde a batida anterior, sem batida intermediária)`);
+  if ((j.ajustes || []).length) av.push(`${j.ajustes.length} horário(s) lançado(s) ou ajustado(s) manualmente pela administração`);
+  return av.length ? ` · ATENÇÃO, CONFERIR: ${av.join("; ")}. DP, certifique que os horários estão corretos antes de pagar.` : ""; };
 export function payloadDP(j, hubId) {      // formato da documentação do DP; NÃO envia valor (o DP calcula)
-  const m = j.marks, o = { tipo: "freelancer", nome: j.nome, cpf: j.cpf, data_trabalho: j.data, hub_id: hubId, pix: j.pix, entrada: hhmmss(m.entrada), saida: hhmmss(m.saida_final), observacoes: `Ponto eletrônico · jornada ${j.id}` };
+  const m = j.marks, o = { tipo: "freelancer", nome: j.nome, cpf: j.cpf, data_trabalho: j.data, hub_id: hubId, pix: j.pix, entrada: hhmmss(m.entrada), saida: hhmmss(m.saida_final), observacoes: `Ponto eletrônico · jornada ${j.id}${avisoConferir(j)}` };
   // O DP compara só HH:mm e exige ordem estritamente crescente. Intervalo "colado" na entrada/saída (mesmo minuto) é descartado: dura menos de 1 min, então não é descontado e o valor não muda.
   const mn = ms => Math.floor(ms / 60000);
   if (m.saida_almoco && m.retorno_almoco && mn(m.entrada) < mn(m.saida_almoco) && mn(m.saida_almoco) < mn(m.retorno_almoco) && mn(m.retorno_almoco) < mn(m.saida_final)) { o.saida_intervalo = hhmmss(m.saida_almoco); o.retorno_intervalo = hhmmss(m.retorno_almoco); }
@@ -191,6 +196,19 @@ async function abertas() {
   return (await Promise.all(blobs.map(b => getJ(keyOfId(b.key.slice(5)))))).filter(j => j && !j.marks.saida_final && !j.cancelada);
 }
 
+
+// reenvio automático ao DP: jornadas concluídas que ainda não foram (DP fora do ar, falha passageira, token corrigido depois...). Nada depende de clique do administrador.
+const ERRO_DEFINITIVO = /não aceita atualização|menos de 1 minuto|não existe como hub|não foi possível retomar/i;      // esses precisam de correção manual: repetir não adianta
+export async function reenviarPendentesAuto() {
+  if (!dpConfigurado()) return { configurado: false };
+  const agora = Date.now(), hoje = isoOf(agora), js = await listarPeriodo(isoOf(agora - 4 * DAY), hoje);
+  const alvo = js.filter(j => !j.cancelada && statusDe(j) === "concluida" && j.dp?.status !== "enviado" && (j.dp?.tentativas || 0) < 40
+    && agora - (j.dp?.ultimaTentativa || 0) > 9 * 60000 && !ERRO_DEFINITIVO.test(j.dp?.erro || "")).slice(0, 20);
+  if (!alvo.length) return { tentados: 0 };
+  const r = await enviarLote(alvo); for (const j of alvo) await putJ(keyOfId(j.id), j);
+  return { tentados: alvo.length, enviados: alvo.filter(j => j.dp?.status === "enviado").length, erro: r.erro || null };
+}
+
 export async function rotaFreela(req, path, ctx) {
   if (ctx.secret) SEGREDO = ctx.secret;
   const { json, isAdmin, isFreela, freelaCookie } = ctx, url = new URL(req.url), q = url.searchParams;
@@ -262,8 +280,7 @@ export async function rotaFreela(req, path, ctx) {
       const b = await body(); let alvo;
       if (Array.isArray(b.ids)) alvo = (await Promise.all(b.ids.map(i => { const k = keyOfId(i); return k ? getJ(k) : null; }))).filter(Boolean);
       else alvo = await listarPeriodo(d0, d1);
-      const forc = !!(b.forcar && Array.isArray(b.ids)); alvo = alvo.filter(j => statusDe(j) === "concluida" && (forc || j.dp?.status !== "enviado") && !(j.longa && !j.longa.liberada && !Array.isArray(b.ids)));      // jornada longa só sai pelo botão Enviar da própria linha
-      if (Array.isArray(b.ids)) for (const j of alvo) if (j.longa && !j.longa.liberada) { j.longa.liberada = Date.now(); j.dp = { status: "pendente", tentativas: 0 }; } const restantes = Math.max(0, alvo.length - 30); alvo = alvo.slice(0, 30);
+      const forc = !!(b.forcar && Array.isArray(b.ids)); alvo = alvo.filter(j => statusDe(j) === "concluida" && (forc || j.dp?.status !== "enviado"));  const restantes = Math.max(0, alvo.length - 30); alvo = alvo.slice(0, 30);
       if (b.forcar && Array.isArray(b.ids)) for (const j of alvo) (j.dp = j.dp || {}).fotosReenviadas = Date.now();
       const r = await enviarLote(alvo, !!(b.forcar && Array.isArray(b.ids))); for (const j of alvo) await putJ(keyOfId(j.id), j);
       if (r.configurado === false) return json({ ok: false, error: "DP não configurado: defina DP_API_TOKEN nas variáveis de ambiente do Netlify. Os registros continuam pendentes e guardados.", tentados: 0 });
@@ -335,11 +352,10 @@ export async function rotaFreela(req, path, ctx) {
       if (agora - ult > MAX_BLOQUEIO_MS) return erro("Esta jornada ficou aberta desde " + j.data.split("-").reverse().join("/") + " e não pode ser encerrada agora. Procure o responsável para ajustar o horário.", 409);
       const ev = lerEvidencia(b, ip, req.headers.get("user-agent") || b.ua); if (ev.erro) return erro(ev.erro);
       j.marks[b.tipo] = agora; (j.meta = j.meta || {})[b.tipo] = ev.meta; await putFoto(id, b.tipo, ev.foto);
-      if (agora - ult > MAX_JORNADA_MS && !j.longa) j.longa = { em: agora, horas: Math.round((agora - ult) / 360000) / 10 };      // mais de 14 h sem batida: aceita, mas fica retida para o administrador conferir
+      if (agora - ult > MAX_JORNADA_MS && !j.longa) j.longa = { em: agora, horas: Math.round((agora - ult) / 360000) / 10 };      // mais de 14 h sem batida: aceita e envia ao DP; só fica sinalizada no painel
       if (b.tipo === "saida_final") {
         j.calc = calcular(j.marks, j.pausas); j.dp = { status: "pendente", tentativas: 0, ...(j.dp?.reaberta ? { reaberta: true } : {}) }; await store().delete("open/" + id);
-        if (j.longa) j.dp = { status: "aguardando", tentativas: 0, erro: "Jornada longa (mais de 14 h sem batida): confira os horários e clique em Enviar." };
-        else if (dpConfigurado()) await enviarLote([j]);
+        if (dpConfigurado()) await enviarLote([j]);
         await putJ(key, j); return json({ ok: true, concluida: true, resumo: resumo(j) });        // CPF/Pix só aparecem aqui, para quem acabou de bater
       }
       await putJ(key, j); return json({ ok: true, jornada: visaoAberta(j) });
