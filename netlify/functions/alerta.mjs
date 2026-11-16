@@ -223,7 +223,7 @@ export async function vigiar(a) { relogio.t = a.agora ?? null; try { return awai
 async function vigiarInterno({ agora, sign, presencas, escala }) {      // presencas: batidas de ontem e de hoje
   const cfgA = await lerConfig(); if (!cfgA?.hubs) return { ok: false, motivo: "sem configuração" };
   const tol = cfgA.tolerancia ?? 15, escalarMin = cfgA.escalarMin ?? 15, lembrar = cfgA.lembreteMin ?? 30, grace = cfgA.graceTrocaMin ?? 30;
-  const hoje = isoOf(agora), dias = [addDays(hoje, -1), hoje];
+  const hoje = isoOf(agora), dias = [addDays(hoje, -1), hoje, ...(agora >= toMs(hoje, "22:00") ? [addDays(hoje, 1)] : [])];      // à noite também olha o dia seguinte: turnos que começam logo após a meia-noite precisam do aviso de 1 h antes
   escala = escala || await lerEscala(dias);
   // apelidos: nome na escala = nome no ponto/freela, quando são diferentes (ex.: "Ana Alice" = "Analice Vital")
   const apel = (cfgA.apelidos || []).filter(a => a?.escala && a?.ponto);
