@@ -70,7 +70,7 @@
 const q=new URLSearchParams(location.search),D=q.get('d'),H=q.get('h'),I=q.get('i'),T=q.get('t'),m=document.getElementById('m');
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let colab=[],ERR='';
-const rot=f=>f.estado==='resolvido'?'Resolvido':f.estado==='trocado'?'Substituto informado':f.aCaminho?'A caminho':f.estado==='cuidando'?'Em andamento':'Sem confirmação';
+const rot=f=>f.estado==='resolvido'?'Resolvido':f.estado==='trocado'?'Substituto informado':f.naoVai?'Avisou que não vai':f.aCaminho?'A caminho':f.estado==='cuidando'?'Em andamento':'Sem confirmação';
 async function load(){
   try{const r=await fetch(`/api/alerta/turno?d=${encodeURIComponent(D)}&h=${encodeURIComponent(H)}&i=${encodeURIComponent(I)}&t=${encodeURIComponent(T)}`);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Erro '+r.status);colab=j.colaboradores||[];draw(j)}
   catch(e){m.innerHTML=`<div class="card"><h2>Link inválido</h2><div class="mut">${esc(e.message)}</div></div>`}
