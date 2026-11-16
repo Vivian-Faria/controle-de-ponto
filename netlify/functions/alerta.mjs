@@ -158,7 +158,7 @@ export function cadenciaTurnos({ dia, agora, sit, furos, cad, cfgA, sign, tels =
     const lider = cfgA.hubs?.[g.hubId]?.lider || {}, link = linkTurno(sign, dia, g.hubId, g.ini);
     const porTurno = new Map(); for (const s of g.itens) { if (!porTurno.has(s.turno)) porTurno.set(s.turno, []); porTurno.get(s.turno).push(s); }
     const turnos = [...porTurno.keys()].join(" / "), cab = `*${g.hubNome}* — ${turnos} ${hm(g.ini)}`;
-    const status = s => { const f = furos[s.id]; return f?.naoVai ? "avisou que não vai conseguir ir" : f?.aCaminho ? (f.aCaminhoPor === "colab" ? "a caminho (ele confirmou pelo link)" : "a caminho (você confirmou)") : f?.substituto ? `substituto: ${f.substituto.nome}${f.estado === "trocado" ? " (aguardando chegada)" : ""}` : "sem confirmação"; };
+    const status = s => { const f = furos[s.id]; return f?.substituto ? `substituto: ${f.substituto.nome}${f.estado === "trocado" ? " (aguardando chegada)" : ""}` : f?.naoVai ? "avisou que não vai conseguir ir" : f?.aCaminho ? (f.aCaminhoPor === "colab" ? "a caminho (confirmou pelo link)" : "a caminho (você confirmou)") : "sem confirmação"; };
     const nome = s => s.vazia ? "vaga sem ninguém lançado" : s.nome;
     const pend = g.itens.filter(s => !s.cheg && !s.compareceu && !s.coberto);
     const lista = (arr, comStatus) => arr.map(s => `• ${nome(s)}${comStatus ? " — " + status(s) : ""}`).join("\n");
@@ -168,7 +168,7 @@ export function cadenciaTurnos({ dia, agora, sit, furos, cad, cfgA, sign, tels =
       const quem = [...porTurno].map(([t, a]) => (multi ? `*${t}*\n` : "") + a.filter(s => !s.vazia).map(s => `• ${s.nome}`).join("\n")).filter(Boolean).join("\n");
       texto = `📋 *Escala de hoje — ${g.hubNome}*\n${turnos} · ${hm(g.ini)}\n\nQuem você escalou:\n${quem || "• (ninguém lançado)"}${vazias ? `\n⚠️ ${vazias} vaga${vazias > 1 ? "s" : ""} sem ninguém lançado na escala` : ""}\n\nConfira agora se todos chegam a tempo. Se alguém não vai conseguir, providencie a cobertura antes das ${hm(g.ini)}.${tels && !Object.keys(tels[g.hubId] || {}).length ? `\n\n📱 Cadastre os telefones da sua equipe e cada um recebe o lembrete do turno:\n👉 ${linkEquipe(sign, g.hubId)}` : ""}`;
     } else if (pend.length) {
-      if (n === "m2") texto = `🕗 ${cab}\nAinda sem ponto batido:\n${lista(pend, false)}\n\nQuais deles já confirmaram que estão a caminho? Responda aqui:\n👉 ${link}`;
+      if (n === "m2") texto = `🕗 ${cab}\nAinda sem ponto batido:\n${lista(pend, pend.some(s => furos[s.id]?.aCaminho || furos[s.id]?.substituto || furos[s.id]?.naoVai))}\n\nQuais deles já confirmaram que estão a caminho? Responda aqui:\n👉 ${link}`;
       else if (n === "m3") texto = `⏰ ${cab}\nSeu tempo para agir está acabando. Ainda sem ponto:\n${lista(pend, pend.some(s => furos[s.id]?.aCaminho || furos[s.id]?.substituto))}\n\nVocê já teve retorno deles ou já está providenciando um freela? Atualize aqui:\n👉 ${link}`;
       else if (n === "m4") texto = `🔁 ${cab}\nContinuam sem bater o ponto:\n${lista(pend, true)}\n\nAlguém vai substituir quem ainda não confirmou? Informe quem é o substituto:\n👉 ${link}`;
       else {
