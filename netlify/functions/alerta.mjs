@@ -40,7 +40,7 @@ async function firebaseCfg() {
   if (fbCache) return fbCache;
   const t = await (await fetch(ESCALA_SITE + "/firebase-config.js", { signal: AbortSignal.timeout(8000) })).text();
   const g = k => new RegExp(k + '\\s*:\\s*"([^"]+)"').exec(t)?.[1];
-  const c = { apiKey: g("apiKey"), projectId: g("projectId") }; if (!c.apiKey || !c.projectId) throw new Error("Não consegui ler a configuração do Firebase da escala.");
+  const c = { apiKey: g("apiKey"), projectId: g("projectId"), adminEmail: /ADMIN_EMAIL\s*=\s*"([^"]+)"/.exec(t)?.[1] }; if (!c.apiKey || !c.projectId) throw new Error("Não consegui ler a configuração do Firebase da escala.");
   return (fbCache = c);
 }
 const fsVal = x => { const [k, v] = Object.entries(x)[0]; if (k === "arrayValue") return (v.values || []).map(fsVal); if (k === "mapValue") return Object.fromEntries(Object.entries(v.fields || {}).map(([a, b]) => [a, fsVal(b)])); if (k === "integerValue") return +v; if (k === "nullValue") return null; return v; };
@@ -229,7 +229,8 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
   const apel = (cfgA.apelidos || []).filter(a => a?.escala && a?.ponto);
   const pres = apel.length ? presencas.map(p => { const a = apel.find(x => mesmoNome(p.nome, x.ponto)); return a ? { ...p, nome: a.escala } : p; }) : presencas;
   const resultado = { dias: {}, enviadas: 0 };
-  const tels = {}; for (const h of Object.keys(cfgA.hubs || {})) tels[h] = (await getJ(`tel/${h}`)) || {};      // telefones dos colaboradores, por hub (só na central)
+  const tels = {}; for (const h of Object.keys(cfgA.hubs || {})) tels[h] = (await getJ(`tel/${h}`)) || {};      // telefones dos colaboradores, por hub (reserva na central)
+  sobreporCadastro(tels, escala?.cfg?.colaboradores, Object.keys(cfgA.hubs || {}));      // e o cadastro de colaboradores da escala, que tem prioridade
   for (const dia of dias) {
     let sit = situacoes(escala, dia, cfgA, agora); const furos = Object.fromEntries((await listar(`furo/${dia}/`)).map(f => [f.id, f]));
     const liderDe = h => cfgA.hubs?.[h]?.lider || {};
@@ -392,6 +393,16 @@ export async function montarRelatorio(dia) {
 }
 // ------------------------------------------------------------ cobrança do cadastro de telefones (só o líder recebe; a gestão não)
 const semTelDe = (tels, hubId, nome) => Object.values(tels?.[hubId] || {}).some(x => x?.semTel && mesmoNome(x.nome, nome));
+// telefones do cadastro de colaboradores da escala (fonte principal); os cadastrados antes pela página da equipe continuam valendo como reserva
+function sobreporCadastro(tels, colaboradores, hubIds) {
+  for (const c of colaboradores || []) {
+    const d = soDigitos(c.tel), tem = d.length === 10 || d.length === 11 || (d.length > 11 && d.startsWith("55"));
+    if (!c.nome || !(tem || c.semTel)) continue;
+    const reg = tem ? { nome: c.nome, tel: d.length > 11 ? d : "55" + d } : { nome: c.nome, tel: "", semTel: true, motivo: c.motivoSemTel || "" };
+    for (const h of c.hubId ? [c.hubId] : hubIds) { tels[h] ||= {}; for (const n of [c.nome, ...(c.apelidos || [])]) tels[h]["cad:" + nrm(n)] = { ...reg, nome: n }; }
+  }
+  return tels;
+}
 export const faltamTel = (tels, hubId, nomes) => { const o = []; for (const n of nomes) if (n && !telDe(tels, hubId, n) && !semTelDe(tels, hubId, n) && !o.some(x => mesmoNome(x, n))) o.push(n); return o; };
 export async function cobrarCadastros({ agora, cfgA, sign }) {
   const hoje = isoOf(agora), h = lp(agora).h;
@@ -404,10 +415,10 @@ export async function cobrarCadastros({ agora, cfgA, sign }) {
     const porHub = new Map();
     for (const x of situacoes(esc, s.dia, cfgA).filter(x => !x.vazia && x.nome)) { if (!porHub.has(x.hubId)) porHub.set(x.hubId, { nome: x.hubNome, nomes: [] }); porHub.get(x.hubId).nomes.push(x.nome); }
     for (const [hubId, g] of porHub) {
-      const tels = { [hubId]: (await getJ(`tel/${hubId}`)) || {} }, faltam = faltamTel(tels, hubId, g.nomes), lider = cfgA.hubs?.[hubId]?.lider;
+      const tels = sobreporCadastro({ [hubId]: (await getJ(`tel/${hubId}`)) || {} }, esc.cfg.colaboradores, [hubId]), faltam = faltamTel(tels, hubId, g.nomes), lider = cfgA.hubs?.[hubId]?.lider;
       if (!faltam.length || !lider?.tel) continue;
       const n = faltam.length;
-      await notificar(s.dia, lider.tel, `📱 *${g.nome}* — telefones pendentes\nNa escala de ${s.quando} (${br(s.dia)}) ${n === 1 ? "1 colaborador está" : n + " colaboradores estão"} sem telefone cadastrado:\n${faltam.map(x => "• " + x).join("\n")}\n\nSem o telefone, a pessoa não recebe a confirmação do turno e você fica sem o aviso dela.\nCadastre agora (leva 1 minuto):\n👉 ${linkEquipe(sign, hubId)}\n\nQuem não tem celular: marque "Sem celular" na mesma página.`, { tipo: "cadastro_telefones", hub: g.nome, dia: s.dia, para_quem: "lider" });
+      await notificar(s.dia, lider.tel, `📱 *${g.nome}* — telefones pendentes\nNa escala de ${s.quando} (${br(s.dia)}) ${n === 1 ? "1 colaborador está" : n + " colaboradores estão"} sem telefone cadastrado:\n${faltam.map(x => "• " + x).join("\n")}\n\nSem o telefone, a pessoa não recebe a confirmação do turno e você fica sem o aviso dela.\nCadastre agora (leva 1 minuto), em Cadastros → Colaboradores, com a senha de administrador:\n👉 ${ESCALA_SITE}/cadastros.html\n\nQuem não tem celular: marque "Sem celular" no cadastro da pessoa.`, { tipo: "cadastro_telefones", hub: g.nome, dia: s.dia, para_quem: "lider" });
     }
   }
 }
@@ -473,6 +484,19 @@ export async function rotaAlerta(req, path, ctx) {
   }
   // cadastro de telefones da equipe: o líder usa o link do próprio hub (token assinado); cada hub só enxerga e grava os seus
   const fmtTel = v => { let d = soDigitos(v); if (!d) return ""; if (d.startsWith("55") && d.length > 11) d = d.slice(2); return d.length === 10 || d.length === 11 ? "55" + d : null; };
+  // exporta os telefones que os líderes já cadastraram na central, só para o administrador logado na escala (confere o login no Firebase)
+  if (path === "/api/alerta/tel-export") {
+    const CORS = { "Access-Control-Allow-Origin": "https://escala-operacional-orion.netlify.app", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type", Vary: "Origin" };
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+    if (req.method !== "POST") return json({ error: "Método inválido." }, 405, CORS);
+    const b = await req.json().catch(() => ({})), f = await firebaseCfg();
+    const u = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${f.apiKey}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken: String(b.idToken || "") }), signal: AbortSignal.timeout(8000) }).then(r => r.json()).catch(() => null);
+    const email = String(u?.users?.[0]?.email || "").toLowerCase();
+    if (!email || !f.adminEmail || email !== f.adminEmail.toLowerCase()) return json({ error: "Acesso negado: entre como administrador." }, 403, CORS);
+    const esc = await lerEscala([isoOf(Date.now())]), hubs = {};
+    for (const h of esc.cfg.hubs) hubs[h.id] = Object.values((await getJ(`tel/${h.id}`)) || {}).map(x => ({ nome: x.nome, tel: x.tel || "", semTel: !!x.semTel, motivo: x.motivo || "" }));
+    return json({ ok: true, hubs }, 200, CORS);
+  }
   // consulta da escala (só nomes): quais destes colaboradores ainda estão sem telefone cadastrado. Não devolve telefone nem link.
   if (path === "/api/alerta/checar") {
     const CORS = { "Access-Control-Allow-Origin": "https://escala-operacional-orion.netlify.app", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type", Vary: "Origin" };
