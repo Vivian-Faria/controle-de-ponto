@@ -62,7 +62,7 @@
   .pill.aberto{background:var(--redbg);color:var(--red)}.pill.cuidando,.pill.trocado{background:var(--ambbg);color:var(--amb)}.pill.resolvido{background:var(--limebg);color:var(--lime)}
   button.peq{padding:12px 16px;font-size:15px}
   .sub-row{display:flex;gap:10px}.sub-row input{flex:1.4;padding:12px 16px}.sub-row button{flex:1;padding:12px 14px;font-size:15px}
-.pessoa{display:flex;align-items:center;gap:10px}.pessoa b{flex:1;min-width:0;font:600 15px var(--body);word-break:break-word}.pessoa input{flex:1.2;padding:12px 16px}
+  .pessoa{display:flex;align-items:center;gap:10px}.pessoa b{flex:1;min-width:0;font:600 15px var(--body);word-break:break-word}.pessoa input{flex:1.2;padding:12px 16px}
   button.perigo{background:rgba(255,74,74,.12);border-color:rgba(255,74,74,.5);color:#ff8a8a;box-shadow:none}button.perigo:hover{background:rgba(255,74,74,.2);color:#ff8a8a;border-color:var(--red)}
   .ok{color:var(--lime);font-size:14px;min-height:18px}
 </style>
@@ -73,9 +73,9 @@
 const q=new URLSearchParams(location.search),H=q.get('h'),T=q.get('t'),m=document.getElementById('m');
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const mask=v=>{const d=String(v||'').replace(/\D/g,'').slice(0,11);return d.length>7?`(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`:d.length>2?`(${d.slice(0,2)}) ${d.slice(2)}`:d};
-let hub='',pessoas=[],MSG='',ERR='';
+let hub='',pessoas=[],MSG='',ERR='',LOCAL=null;
 async function load(){
-  try{const r=await fetch(`/api/alerta/equipe?h=${encodeURIComponent(H)}&t=${encodeURIComponent(T)}`);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Erro '+r.status);hub=j.hubNome;pessoas=j.pessoas;draw()}
+  try{const r=await fetch(`/api/alerta/equipe?h=${encodeURIComponent(H)}&t=${encodeURIComponent(T)}`);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Erro '+r.status);hub=j.hubNome;pessoas=j.pessoas;LOCAL=j.local;draw()}
   catch(e){m.innerHTML=`<div class="card"><h2>Link inválido</h2><div class="mut">${esc(e.message)}</div></div>`}
 }
 function draw(){
@@ -84,12 +84,21 @@ function draw(){
     <div class="card"><div class="mut">Cadastre o WhatsApp de cada pessoa da sua equipe. Quem tiver telefone recebe um lembrete antes do turno e um aviso se ainda não bateu o ponto. Você só precisa cadastrar uma vez.</div>
     <div id="lista" style="display:flex;flex-direction:column;gap:10px">${pessoas.map((p,i)=>`<div class="pessoa" data-i="${i}"><b>${esc(p.nome)}</b><input type="tel" inputmode="tel" placeholder="(11) 91234-5678" value="${esc(mask(p.tel))}"></div>`).join('')||'<div class="mut">Nenhum colaborador cadastrado neste hub ainda. Adicione abaixo.</div>'}</div></div>
     <div class="card"><h2>Adicionar pessoa</h2><div class="sub-row" style="flex-wrap:wrap"><input id="nn" placeholder="Nome" autocomplete="off"><input id="nt" type="tel" inputmode="tel" placeholder="(11) 91234-5678" style="flex:1"></div><button class="sec peq" id="add">Adicionar à lista</button></div>
+    <div class="card"><h2>Local do hub</h2><div class="mut">${LOCAL?'Definido em '+new Date(LOCAL.em).toLocaleDateString('pt-BR')+'.':'Ainda não definido.'} É usado só para calcular a distância dos colaboradores até o hub. Estando no hub, toque no botão.</div><button class="sec peq" id="loc">Estou no hub: usar minha posição atual</button></div>
     <button id="salvar">Salvar telefones</button><div class="err">${esc(ERR)}</div><div class="ok">${esc(MSG)}</div>
     <div class="mut">Os telefones ficam guardados só na central e são usados apenas para os avisos do turno.</div>`;
   m.querySelectorAll('.pessoa input').forEach(i=>i.oninput=()=>{i.value=mask(i.value);pessoas[+i.parentNode.dataset.i].tel=i.value});
   const nt=document.getElementById('nt');nt.oninput=()=>nt.value=mask(nt.value);
   document.getElementById('add').onclick=()=>{const n=document.getElementById('nn').value.trim();if(n.length<2){ERR='Informe o nome.';MSG='';return draw()}ERR='';pessoas.push({nome:n,tel:nt.value});draw()};
   document.getElementById('salvar').onclick=salvar;
+  document.getElementById('loc').onclick=marcarLocal;
+}
+function marcarLocal(){
+  if(!confirm('Você está AGORA dentro do hub? A posição atual do seu celular será usada como o local do hub.'))return;
+  if(!navigator.geolocation){ERR='Seu aparelho não permite compartilhar a localização.';MSG='';return draw()}
+  navigator.geolocation.getCurrentPosition(async p=>{ERR='';MSG='';
+    try{const r=await fetch('/api/alerta/hub-local',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({h:H,t:T,lat:p.coords.latitude,lon:p.coords.longitude,prec:p.coords.accuracy})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Erro '+r.status);LOCAL={em:Date.now()};MSG='Local do hub salvo.'}catch(e){ERR=e.message}
+    draw()},e=>{ERR='Não consegui obter a localização. Permita o acesso à localização no navegador.';MSG='';draw()},{enableHighAccuracy:true,timeout:15000,maximumAge:0});
 }
 async function salvar(){
   const b=document.getElementById('salvar');b.disabled=true;ERR='';MSG='';
