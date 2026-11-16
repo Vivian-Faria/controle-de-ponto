@@ -54,7 +54,7 @@
       const m = k => j.marks[k] || "—", inc = j.status !== "concluida" && j.status !== "cancelada";
       const dpTxt = j.cancelada ? `<span class="chip c-folga" title="${esc(j.motivoCancel)}">Cancelada</span>` : `<span class="chip ${DPCLS[j.dp.status]}" ${j.dp.erro ? `title="${esc(j.dp.erro)}"` : ""}>${DPROT[j.dp.status]}</span>${j.dp.tentativas ? ` <small style="color:var(--mut)">${j.dp.tentativas}×</small>` : ""}${j.dp.erro && j.dp.status !== "enviado" ? `<br><small style="color:var(--mut)">${esc(j.dp.erro).slice(0, 70)}</small>` : ""}`;
       return `<tr><td>${dmy(j.data)}</td><td><b>${esc(j.nome)}</b><br><small style="color:var(--mut)">${esc(j.cpf)} · Pix ${esc(j.pix)}</small>${j.ajustes.length ? `<br><span class="badge">ajustada (${j.ajustes.length})</span>` : ""}</td><td>${esc(j.unidade)}</td>
-        <td>${m("entrada")}</td><td>${m("saida_almoco")}</td><td>${m("retorno_almoco")}</td><td>${m("saida_final")}${inc ? `<br><span class="chip c-atraso">${j.incompleta ? "Incompleta" : esc(j.statusRotulo)}</span>` : ""}</td>
+        <td>${m("entrada")}</td><td>${m("saida_almoco")}</td><td>${m("retorno_almoco")}</td><td>${m("saida_final")}${inc ? `<br><span class="chip c-atraso">${j.incompleta ? "Incompleta" : esc(j.statusRotulo)}</span>` : ""}${j.longa ? `<br><span class="chip c-atraso">Jornada longa: conferir</span>` : ""}</td>
         <td class="num">${j.horas || "—"}</td><td class="num">${brl(j.valor)}</td><td>${dpTxt}</td>
         <td style="min-width:160px"><button class="ghost mini" data-a="ver" data-id="${esc(j.id)}">Ver dados</button>
         ${inc ? `<button class="ghost mini" data-a="ajustar" data-id="${esc(j.id)}">Ajustar</button>` : ""}
