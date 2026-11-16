@@ -62,7 +62,7 @@
   .pill.aberto{background:var(--redbg);color:var(--red)}.pill.cuidando,.pill.trocado{background:var(--ambbg);color:var(--amb)}.pill.resolvido{background:var(--limebg);color:var(--lime)}
   button.peq{padding:12px 16px;font-size:15px}
   .sub-row{display:flex;gap:10px}.sub-row input{flex:1.4;padding:12px 16px}.sub-row button{flex:1;padding:12px 14px;font-size:15px}
-.pessoa{display:flex;align-items:center;gap:10px}.pessoa b{flex:1;min-width:0;font:600 15px var(--body);word-break:break-word}.pessoa input{flex:1.2;padding:12px 16px}
+  .pessoa{display:flex;align-items:center;gap:10px}.pessoa b{flex:1;min-width:0;font:600 15px var(--body);word-break:break-word}.pessoa input{flex:1.2;padding:12px 16px}
   button.perigo{background:rgba(255,74,74,.12);border-color:rgba(255,74,74,.5);color:#ff8a8a;box-shadow:none}button.perigo:hover{background:rgba(255,74,74,.2);color:#ff8a8a;border-color:var(--red)}
   .ok{color:var(--lime);font-size:14px;min-height:18px}
 </style>
@@ -72,26 +72,47 @@
 <script>
 const q=new URLSearchParams(location.search),D=q.get('d'),S=q.get('s'),T=q.get('t'),m=document.getElementById('m');
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let ERR='';
+const km=d=>d<1000?d+' m':(d/1000).toFixed(1).replace('.',',')+' km';
+let ERR='',J=null,BUSY=false;
 async function load(){
-  try{const r=await fetch(`/api/alerta/eu?d=${encodeURIComponent(D)}&s=${encodeURIComponent(S)}&t=${encodeURIComponent(T)}`);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Erro '+r.status);draw(j)}
+  try{const r=await fetch(`/api/alerta/eu?d=${encodeURIComponent(D)}&s=${encodeURIComponent(S)}&t=${encodeURIComponent(T)}`);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Erro '+r.status);J=j;draw()}
   catch(e){m.innerHTML=`<div class="card"><h2>Link inválido</h2><div class="mut">${esc(e.message)}</div></div>`}
 }
-function draw(j){
-  const pn=esc(String(j.nome).split(' ')[0]),r=j.resp,fim=j.encerrado;
+function draw(){
+  const j=J,pn=esc(String(j.nome).split(' ')[0]),r=j.resp,f=j.fase,fim=j.encerrado;
+  const btn=(id,txt,cls)=>`<button class="${cls||''}" id="${id}"${BUSY?' disabled':''}>${txt}</button>`;
+  let chip='Aguardando você',cor='cuidando',corpo='';
+  if(fim){chip='Turno encerrado';corpo='<div class="mut">Este turno já terminou.</div>'}
+  else if(r==='nao_vou'){chip='Aviso enviado';corpo=`<div class="mut">Seu líder foi avisado de que você não vai conseguir ir. Se mudar de ideia, fale com ele ou toque abaixo.</div>${btn('sim','Na verdade, vou comparecer','sec peq')}`}
+  else if(f==='antes'){
+    if(r){chip='Presença confirmada';cor='resolvido';corpo=`<div class="ok-box"><div class="tick">✓</div><div><b>Obrigado por avisar!</b><div class="mut">Presença confirmada. Perto do horário vamos perguntar se você já está a caminho.</div></div></div>${btn('nao','Mudei de ideia: não vou conseguir ir','sec peq')}`}
+    else corpo=`<h2>Você vai comparecer ao seu turno hoje?</h2>${btn('vou','Vou comparecer')}${btn('nao','Não vou conseguir ir','perigo')}`}
+  else if(f==='perto'){
+    if(r==='caminho'){chip='Confirmado';cor='resolvido';corpo=`<div class="ok-box"><div class="tick">✓</div><div><b>Obrigado por avisar!</b><div class="mut">Seu líder foi informado de que você está a caminho. Lembre de bater o ponto ao chegar.</div></div></div>${btn('nao','Mudei de ideia: não vou conseguir ir','sec peq')}`}
+    else corpo=`<h2>Você está a caminho do turno?</h2>${btn('cam','Estou a caminho')}${btn('nao','Não vou conseguir ir','perigo')}`}
+  else{
+    chip=r==='caminho'?'Em deslocamento':'Ponto não batido';cor=r==='caminho'?'resolvido':'cuidando';
+    const dist=j.dist!=null?`<div class="ok-box"><div class="tick">📍</div><div><b>Você está a cerca de ${km(j.dist)} do hub</b><div class="mut">Atualizado às ${esc(j.distEm)}. Bata o ponto assim que chegar.</div></div></div>`:(r==='caminho'?`<div class="ok-box"><div class="tick">✓</div><div><b>Obrigado por avisar!</b><div class="mut">Seu líder foi informado. Bata o ponto assim que chegar.</div></div></div>`:'');
+    corpo=`<h2>Seu ponto ainda não foi batido</h2><div class="mut">Compartilhe sua localização só para estimarmos quanto falta para você chegar. Usamos apenas a distância até o hub; o local exato não é mostrado a ninguém e não fica guardado.</div>${dist}${btn('loc',j.dist!=null?'Atualizar minha localização':'Estou chegando · compartilhar localização')}${r==='caminho'?'':btn('cam','Estou chegando (sem localização)','sec peq')}${btn('nao','Não vou conseguir ir','perigo')}`}
   m.innerHTML=`<div class="brand"><svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="13" stroke="#baff1a" stroke-opacity=".4" stroke-width="1.6"/><circle cx="16" cy="16" r="7.5" stroke="#baff1a" stroke-opacity=".6" stroke-width="1.6"/><g class="sweep"><path d="M16 16 L16 3" stroke="#baff1a" stroke-width="1.8" stroke-linecap="round"/></g><circle cx="16" cy="16" r="2.2" fill="#baff1a"/></svg>Escala<b>.</b><em>turno</em></div>
-    <div class="hero ${r==='caminho'?'h-resolvido':r==='nao_vou'?'h-cuidando':'h-cuidando'}"><span class="chip ${r==='caminho'?'resolvido':'cuidando'}"><i></i>${fim?'Turno encerrado':r==='caminho'?'Confirmado':r==='nao_vou'?'Aviso enviado':'Aguardando você'}</span>
-      <h1>Olá, ${pn}<small>${esc(j.hubNome)} · ${esc(j.turno)} · ${esc(j.inicioHm)}</small></h1></div>
-    <div class="card">${fim?'<div class="mut">Este turno já terminou.</div>':r==='caminho'?'<div class="ok-box"><div class="tick">✓</div><div><b>Obrigado por avisar!</b><div class="mut">Seu líder foi informado de que você está a caminho. Lembre de bater o ponto ao chegar.</div></div></div><button class="sec peq" id="nao">Mudei de ideia: não vou conseguir ir</button>':r==='nao_vou'?'<div class="mut">Seu líder foi avisado de que você não vai conseguir ir. Se mudar de ideia, fale com ele.</div><button class="sec peq" id="sim">Na verdade, estou a caminho</button>':'<h2>Você está a caminho do turno?</h2><button id="sim">Estou a caminho</button><button class="perigo" id="nao">Não vou conseguir ir</button>'}
-    <div class="err">${esc(ERR)}</div></div>
+    <div class="hero ${cor==='resolvido'?'h-resolvido':'h-cuidando'}"><span class="chip ${cor}"><i></i>${chip}</span><h1>Olá, ${pn}<small>${esc(j.hubNome)} · ${esc(j.turno)} · ${esc(j.inicioHm)}</small></h1></div>
+    <div class="card">${corpo}<div class="err">${esc(ERR)}</div></div>
     <div class="mut">Mensagem automática da escala. Não esqueça de bater o ponto quando chegar.</div>`;
-  const sim=document.getElementById('sim'),nao=document.getElementById('nao');
-  if(sim)sim.onclick=()=>act('caminho',sim);
-  if(nao)nao.onclick=()=>{if(confirm('Confirmar que você não vai conseguir ir a este turno? Seu líder será avisado agora.'))act('nao_vou',nao)};
+  const on=(id,fn)=>{const b=document.getElementById(id);if(b)b.onclick=()=>fn(b)};
+  on('vou',()=>act('vou'));on('cam',()=>act('caminho'));on('sim',()=>act(f==='antes'?'vou':'caminho'));
+  on('nao',()=>{if(confirm('Confirmar que você não vai conseguir ir a este turno? Seu líder será avisado agora.'))act('nao_vou')});
+  on('loc',()=>pegarLocal());
 }
-async function act(a,b){b.disabled=true;ERR='';
-  try{const r=await fetch('/api/alerta/eu',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({d:D,s:S,t:T,acao:a})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Erro '+r.status)}catch(e){ERR=e.message}
-  load();
+function pegarLocal(){
+  if(!navigator.geolocation){ERR='Seu aparelho não permite compartilhar a localização. Use "Estou chegando (sem localização)".';return draw()}
+  BUSY=true;ERR='';draw();
+  navigator.geolocation.getCurrentPosition(p=>act(J.resp==='caminho'?'loc':'caminho',{lat:p.coords.latitude,lon:p.coords.longitude,prec:p.coords.accuracy}),
+    e=>{BUSY=false;ERR=e.code===1?'A localização foi negada. Você pode permitir nas configurações do navegador ou tocar em "Estou chegando (sem localização)".':'Não consegui obter sua localização. Tente de novo ou toque em "Estou chegando (sem localização)".';draw()},
+    {enableHighAccuracy:true,timeout:15000,maximumAge:0});
+}
+async function act(a,extra){BUSY=true;ERR='';draw();
+  try{const r=await fetch('/api/alerta/eu',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({d:D,s:S,t:T,acao:a,...(extra||{})})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Erro '+r.status)}catch(e){ERR=e.message}
+  BUSY=false;load();
 }
 load();
 </script>
