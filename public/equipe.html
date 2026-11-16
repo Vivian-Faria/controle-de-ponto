@@ -62,6 +62,7 @@
   .pill.aberto{background:var(--redbg);color:var(--red)}.pill.cuidando,.pill.trocado{background:var(--ambbg);color:var(--amb)}.pill.resolvido{background:var(--limebg);color:var(--lime)}
   button.peq{padding:12px 16px;font-size:15px}
   .sub-row{display:flex;gap:10px}.sub-row input{flex:1.4;padding:12px 16px}.sub-row button{flex:1;padding:12px 14px;font-size:15px}
+  .pessoa label{display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap;color:var(--mut);flex:none}.pessoa label input{width:auto;padding:0;flex:none}
   .pessoa{display:flex;align-items:center;gap:10px}.pessoa b{flex:1;min-width:0;font:600 15px var(--body);word-break:break-word}.pessoa input{flex:1.2;padding:12px 16px}
   button.perigo{background:rgba(255,74,74,.12);border-color:rgba(255,74,74,.5);color:#ff8a8a;box-shadow:none}button.perigo:hover{background:rgba(255,74,74,.2);color:#ff8a8a;border-color:var(--red)}
   .ok{color:var(--lime);font-size:14px;min-height:18px}
@@ -82,12 +83,15 @@ function draw(){
   m.innerHTML=`<div class="brand"><svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="13" stroke="#baff1a" stroke-opacity=".4" stroke-width="1.6"/><circle cx="16" cy="16" r="7.5" stroke="#baff1a" stroke-opacity=".6" stroke-width="1.6"/><g class="sweep"><path d="M16 16 L16 3" stroke="#baff1a" stroke-width="1.8" stroke-linecap="round"/></g><circle cx="16" cy="16" r="2.2" fill="#baff1a"/></svg>Escala<b>.</b><em>equipe</em></div>
     <div class="hero h-resolvido"><h1 style="margin-top:0">${esc(hub)}<small>Telefones da equipe</small></h1></div>
     <div class="card"><div class="mut">Cadastre o WhatsApp de cada pessoa da sua equipe. Quem tiver telefone recebe um lembrete antes do turno e um aviso se ainda não bateu o ponto. Você só precisa cadastrar uma vez.</div>
-    <div id="lista" style="display:flex;flex-direction:column;gap:10px">${pessoas.map((p,i)=>`<div class="pessoa" data-i="${i}"><b>${esc(p.nome)}</b><input type="tel" inputmode="tel" placeholder="(11) 91234-5678" value="${esc(mask(p.tel))}"></div>`).join('')||'<div class="mut">Nenhum colaborador cadastrado neste hub ainda. Adicione abaixo.</div>'}</div></div>
+    <div id="lista" style="display:flex;flex-direction:column;gap:10px">${pessoas.map((p,i)=>`<div class="pessoa" data-i="${i}"><b>${esc(p.nome)}</b><input type="tel" inputmode="tel" placeholder="(11) 91234-5678" value="${esc(mask(p.tel))}"${p.semTel?' disabled':''}><label title="${esc(p.motivo||'')}"><input type="checkbox" class="sc"${p.semTel?' checked':''}> Sem celular</label></div>`).join('')||'<div class="mut">Nenhum colaborador cadastrado neste hub ainda. Adicione abaixo.</div>'}</div></div>
     <div class="card"><h2>Adicionar pessoa</h2><div class="sub-row" style="flex-wrap:wrap"><input id="nn" placeholder="Nome" autocomplete="off"><input id="nt" type="tel" inputmode="tel" placeholder="(11) 91234-5678" style="flex:1"></div><button class="sec peq" id="add">Adicionar à lista</button></div>
     <div class="card"><h2>Local do hub</h2><div class="mut">${LOCAL?'Definido em '+new Date(LOCAL.em).toLocaleDateString('pt-BR')+'.':'Ainda não definido.'} É usado só para calcular a distância dos colaboradores até o hub. Estando no hub, toque no botão.</div><button class="sec peq" id="loc">Estou no hub: usar minha posição atual</button></div>
     <button id="salvar">Salvar telefones</button><div class="err">${esc(ERR)}</div><div class="ok">${esc(MSG)}</div>
     <div class="mut">Os telefones ficam guardados só na central e são usados apenas para os avisos do turno.</div>`;
-  m.querySelectorAll('.pessoa input').forEach(i=>i.oninput=()=>{i.value=mask(i.value);pessoas[+i.parentNode.dataset.i].tel=i.value});
+  m.querySelectorAll('.pessoa input[type=tel]').forEach(i=>i.oninput=()=>{i.value=mask(i.value);pessoas[+i.parentNode.dataset.i].tel=i.value});
+  m.querySelectorAll('.pessoa .sc').forEach(c=>c.onchange=()=>{const p=pessoas[+c.closest('.pessoa').dataset.i];
+    if(c.checked){const mo=(prompt('Por que '+p.nome+' não tem celular? (ex.: não usa celular, aparelho sem WhatsApp)')||'').trim();if(mo.length<3){c.checked=false;return}p.semTel=true;p.motivo=mo;p.tel=''}else{p.semTel=false;p.motivo=''}
+    draw()});
   const nt=document.getElementById('nt');nt.oninput=()=>nt.value=mask(nt.value);
   document.getElementById('add').onclick=()=>{const n=document.getElementById('nn').value.trim();if(n.length<2){ERR='Informe o nome.';MSG='';return draw()}ERR='';pessoas.push({nome:n,tel:nt.value});draw()};
   document.getElementById('salvar').onclick=salvar;
@@ -102,7 +106,7 @@ function marcarLocal(){
 }
 async function salvar(){
   const b=document.getElementById('salvar');b.disabled=true;ERR='';MSG='';
-  try{const r=await fetch('/api/alerta/equipe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({h:H,t:T,lista:pessoas.map(p=>({nome:p.nome,tel:p.tel}))})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Erro '+r.status);MSG=`Salvo: ${j.total} ${j.total===1?'telefone cadastrado':'telefones cadastrados'}.`}catch(e){ERR=e.message}
+  try{const r=await fetch('/api/alerta/equipe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({h:H,t:T,lista:pessoas.map(p=>({nome:p.nome,tel:p.tel,semTel:!!p.semTel,motivo:p.motivo||''}))})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Erro '+r.status);MSG=`Salvo: ${j.total} ${j.total===1?'telefone cadastrado':'telefones cadastrados'}${j.semCelular?` e ${j.semCelular} sem celular`:''}.`}catch(e){ERR=e.message}
   draw();
 }
 load();
