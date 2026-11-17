@@ -198,11 +198,12 @@ async function abertas() {
 
 
 // reenvio automático ao DP: jornadas concluídas que ainda não foram (DP fora do ar, falha passageira, token corrigido depois...). Nada depende de clique do administrador.
+const ESPERA_DP_MS = 60 * 60000;      // tempo que uma jornada concluída espera antes do envio automático ao DP
 const ERRO_DEFINITIVO = /não aceita atualização|menos de 1 minuto|não existe como hub|não foi possível retomar/i;      // esses precisam de correção manual: repetir não adianta
 export async function reenviarPendentesAuto() {
   if (!dpConfigurado()) return { configurado: false };
   const agora = Date.now(), hoje = isoOf(agora), js = await listarPeriodo(isoOf(agora - 4 * DAY), hoje);
-  const alvo = js.filter(j => !j.cancelada && statusDe(j) === "concluida" && j.dp?.status !== "enviado" && (j.dp?.tentativas || 0) < 40
+  const alvo = js.filter(j => !j.cancelada && statusDe(j) === "concluida" && j.dp?.status !== "enviado" && agora - j.marks.saida_final >= ESPERA_DP_MS && (j.dp?.tentativas || 0) < 40
     && agora - (j.dp?.ultimaTentativa || 0) > 9 * 60000 && !ERRO_DEFINITIVO.test(j.dp?.erro || "")).slice(0, 20);
   if (!alvo.length) return { tentados: 0 };
   const r = await enviarLote(alvo); for (const j of alvo) await putJ(keyOfId(j.id), j);
@@ -355,7 +356,7 @@ export async function rotaFreela(req, path, ctx) {
       if (agora - ult > MAX_JORNADA_MS && !j.longa) j.longa = { em: agora, horas: Math.round((agora - ult) / 360000) / 10 };      // mais de 14 h sem batida: aceita e envia ao DP; só fica sinalizada no painel
       if (b.tipo === "saida_final") {
         j.calc = calcular(j.marks, j.pausas); j.dp = { status: "pendente", tentativas: 0, ...(j.dp?.reaberta ? { reaberta: true } : {}) }; await store().delete("open/" + id);
-        if (dpConfigurado()) await enviarLote([j]);
+        // não envia na hora: aguarda 1 h (reenvio automático). Quem encerrou por engano e retoma logo em seguida não gera registro divergente no DP, que não aceita atualização.
         await putJ(key, j); return json({ ok: true, concluida: true, resumo: resumo(j) });        // CPF/Pix só aparecem aqui, para quem acabou de bater
       }
       await putJ(key, j); return json({ ok: true, jornada: visaoAberta(j) });
