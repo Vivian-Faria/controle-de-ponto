@@ -36,10 +36,21 @@
   .sub.off .live i{background:var(--red);box-shadow:none;animation:none}
   .sub label{margin-left:auto;display:inline-flex;align-items:center;gap:8px;font:500 13px var(--body);letter-spacing:0;text-transform:none;color:var(--tx);cursor:pointer;flex:none}
   .sub input{accent-color:var(--lime);width:18px;height:18px}
-  .resumo{display:flex;flex-wrap:wrap;gap:8px}
-  .cnt{display:flex;align-items:center;gap:9px;padding:9px 14px;border-radius:99px;border:1px solid var(--line);background:var(--glass);font-size:14px;color:var(--mut)}
-  .cnt b{font:700 20px var(--disp);color:var(--c,var(--tx));line-height:1}
-  .cnt.z{opacity:.45}
+  .comp{display:flex;align-items:center;gap:20px;padding:18px 20px;border-radius:26px;border:1px solid var(--line);background:var(--glass)}
+  .comp[hidden]{display:none}
+  .gg{position:relative;width:112px;height:112px;flex:none}
+  .gg svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)}
+  .gg .trk{stroke:rgba(255,255,255,.08)}.gg .arc{stroke:var(--lime);filter:drop-shadow(0 0 7px var(--limeglow));transition:stroke-dashoffset 1.1s cubic-bezier(.2,.8,.2,1),stroke .4s}
+  .comp.parcial .gg .arc{stroke:var(--amb);filter:drop-shadow(0 0 7px rgba(255,182,46,.4))}
+  .gg .num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font:700 26px/1 var(--disp)}
+  .gg .num small{margin-top:4px;font:500 11px var(--mono);letter-spacing:.06em;color:var(--mut)}
+  .cmeta{flex:1;min-width:0}.cmeta h3{margin:0 0 2px;font:700 17px var(--disp)}.cmeta p{margin:0 0 10px;font-size:13px;color:var(--mut)}
+  .tb{margin-top:8px}.tb>div{display:flex;justify-content:space-between;font:500 12px var(--mono);color:var(--mut);margin-bottom:5px}
+  .segs{display:flex;gap:4px}
+  .segs button{flex:1;height:10px;padding:0;border:0;border-radius:99px;background:rgba(255,255,255,.1);cursor:pointer;transition:transform .15s,background .3s}
+  .segs button.on{background:var(--lime);box-shadow:0 0 10px var(--limeglow)}.segs button:hover{transform:scaleY(1.7)}
+  .p.flash{animation:fl 1.2s ease}@keyframes fl{0%,100%{box-shadow:none}30%{box-shadow:0 0 0 2px var(--lime),0 0 24px var(--limeglow)}}
+  @media (max-width:420px){.comp{gap:14px;padding:16px}.gg{width:92px;height:92px}.gg .num{font-size:22px}}
   .turno h2{margin:10px 4px 10px;display:flex;align-items:baseline;gap:10px;font:700 19px var(--disp);letter-spacing:-.01em}
   .turno h2 small{font:500 13px var(--mono);letter-spacing:.06em;color:var(--mut)}
   .lista{display:flex;flex-direction:column;gap:10px}
@@ -80,20 +91,20 @@
       <label>Data<input type="date" id="d"></label>
       <label>Hub<select id="h" aria-label="Hub"></select></label>
     </div>
-    <div class="sub" id="sub"><span class="live"><i></i><span id="att">Carregando…</span></span><label><input type="checkbox" id="det" checked> Linha do tempo</label></div>
+    <div class="sub" id="sub"><span class="live"><i></i><span id="att">Carregando…</span></span><label><input type="checkbox" id="det"> Linha do tempo</label></div>
   </div>
-  <div class="resumo" id="resumo"></div>
+  <div class="comp" id="comp" hidden></div>
   <div id="corpo"></div>
 </main>
 <script>
 const q=new URLSearchParams(location.search),T=q.get('t')||'';
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const ls={get(k){try{return localStorage.getItem(k)}catch{return null}},set(k,v){try{localStorage.setItem(k,v)}catch{}}};
-const ST={presente:['No hub','var(--lime)'],caminho:['A caminho','var(--blue)'],confirmou:['Confirmaram','var(--lime)'],nao_vai:['Não vão','var(--red)'],sem_resposta:['Sem resposta','var(--amb)'],aguardando:['Aguardando','var(--gry)'],sem_tel:['Sem telefone','var(--gry)'],vaga:['Vagas vazias','var(--red)'],coberto:['Cobertos','var(--vio)']};
+const ST={presente:['No hub','var(--lime)'],caminho:['A caminho','var(--blue)'],confirmou:['Confirmaram','var(--lime)'],nao_vai:['Não vão','var(--red)'],sem_resposta:['Sem resposta','var(--amb)'],aguardando:['Turno não iniciado','var(--gry)'],sem_tel:['Sem telefone','var(--gry)'],vaga:['Vagas vazias','var(--red)'],coberto:['Cobertos','var(--vio)']};
 const NENV={simulado:'não enviada (modo teste)',erro:'falha no envio',sem_telefone:'sem telefone'};
 let hoje=null,tim=0,busy=0,ctl=null;
 $('d').value=q.get('d')||'';
-$('det').checked=ls.get('acomp_det')!=='0';
+$('det').checked=ls.get('acomp_det2')==='1';
 document.body.classList.toggle('solo',!$('det').checked);
 function url(){const p=new URLSearchParams({t:T});if($('d').value)p.set('d',$('d').value);if($('h').value)p.set('h',$('h').value);return p}
 async function load(manual){
@@ -113,17 +124,28 @@ async function load(manual){
     $('sub').classList.add('off');$('att').textContent=e.message;
   }
 }
+function gauge(j){
+  const box=$('comp'),ts=j.turnos.filter(t=>t.pessoas.length);
+  if(!ts.length){box.hidden=true;return}
+  const tot=ts.reduce((n,t)=>n+t.pessoas.length,0),ok=ts.reduce((n,t)=>n+t.pessoas.filter(p=>p.st==='presente').length,0),pct=tot?ok/tot:0;
+  box.hidden=false;box.classList.toggle('parcial',ok<tot);
+  const arc=$('gArc'),antes=arc?parseFloat(arc.style.strokeDashoffset):NaN;
+  box.innerHTML=`<div class="gg"><svg viewBox="0 0 200 200" fill="none"><circle class="trk" cx="100" cy="100" r="88" stroke-width="12"/><circle class="arc" id="gArc" cx="100" cy="100" r="88" stroke-width="12" stroke-linecap="round" stroke-dasharray="552.9" stroke-dashoffset="${isNaN(antes)?552.9:antes}"/></svg><div class="num">${ok}/${tot}<small>${Math.round(pct*100)}%</small></div></div>
+  <div class="cmeta"><h3>${ok}/${tot} da escala completa</h3><p>${ok>=tot?'Todos no hub':ok?'Faltam '+(tot-ok)+' chegar':'Ninguém chegou ainda'}</p>`+
+  ts.map(t=>`<div class="tb"><div><span>${esc(t.nome)}</span><span>${t.pessoas.filter(p=>p.st==='presente').length}/${t.pessoas.length}</span></div><div class="segs">${t.pessoas.map(p=>`<button type="button" class="${p.st==='presente'?'on':''}" data-id="${esc(p.id)}" title="${esc(p.nome)} · ${esc(p.rot)}" aria-label="${esc(p.nome)}: ${esc(p.rot)}"></button>`).join('')}</div></div>`).join('')+`</div>`;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{const a=$('gArc');if(a)a.style.strokeDashoffset=552.9*(1-pct)}));
+  box.querySelectorAll('.segs button').forEach(b=>b.onclick=()=>{const el=document.querySelector(`[data-pid="${CSS.escape(b.dataset.id)}"]`);if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash')}});
+}
 function draw(j){
-  const c=j.contagem,ordem=['presente','caminho','confirmou','nao_vai','sem_resposta','aguardando','sem_tel','vaga','coberto'];
-  $('resumo').innerHTML=ordem.map(k=>`<div class="cnt ${c[k]?'':'z'}" style="--c:${ST[k][1]}"><b>${c[k]||0}</b>${ST[k][0]}</div>`).join('');
+  gauge(j);
   if(!j.turnos.length){$('corpo').innerHTML=`<div class="card"><h2>Sem escala neste dia</h2>Não há turnos com vagas para ${esc(j.hubNome)} nesta data.</div>`;return}
   $('corpo').innerHTML=j.turnos.map(t=>`<section class="turno"><h2>${esc(t.nome)} <small>${esc(t.inicio)}–${esc(t.fim)}</small></h2><div class="lista">`+t.pessoas.map(p=>
-    `<article class="p st-${p.st}"><div class="top"><b>${esc(p.nome)}${p.noLugar?`<small class="nl">no lugar de ${esc(p.noLugar)}</small>`:''}</b><span class="tag"><i></i>${esc(p.rot)}</span></div>`+
+    `<article class="p st-${p.st}" data-pid="${esc(p.id)}"><div class="top"><b>${esc(p.nome)}${p.noLugar?`<small class="nl">no lugar de ${esc(p.noLugar)}</small>`:''}</b><span class="tag"><i></i>${esc(p.rot)}</span></div>`+
     (p.ev.length?`<ol class="tl">`+p.ev.map(e=>`<li class="k-${e.k}"><time>${esc(e.hm)}</time><span>${esc(e.txt)}${e.envio&&e.envio!=='enviado'?`<em class="nenv">${esc(NENV[e.envio]||e.envio)}</em>`:''}${e.res==='sem'?'<em class="sem">sem resposta</em>':e.res==='aguarda'?'<em class="aguarda">aguardando</em>':''}</span></li>`).join('')+`</ol>`:`<div class="vazio">${p.st==='vaga'?'Lance o nome desta vaga na escala.':'Nenhuma comunicação ainda.'}</div>`)+`</article>`).join('')+`</div></section>`).join('');
 }
 $('d').onchange=()=>{$('corpo').innerHTML='';load()};
 $('h').onchange=()=>{ls.set('acomp_h',$('h').value);$('corpo').innerHTML='';load()};
-$('det').onchange=()=>{ls.set('acomp_det',$('det').checked?'1':'0');document.body.classList.toggle('solo',!$('det').checked)};
+$('det').onchange=()=>{ls.set('acomp_det2',$('det').checked?'1':'0');document.body.classList.toggle('solo',!$('det').checked)};
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)load()});
 setInterval(()=>{if(!document.hidden)load()},30000);
 if(!T)$('corpo').innerHTML='<div class="card"><h2>Link incompleto</h2>Peça à gestão o link de acompanhamento.</div>';else load();
