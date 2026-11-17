@@ -440,6 +440,73 @@ export async function relatorioDiario({ agora, cfgA }) {
   await putJ(`rel/${hoje}`, { t: agora, enviado: true });
 }
 
+// ------------------------------------------------------------ acompanhamento do dia (página dos líderes): quem confirmou, está a caminho, não vai ou não respondeu, com o carimbo de cada comunicação
+const MSG_COLAB = { colab_c0: "Pedimos a confirmação de presença", colab_m1: "Perguntamos se já está a caminho", colab_m2: "Pedimos a localização", colab_m3: "Última cobrança: está chegando?" };
+export async function montarAcompanhamento({ dia, hubId, esc, agora }) {
+  const cfgA = (await lerConfig()) || { hubs: {} };
+  const sit = situacoes(esc, dia, cfgA, agora).filter(s => s.hubId === hubId && !s.extra);
+  for (const s of sit) s.id = idDe(dia, s.hubId, s.turnoId, s.vaga, s.pidx || 0);
+  const [euL, furoL, outL, resumo, telsRaw] = await Promise.all([listar(`eu/${dia}/`), listar(`furo/${dia}/`), listar(`out/${dia}/`), getJ(`dia/${dia}`), getJ(`tel/${hubId}`)]);
+  const eus = Object.fromEntries(euL.map(e => [e.sid, e])), furos = Object.fromEntries(furoL.map(f => [f.id, f]));
+  const tels = sobreporCadastro({ [hubId]: telsRaw || {} }, esc.cfg.colaboradores, [hubId]);
+  const hubNome = esc.cfg.hubs.find(h => h.id === hubId)?.nome || "";
+  const pontoDe = turnoId => resumo?.hubs?.find(h => h.id === hubId)?.turnos?.find(t => t.id === turnoId)?.pessoas || [];
+  const msgsHub = outL.filter(o => o.para_quem === "colab" && MSG_COLAB[o.tipo] && o.hub === hubNome && o.nome).sort((a, b) => a.t - b.t);
+  const contagem = { presente: 0, caminho: 0, confirmou: 0, nao_vai: 0, sem_resposta: 0, aguardando: 0, sem_tel: 0, vaga: 0, coberto: 0 };
+  const ORDEM = { nao_vai: 0, vaga: 1, sem_resposta: 2, sem_tel: 3, aguardando: 4, caminho: 5, confirmou: 6, substituido: 7, coberto: 8, presente: 9 };
+  const txtResp = h => h.a === "vou" ? "Confirmou presença" : h.a === "nao_vou" ? "Avisou que não vai"
+    : h.a === "caminho" ? (h.dist != null ? `Está a caminho · a ${fmtDist(h.dist)} do hub` : "Marcou que está a caminho") : (h.dist != null ? `Localização: a ${fmtDist(h.dist)} do hub` : "Compartilhou a localização");
+  const montar = (s, p) => {
+    const r = eus[s.id], f = furos[s.id], ev = [], msgs = s.vazia ? [] : msgsHub.filter(o => mesmoNome(o.nome, s.nome));
+    // ponto: o resumo do vigia (até 5 min de atraso) ou a marcação na escala
+    let tPonto = null, pontoTxt = null;
+    if (p?.chegou && /^\d\d:\d\d$/.test(p.chegou)) { tPonto = toMs(dia, p.chegou); if (tPonto < s.inicio - 6 * HOUR) tPonto += DAY; pontoTxt = "Bateu o ponto no hub"; }
+    else if (p?.chegou || s.compareceu) { tPonto = s.inicio; pontoTxt = "Presença marcada na escala"; }
+    // respostas do colaborador (registros antigos não têm histórico: usa a última resposta e as localizações)
+    let resp = [];
+    if (r?.hist?.length) resp = r.hist.map(h => ({ ...h }));
+    else { if (r?.resp) resp.push({ t: r.respEm || 0, a: r.resp }); for (const l of r?.locs || []) resp.push({ t: l.em, a: "loc", dist: l.dist }); }
+    const base = resp.filter(h => h.a !== "loc" && h.t > 0);
+    for (const l of resp.filter(h => h.a === "loc" && h.t > 0)) { const c = base.find(h => h.a === "caminho" && h.dist === undefined && Math.abs(h.t - l.t) < 5000); if (c) c.dist = l.dist; else base.push(l); }
+    base.sort((a, b) => a.t - b.t);
+    for (const m of msgs) ev.push({ t: m.t, k: "msg", txt: MSG_COLAB[m.tipo], envio: m.estado });
+    for (const h of base) ev.push({ t: h.t, k: h.a === "nao_vou" ? "nao" : "resp", txt: txtResp(h) });
+    for (const e of f?.eventos || []) if (["troca", "escala_alterada", "confirmou", "espelho"].includes(e.tipo) || (e.tipo === "caminho" && !/pelo link/.test(e.msg || ""))) ev.push({ t: e.t, k: "lider", txt: e.msg });
+    if (tPonto) ev.push({ t: tPonto, k: "ponto", txt: pontoTxt });
+    ev.sort((a, b) => a.t - b.t);
+    const marcas = ev.filter(e => e.k === "msg");
+    marcas.forEach((m, i) => { if (m.envio !== "enviado") return; const prox = marcas[i + 1]?.t ?? Infinity;
+      m.res = ev.some(e => (e.k === "resp" || e.k === "nao" || e.k === "ponto") && e.t > m.t && e.t < prox) ? "ok" : (prox !== Infinity || agora > m.t + 10 * MIN ? "sem" : "aguarda"); });
+    // situação atual
+    const tel = !s.vazia && telDe(tels, hubId, s.nome), sub = f?.substituto?.nome, ultDist = [...base].reverse().find(h => h.dist != null)?.dist ?? null; let st, rot, dist = null;
+    if (s.vazia) { st = "vaga"; rot = "Vaga sem ninguém lançado"; }
+    else if (tPonto) { st = "presente"; rot = /^\d\d:\d\d$/.test(p?.chegou || "") ? `No hub desde ${p.chegou}` : "Presente (marcado na escala)"; }
+    else if (f && f.estado === "resolvido" && !f.encerrado) { st = "coberto"; rot = sub ? `Coberto por ${sub}` : "Vaga coberta"; }
+    else if (sub) { st = "substituido"; rot = `Substituto: ${sub}`; }
+    else if (r?.resp === "nao_vou" || f?.naoVai) { st = "nao_vai"; rot = "Não vai"; }
+    else if (r?.resp === "caminho" || f?.aCaminho) { st = "caminho"; dist = ultDist; rot = dist != null ? `A caminho · ${fmtDist(dist)} do hub` : "A caminho"; }
+    else if (r?.resp === "vou") { st = "confirmou"; rot = "Confirmou presença"; }
+    else if (!tel) { st = "sem_tel"; rot = semTelDe(tels, hubId, s.nome) ? "Sem celular" : "Sem telefone cadastrado"; }
+    else if (msgs.some(m => m.estado === "enviado")) { st = "sem_resposta"; rot = "Sem resposta"; }
+    else { st = "aguardando"; rot = "Aguardando"; }
+    contagem[st === "substituido" ? "coberto" : st]++;
+    return { id: s.id, nome: s.vazia ? "Vaga sem ninguém lançado" : s.nome, st, rot, dist, ev: ev.map(e => ({ hm: hm(e.t), k: e.k, txt: e.txt, ...(e.envio ? { envio: e.envio } : {}), ...(e.res ? { res: e.res } : {}) })) };
+  };
+  const turnos = new Map();
+  for (const s of sit) {
+    if (!turnos.has(s.turnoId)) turnos.set(s.turnoId, { id: s.turnoId, nome: s.turno, ini: s.tIni, inicio: hm(s.tIni), fim: hm(s.tFim), pessoas: [] });
+    const p = s.vazia ? null : pontoDe(s.turnoId).find(x => mesmoNome(x.nome, s.nome));
+    turnos.get(s.turnoId).pessoas.push(montar(s, p));
+  }
+  for (const t of turnos.values()) {      // quem bateu o ponto sem estar na escala
+    for (const p of pontoDe(t.id).filter(x => x.sem && !sit.some(s => s.turnoId === t.id && !s.vazia && mesmoNome(s.nome, x.nome)))) {
+      contagem.presente++; t.pessoas.push({ id: "x" + nrm(p.nome), nome: p.nome, st: "presente", rot: `No hub desde ${p.chegou}`, dist: null, ev: [{ hm: p.chegou, k: "ponto", txt: "Bateu o ponto no hub (fora da escala: não estava lançado)" }] });
+    }
+    t.pessoas.sort((a, b) => ORDEM[a.st] - ORDEM[b.st] || a.nome.localeCompare(b.nome, "pt-BR"));
+  }
+  return { dia, hubId, hubNome, agora: hm(agora), pontoEm: resumo?.geradoEm ? hm(resumo.geradoEm) : null, contagem, turnos: [...turnos.values()].sort((a, b) => a.ini - b.ini).map(({ ini, ...t }) => t) };
+}
+
 // ------------------------------------------------------------ rotas
 export async function rotaAlerta(req, path, ctx) {
   const { json, isAdmin, sign } = ctx, q = new URL(req.url).searchParams, erro = (m, s = 400) => json({ error: m }, s);
@@ -481,6 +548,14 @@ export async function rotaAlerta(req, path, ctx) {
       await notificar(dia, cfgA?.hubs?.[f.hubId]?.lider?.tel, `✅ Cobertura confirmada em *${f.hubNome}* (${f.turno}). Furo encerrado.`, { tipo: "confirmou", hub: f.hubNome, furo: id, dia, para_quem: "lider" }); return json({ ok: true, estado: f.estado });
     }
     return erro("Ação inválida.");
+  }
+  // acompanhamento do dia para os líderes (somente leitura): um link só, com o seletor de data e de hub na própria página
+  if (path === "/api/alerta/acompanhar" && req.method === "GET") {
+    if (String(q.get("t") || "") !== sign("acompanhar")) return erro("Link inválido ou expirado.", 403);
+    const agora = Date.now(), dia = /^\d{4}-\d\d-\d\d$/.test(q.get("d") || "") ? q.get("d") : isoOf(agora);
+    const esc = await lerEscala([dia]).catch(() => null); if (!esc) return erro("Não consegui ler a escala agora. Tente de novo em instantes.", 503);
+    const hubs = esc.cfg.hubs.map(h => ({ id: h.id, nome: h.nome })), hubId = hubs.find(h => h.id === q.get("h"))?.id || hubs[0]?.id; if (!hubId) return erro("Nenhum hub cadastrado na escala.", 404);
+    return json({ hubs, hoje: isoOf(agora), ...(await montarAcompanhamento({ dia, hubId, esc, agora })) });
   }
   // cadastro de telefones da equipe: o líder usa o link do próprio hub (token assinado); cada hub só enxerga e grava os seus
   const fmtTel = v => { let d = soDigitos(v); if (!d) return ""; if (d.startsWith("55") && d.length > 11) d = d.slice(2); return d.length === 10 || d.length === 11 ? "55" + d : null; };
@@ -538,12 +613,14 @@ export async function rotaAlerta(req, path, ctx) {
     if (fase === "encerrado") return erro("Este turno já terminou.", 409);
     const acao = b.acao; if (!["vou", "caminho", "nao_vou", "loc"].includes(acao)) return erro("Ação inválida.");
     const anterior = e.resp || null, lat = Number(b.lat), lon = Number(b.lon);
+    let locNova = null;
     // localização: guarda só a distância até o hub (nunca as coordenadas da pessoa)
     if ((acao === "caminho" || acao === "loc") && b.lat != null && Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
-      const hl = await getJ(`hubloc/${e.hubId}`); (e.locs ||= []).push({ dist: hl ? distM({ lat, lon }, hl) : null, prec: Number.isFinite(Number(b.prec)) ? Math.round(Number(b.prec)) : null, em: agora }); e.locs = e.locs.slice(-10);
+      const hl = await getJ(`hubloc/${e.hubId}`); (e.locs ||= []).push({ dist: hl ? distM({ lat, lon }, hl) : null, prec: Number.isFinite(Number(b.prec)) ? Math.round(Number(b.prec)) : null, em: agora }); e.locs = e.locs.slice(-10); locNova = e.locs[e.locs.length - 1];
     }
     if (acao === "nao_vou") e.resp = "nao_vou"; else if (acao === "caminho") e.resp = "caminho"; else if (acao === "vou" && (!e.resp || e.resp === "nao_vou")) e.resp = "vou";
     if (acao !== "loc") e.respEm = agora;
+    (e.hist ||= []).push({ t: agora, a: acao, ...(locNova ? { dist: locNova.dist } : {}) }); e.hist = e.hist.slice(-40);      // carimbo de cada resposta, para a página de acompanhamento
     await putJ(`eu/${dia}/${sid}`, e);
     let f = await getJ(`furo/${dia}/${sid}`); const cfgA = await lerConfig(), tel = cfgA?.hubs?.[e.hubId]?.lider?.tel, nova = e.locs?.[e.locs.length - 1], resp = { ok: true, resp: e.resp, dist: nova?.dist ?? ult?.dist ?? null };
     if (acao === "nao_vou") {
@@ -571,7 +648,7 @@ export async function rotaAlerta(req, path, ctx) {
   if (!isAdmin(req)) return erro("Não autorizado", 401);
   if (path === "/api/alerta/equipe-links" && req.method === "GET") {      // links do cadastro de equipe, um por hub, para a gestão repassar aos líderes
     const esc = await lerEscala([isoOf(Date.now())]);
-    return json({ hubs: await Promise.all(esc.cfg.hubs.map(async h => ({ id: h.id, nome: h.nome, link: linkEquipe(sign, h.id), cadastrados: Object.keys((await getJ(`tel/${h.id}`)) || {}).length, local: !!(await getJ(`hubloc/${h.id}`)) }))) });
+    return json({ acompanhar: `${BASE_URL}/acompanhar.html?t=${sign("acompanhar")}`, hubs: await Promise.all(esc.cfg.hubs.map(async h => ({ id: h.id, nome: h.nome, link: linkEquipe(sign, h.id), cadastrados: Object.keys((await getJ(`tel/${h.id}`)) || {}).length, local: !!(await getJ(`hubloc/${h.id}`)) }))) });
   }
   if (path === "/api/alerta/painel" && req.method === "GET") {
     const dia = /^\d{4}-\d\d-\d\d$/.test(q.get("d") || "") ? q.get("d") : isoOf(Date.now());
