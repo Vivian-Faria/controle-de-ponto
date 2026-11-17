@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#050607">
+<title>Acompanhamento do dia</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23050607'/><circle cx='16' cy='16' r='11' fill='none' stroke='%23baff1a' stroke-opacity='.45' stroke-width='1.8'/><circle cx='16' cy='16' r='6' fill='none' stroke='%23baff1a' stroke-opacity='.7' stroke-width='1.8'/><path d='M16 16 L25.5 9.5' stroke='%23baff1a' stroke-width='2.4' stroke-linecap='round'/><circle cx='16' cy='16' r='2.6' fill='%23baff1a'/></svg>">
+<meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#050607;--line:rgba(255,255,255,.10);--line2:rgba(255,255,255,.18);--glass:linear-gradient(160deg,rgba(255,255,255,.06),rgba(255,255,255,.016));
+    --tx:#f5f7f6;--mut:#8d95a3;--lime:#baff1a;--limeglow:rgba(186,255,26,.38);--limebg:rgba(186,255,26,.10);
+    --red:#ff4a4a;--redbg:rgba(255,74,74,.12);--amb:#ffb62e;--ambbg:rgba(255,182,46,.12);--blue:#5cc8ff;--bluebg:rgba(92,200,255,.12);--vio:#b69cff;--viobg:rgba(182,156,255,.12);--gry:#9aa3b2;--grybg:rgba(154,163,178,.12);
+    --disp:"Space Grotesk","Segoe UI",system-ui,sans-serif;--body:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  *{box-sizing:border-box}
+  html{color-scheme:dark}
+  body{margin:0;min-height:100vh;font:16px/1.5 var(--body);color:var(--tx);-webkit-font-smoothing:antialiased;overflow-x:hidden;
+    background:radial-gradient(800px 440px at 85% -8%,rgba(186,255,26,.12),transparent 62%),linear-gradient(rgba(255,255,255,.028) 1px,transparent 1px) 0 0/48px 48px,linear-gradient(90deg,rgba(255,255,255,.028) 1px,transparent 1px) 0 0/48px 48px,var(--bg);background-attachment:fixed}
+  main{max-width:640px;margin:0 auto;padding:18px 16px 64px;display:flex;flex-direction:column;gap:16px}
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 4px 0;font:700 16px var(--disp);letter-spacing:.04em}
+  .brand svg{width:24px;height:24px}.brand b{color:var(--lime)}
+  .brand em{margin-left:auto;font:500 11px var(--mono);font-style:normal;letter-spacing:.14em;text-transform:uppercase;color:#5d6572}
+  .sweep{transform-origin:16px 16px;animation:spin 3.2s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+  .filtros{position:sticky;top:0;z-index:5;margin:0 -16px;padding:10px 16px 12px;background:linear-gradient(rgba(5,6,7,.94) 70%,rgba(5,6,7,0));backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+  .filtros .row{display:flex;gap:10px}.filtros .row>label{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;font:500 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+  select,input[type=date]{font:600 16px var(--body);color:var(--tx);padding:13px 16px;border-radius:99px;border:1px solid var(--line2);background:rgba(255,255,255,.05);width:100%;outline:none;color-scheme:dark;appearance:none;-webkit-appearance:none;min-height:50px}
+  select{background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='9' viewBox='0 0 14 9'><path d='M1 1.5l6 6 6-6' fill='none' stroke='%23baff1a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");background-repeat:no-repeat;background-position:right 18px center;padding-right:42px}
+  select:focus,input[type=date]:focus{border-color:var(--lime);box-shadow:0 0 0 3px var(--limebg)}
+  option{background:#10151a;color:var(--tx)}
+  .sub{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:13px;color:var(--mut)}
+  .sub .live{display:inline-flex;align-items:center;gap:7px}.sub .live i{width:7px;height:7px;border-radius:50%;background:var(--lime);box-shadow:0 0 10px var(--limeglow);animation:pisca 2s ease-in-out infinite}
+  @keyframes pisca{50%{opacity:.35}}
+  .sub.off .live i{background:var(--red);box-shadow:none;animation:none}
+  .sub label{margin-left:auto;display:inline-flex;align-items:center;gap:8px;font:500 13px var(--body);letter-spacing:0;text-transform:none;color:var(--tx);cursor:pointer;flex:none}
+  .sub input{accent-color:var(--lime);width:18px;height:18px}
+  .resumo{display:flex;flex-wrap:wrap;gap:8px}
+  .cnt{display:flex;align-items:center;gap:9px;padding:9px 14px;border-radius:99px;border:1px solid var(--line);background:var(--glass);font-size:14px;color:var(--mut)}
+  .cnt b{font:700 20px var(--disp);color:var(--c,var(--tx));line-height:1}
+  .cnt.z{opacity:.45}
+  .turno h2{margin:10px 4px 10px;display:flex;align-items:baseline;gap:10px;font:700 19px var(--disp);letter-spacing:-.01em}
+  .turno h2 small{font:500 13px var(--mono);letter-spacing:.06em;color:var(--mut)}
+  .lista{display:flex;flex-direction:column;gap:10px}
+  .p{--c:var(--gry);--cb:var(--grybg);position:relative;border-radius:22px;padding:14px 16px 14px 20px;background:var(--glass);border:1px solid var(--line);overflow:hidden}
+  .p::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c);box-shadow:0 0 14px var(--c)}
+  .p.st-presente{--c:var(--lime);--cb:var(--limebg)}.p.st-caminho{--c:var(--blue);--cb:var(--bluebg)}.p.st-confirmou{--c:var(--lime);--cb:var(--limebg)}
+  .p.st-nao_vai,.p.st-vaga{--c:var(--red);--cb:var(--redbg)}.p.st-sem_resposta{--c:var(--amb);--cb:var(--ambbg)}.p.st-coberto,.p.st-substituido{--c:var(--vio);--cb:var(--viobg)}
+  .p.st-presente{border-color:rgba(186,255,26,.25)}.p.st-nao_vai,.p.st-vaga{border-color:rgba(255,74,74,.35)}.p.st-sem_resposta{border-color:rgba(255,182,46,.3)}
+  .top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .top b{font:700 17px var(--disp);letter-spacing:-.01em;min-width:0;overflow-wrap:anywhere}
+  .tag{flex:none;display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border-radius:99px;background:var(--cb);color:var(--c);font:600 11.5px var(--mono);letter-spacing:.04em;text-transform:uppercase;text-align:right}
+  .tag i{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor;flex:none}
+  .tl{list-style:none;margin:12px 0 0;padding:0 0 0 16px;position:relative;font-size:14px}
+  .tl::before{content:"";position:absolute;left:4px;top:7px;bottom:7px;width:1px;background:var(--line2)}
+  .tl li{position:relative;display:flex;gap:12px;padding:4px 0;line-height:1.4}
+  .tl li::before{content:"";position:absolute;left:-16px;top:11px;width:9px;height:9px;border-radius:50%;background:#0b0e10;border:2px solid var(--gry)}
+  .tl time{font:600 13px var(--mono);color:var(--mut);min-width:42px;padding-top:1px}
+  .tl .k-resp::before{border-color:var(--lime);background:var(--lime);box-shadow:0 0 8px var(--limeglow)}
+  .tl .k-ponto::before{border-color:var(--lime);background:var(--lime);box-shadow:0 0 10px var(--limeglow)}.tl .k-ponto span{color:var(--lime);font-weight:600}
+  .tl .k-nao::before{border-color:var(--red);background:var(--red)}.tl .k-nao span{color:var(--red);font-weight:600}
+  .tl .k-lider::before{border-color:var(--vio)}.tl .k-lider span{color:#cdbfff}
+  .tl .k-msg span{color:#c3c9d3}
+  .tl em{font-style:normal;font:600 11px var(--mono);letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:99px;margin-left:6px;white-space:nowrap}
+  .tl em.sem{background:var(--ambbg);color:var(--amb)}.tl em.aguarda{background:var(--bluebg);color:var(--blue)}.tl em.nenv{background:var(--grybg);color:var(--gry)}
+  .vazio{padding:12px 0 2px;font-size:14px;color:var(--mut)}
+  .card{background:var(--glass);border:1px solid var(--line);border-radius:26px;padding:22px;color:var(--mut)}
+  .card h2{margin:0 0 6px;font:700 18px var(--disp);color:var(--tx)}
+  .solo .tl,.solo .vazio{display:none}
+  @media (max-width:420px){.tag{font-size:10.5px;padding:5px 10px}.top b{font-size:16px}}
+</style>
+</head>
+<body>
+<main>
+  <div class="brand"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="11" fill="none" stroke="#baff1a" stroke-opacity=".45" stroke-width="1.8"/><circle cx="16" cy="16" r="6" fill="none" stroke="#baff1a" stroke-opacity=".7" stroke-width="1.8"/><g class="sweep"><path d="M16 16 L25.5 9.5" stroke="#baff1a" stroke-width="2.4" stroke-linecap="round"/></g><circle cx="16" cy="16" r="2.6" fill="#baff1a"/></svg>Escala<b>.</b><em>acompanhamento</em></div>
+  <div class="filtros">
+    <div class="row">
+      <label>Data<input type="date" id="d"></label>
+      <label>Hub<select id="h" aria-label="Hub"></select></label>
+    </div>
+    <div class="sub" id="sub"><span class="live"><i></i><span id="att">Carregando…</span></span><label><input type="checkbox" id="det" checked> Linha do tempo</label></div>
+  </div>
+  <div class="resumo" id="resumo"></div>
+  <div id="corpo"></div>
+</main>
+<script>
+const q=new URLSearchParams(location.search),T=q.get('t')||'';
+const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ls={get(k){try{return localStorage.getItem(k)}catch{return null}},set(k,v){try{localStorage.setItem(k,v)}catch{}}};
+const ST={presente:['No hub','var(--lime)'],caminho:['A caminho','var(--blue)'],confirmou:['Confirmaram','var(--lime)'],nao_vai:['Não vão','var(--red)'],sem_resposta:['Sem resposta','var(--amb)'],aguardando:['Aguardando','var(--gry)'],sem_tel:['Sem telefone','var(--gry)'],vaga:['Vagas vazias','var(--red)'],coberto:['Cobertos','var(--vio)']};
+const NENV={simulado:'não enviada (modo teste)',erro:'falha no envio',sem_telefone:'sem telefone'};
+let hoje=null,tim=0,busy=0,ctl=null;
+$('d').value=q.get('d')||'';
+$('det').checked=ls.get('acomp_det')!=='0';
+document.body.classList.toggle('solo',!$('det').checked);
+function url(){const p=new URLSearchParams({t:T});if($('d').value)p.set('d',$('d').value);if($('h').value)p.set('h',$('h').value);return p}
+async function load(manual){
+  if(ctl)ctl.abort();ctl=new AbortController();const mine=++busy;
+  const p=url();if(!p.get('h')&&ls.get('acomp_h'))p.set('h',ls.get('acomp_h'));
+  try{
+    const r=await fetch('/api/alerta/acompanhar?'+p,{cache:'no-store',signal:ctl.signal}),j=await r.json().catch(()=>({}));
+    if(mine!==busy)return;if(!r.ok)throw new Error(j.error||'Erro '+r.status);
+    hoje=j.hoje;if(!$('d').value)$('d').value=j.dia;
+    const sel=$('h');sel.innerHTML=j.hubs.map(h=>`<option value="${esc(h.id)}">${esc(h.nome)}</option>`).join('');sel.value=j.hubId;
+    ls.set('acomp_h',j.hubId);
+    const u=new URLSearchParams({t:T,d:j.dia,h:j.hubId});history.replaceState(null,'','?'+u);
+    draw(j);$('sub').classList.remove('off');$('att').textContent='Atualizado às '+j.agora+' · atualiza sozinho';
+  }catch(e){
+    if(e.name==='AbortError')return;
+    if(!$('corpo').children.length)$('corpo').innerHTML=`<div class="card"><h2>Não foi possível carregar</h2>${esc(e.message)}</div>`;
+    $('sub').classList.add('off');$('att').textContent=e.message;
+  }
+}
+function draw(j){
+  const c=j.contagem,ordem=['presente','caminho','confirmou','nao_vai','sem_resposta','aguardando','sem_tel','vaga','coberto'];
+  $('resumo').innerHTML=ordem.map(k=>`<div class="cnt ${c[k]?'':'z'}" style="--c:${ST[k][1]}"><b>${c[k]||0}</b>${ST[k][0]}</div>`).join('');
+  if(!j.turnos.length){$('corpo').innerHTML=`<div class="card"><h2>Sem escala neste dia</h2>Não há turnos com vagas para ${esc(j.hubNome)} nesta data.</div>`;return}
+  $('corpo').innerHTML=j.turnos.map(t=>`<section class="turno"><h2>${esc(t.nome)} <small>${esc(t.inicio)}–${esc(t.fim)}</small></h2><div class="lista">`+t.pessoas.map(p=>
+    `<article class="p st-${p.st}"><div class="top"><b>${esc(p.nome)}</b><span class="tag"><i></i>${esc(p.rot)}</span></div>`+
+    (p.ev.length?`<ol class="tl">`+p.ev.map(e=>`<li class="k-${e.k}"><time>${esc(e.hm)}</time><span>${esc(e.txt)}${e.envio&&e.envio!=='enviado'?`<em class="nenv">${esc(NENV[e.envio]||e.envio)}</em>`:''}${e.res==='sem'?'<em class="sem">sem resposta</em>':e.res==='aguarda'?'<em class="aguarda">aguardando</em>':''}</span></li>`).join('')+`</ol>`:`<div class="vazio">${p.st==='vaga'?'Lance o nome desta vaga na escala.':'Nenhuma comunicação ainda.'}</div>`)+`</article>`).join('')+`</div></section>`).join('');
+}
+$('d').onchange=()=>{$('corpo').innerHTML='';load()};
+$('h').onchange=()=>{ls.set('acomp_h',$('h').value);$('corpo').innerHTML='';load()};
+$('det').onchange=()=>{ls.set('acomp_det',$('det').checked?'1':'0');document.body.classList.toggle('solo',!$('det').checked)};
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)load()});
+setInterval(()=>{if(!document.hidden)load()},30000);
+if(!T)$('corpo').innerHTML='<div class="card"><h2>Link incompleto</h2>Peça à gestão o link de acompanhamento.</div>';else load();
+</script>
+</body>
+</html>
