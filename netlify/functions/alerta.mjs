@@ -344,7 +344,7 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
         const sem = !chegSub && !chegMarc && s?.semEscala ? " Não estava lançado na escala: lance no app da escala." : "";
         const oque = chegMarc ? "teve a presença marcada na escala" : "bateu o ponto";
         evento(f, "chegou", `${quem} ${oque} às ${hm(chegou.t)}${chegSub || chegMarc ? ` (cobrindo ${f.nome || "a vaga"})` : ""}. Furo regularizado.${sem}`);
-        aoLider(f, `🟢 ${quem} ${oque} às ${hm(chegou.t)}. Furo regularizado em *${f.hubNome}* (${f.turno}).${sem}`, "chegou"); continue;
+        aoLider(f, `🟢 *${quem}* ${oque} às ${hm(chegou.t)}${chegSub || chegMarc ? ` (no lugar de ${f.nome || "quem faltou"})` : ""}. Furo regularizado em *${f.hubNome}* (${f.turno}).${sem}`, "chegou"); continue;
       }
       if (s) {
         const mudou = s.vazia ? !f.vazia : ((f.vazia || !mesmoNome(s.nome, f.nome)) && !(f.substituto && mesmoNome(f.substituto.nome, s.nome)));
