@@ -157,7 +157,7 @@ async function enviarGrupo(envio, itens) {
     if (!Array.isArray(corpo?.resultados)) { const t = txt.replace(/\s+/g, " ").slice(0, 160); for (const j of envio) marca(j, "falha", `HTTP ${r.status}: ${t}`); return { erro: `O DP respondeu HTTP ${r.status}.` }; }
     const res = corpo.resultados, vistos = new Set();   // o DP também devolve "resultados" item a item em HTTP 422 (ex.: horário inválido)
     for (const x of res) { const j = envio[x.indice]; if (!j) continue; vistos.add(x.indice);
-      if (x.status === "criado") marca(j, "enviado"); else if (x.status === "duplicado" && j.dp?.reaberta) marca(j, "falha", "Jornada retomada após o envio: o DP já tem o registro do dia e não aceita atualização. Edite-o no DP (Editar) para saída " + hhmmss(j.marks.saida_final) + " e horas " + (calcular(j.marks, j.pausas)).horas_hm + ".");
+      if (x.status === "criado") marca(j, "enviado"); else if (x.status === "duplicado" && (j.dp?.reaberta || (j.retomadas || []).length)) marca(j, "falha", "Jornada retomada após o envio: o DP já tem o registro do dia e não aceita atualização. Edite-o no DP (Editar) para saída " + hhmmss(j.marks.saida_final) + " e horas " + (calcular(j.marks, j.pausas)).horas_hm + ".");
       else if (x.status === "duplicado") marca(j, "enviado", j.dp?.fotosReenviadas ? "Fotos reenviadas ao DP." : "O DP já tinha este registro (duplicado)."); else marca(j, "falha", x.erro || "O DP recusou o registro."); }
     envio.forEach((j, i) => { if (!vistos.has(i)) marca(j, "falha", "O DP não devolveu resultado para este registro."); });
     return {};
