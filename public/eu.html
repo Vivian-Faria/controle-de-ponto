@@ -82,7 +82,8 @@ function draw(){
   const j=J,pn=esc(String(j.nome).split(' ')[0]),r=j.resp,f=j.fase,fim=j.encerrado;
   const btn=(id,txt,cls)=>`<button class="${cls||''}" id="${id}"${BUSY?' disabled':''}>${txt}</button>`;
   let chip='Aguardando você',cor='cuidando',corpo='';
-  if(fim){chip='Turno encerrado';corpo='<div class="mut">Este turno já terminou.</div>'}
+  if(f==='bateu'){chip='Ponto batido';cor='resolvido';corpo=`<div class="ok-box"><div class="tick">✓</div><div><b>Você já bateu o ponto às ${esc(j.pontoHm)}.</b><div class="mut">Obrigado! Não precisa responder mais nada. Bom turno.</div></div></div>`}
+  else if(fim){chip='Turno encerrado';corpo='<div class="mut">Este turno já terminou.</div>'}
   else if(r==='nao_vou'){chip='Aviso enviado';corpo=`<div class="mut">Seu líder foi avisado de que você não vai conseguir ir. Se mudar de ideia, fale com ele ou toque abaixo.</div>${btn('sim','Na verdade, vou comparecer','sec peq')}`}
   else if(f==='antes'){
     if(r){chip='Presença confirmada';cor='resolvido';corpo=`<div class="ok-box"><div class="tick">✓</div><div><b>Obrigado por avisar!</b><div class="mut">Presença confirmada. Perto do horário vamos perguntar se você já está a caminho.</div></div></div>${btn('nao','Mudei de ideia: não vou conseguir ir','sec peq')}`}
