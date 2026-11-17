@@ -50,6 +50,7 @@
   .p.st-presente{border-color:rgba(186,255,26,.25)}.p.st-nao_vai,.p.st-vaga{border-color:rgba(255,74,74,.35)}.p.st-sem_resposta{border-color:rgba(255,182,46,.3)}
   .top{display:flex;align-items:center;justify-content:space-between;gap:10px}
   .top b{font:700 17px var(--disp);letter-spacing:-.01em;min-width:0;overflow-wrap:anywhere}
+  .top b small.nl{display:block;margin-top:2px;font:500 12px var(--body);letter-spacing:0;color:var(--vio)}
   .tag{flex:none;display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border-radius:99px;background:var(--cb);color:var(--c);font:600 11.5px var(--mono);letter-spacing:.04em;text-transform:uppercase;text-align:right}
   .tag i{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor;flex:none}
   .tl{list-style:none;margin:12px 0 0;padding:0 0 0 16px;position:relative;font-size:14px}
@@ -117,7 +118,7 @@ function draw(j){
   $('resumo').innerHTML=ordem.map(k=>`<div class="cnt ${c[k]?'':'z'}" style="--c:${ST[k][1]}"><b>${c[k]||0}</b>${ST[k][0]}</div>`).join('');
   if(!j.turnos.length){$('corpo').innerHTML=`<div class="card"><h2>Sem escala neste dia</h2>Não há turnos com vagas para ${esc(j.hubNome)} nesta data.</div>`;return}
   $('corpo').innerHTML=j.turnos.map(t=>`<section class="turno"><h2>${esc(t.nome)} <small>${esc(t.inicio)}–${esc(t.fim)}</small></h2><div class="lista">`+t.pessoas.map(p=>
-    `<article class="p st-${p.st}"><div class="top"><b>${esc(p.nome)}</b><span class="tag"><i></i>${esc(p.rot)}</span></div>`+
+    `<article class="p st-${p.st}"><div class="top"><b>${esc(p.nome)}${p.noLugar?`<small class="nl">no lugar de ${esc(p.noLugar)}</small>`:''}</b><span class="tag"><i></i>${esc(p.rot)}</span></div>`+
     (p.ev.length?`<ol class="tl">`+p.ev.map(e=>`<li class="k-${e.k}"><time>${esc(e.hm)}</time><span>${esc(e.txt)}${e.envio&&e.envio!=='enviado'?`<em class="nenv">${esc(NENV[e.envio]||e.envio)}</em>`:''}${e.res==='sem'?'<em class="sem">sem resposta</em>':e.res==='aguarda'?'<em class="aguarda">aguardando</em>':''}</span></li>`).join('')+`</ol>`:`<div class="vazio">${p.st==='vaga'?'Lance o nome desta vaga na escala.':'Nenhuma comunicação ainda.'}</div>`)+`</article>`).join('')+`</div></section>`).join('');
 }
 $('d').onchange=()=>{$('corpo').innerHTML='';load()};
