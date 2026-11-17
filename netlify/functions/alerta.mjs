@@ -517,7 +517,7 @@ export async function montarAcompanhamento({ dia, hubId, esc, agora }) {
     else if (r?.resp === "vou") { st = "confirmou"; rot = "Confirmou presença"; }
     else if (!tel) { st = "sem_tel"; rot = semTelDe(tels, hubId, s.nome) ? "Sem celular" : "Sem telefone cadastrado"; }
     else if (msgs.some(m => m.estado === "enviado")) { st = "sem_resposta"; rot = "Sem resposta"; }
-    else { st = "aguardando"; rot = "Aguardando"; }
+    else { st = "aguardando"; rot = agora < s.inicio ? "Turno não iniciado" : "Sem contato ainda"; }
     contagem[st === "substituido" ? "coberto" : st]++;
     return { id: s.id, nome: s.vazia ? "Vaga sem ninguém lançado" : (trocaPor || s.nome), ...(trocaPor ? { noLugar: s.nome } : {}), st, rot, dist, ev: ev.map(e => ({ hm: hm(e.t), k: e.k, txt: e.txt, ...(e.envio ? { envio: e.envio } : {}), ...(e.res ? { res: e.res } : {}) })) };
   };
