@@ -130,7 +130,7 @@ function gauge(j){
   const antes={};box.querySelectorAll('.tc').forEach(e=>antes[e.dataset.k]=parseFloat(e.querySelector('.arc').style.strokeDashoffset));
   const mi=h=>{const[a,b]=String(h||'0:0').split(':');return +a*60+ +b},ag=mi(j.agora);
   box.innerHTML=ts.map((t,i)=>{
-    const tot=t.pessoas.length,ok=t.pessoas.filter(p=>p.st==='presente').length,pct=ok/tot,ini=mi(t.inicio),fim=mi(t.fim),k=String(i);
+    const tot=t.pessoas.length,ok=t.pessoas.filter(p=>p.st==='presente'||p.st==='coberto').length,pct=ok/tot,ini=mi(t.inicio),fim=mi(t.fim),k=String(i);
     const hoje=j.dia===j.hoje,fut=j.dia>j.hoje||(hoje&&ag<ini),acab=j.dia<j.hoje||(hoje&&ag>fim&&fim>ini);
     const est=ok>=tot?['completo','Completo']:fut?['nao','Turno não iniciado']:acab?['fim','Encerrado com falta']:['', `Faltam ${tot-ok}`];
     return `<button type="button" class="tc ${est[0]}" data-k="${k}" data-i="${i}" aria-label="${esc(t.nome)}: ${ok} de ${tot}, ${est[1]}"><div class="gg"><svg viewBox="0 0 200 200" fill="none"><circle class="trk" cx="100" cy="100" r="88" stroke-width="12"/><circle class="arc" cx="100" cy="100" r="88" stroke-width="12" stroke-linecap="round" stroke-dasharray="552.9" stroke-dashoffset="${isNaN(antes[k])?552.9:antes[k]}" data-to="${552.9*(1-pct)}"/></svg><div class="num">${ok}/${tot}<small>${Math.round(pct*100)}%</small></div></div><h3>${esc(t.nome)}</h3><span class="hr">${esc(t.inicio)}–${esc(t.fim)}</span><span class="st">${esc(est[1])}</span></button>`}).join('');
