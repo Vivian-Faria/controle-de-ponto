@@ -200,6 +200,7 @@ export function cadenciaTurnos({ dia, agora, sit, furos, cad, cfgA, sign, tels =
       for (const s of alvo) {
         const tel = telDe(tels, g.hubId, s.nome), r = resps[s.id]; if (!tel || r?.resp === "nao_vou" || furos[s.id]?.naoVai) continue;
         if (n === "m3" && resp5(s)) continue;      // já respondeu depois da cobrança das +5: não insiste
+        { const f0 = furos[s.id]; if ((n === "m2" || n === "m3") && f0 && (f0.estado === "resolvido" || f0.substituto || (f0.aCaminho && f0.aCaminhoPor !== "colab"))) continue; }      // o líder já cuidou desta vaga (a caminho, coberta ou substituída): não cobra a pessoa
         const pn = String(s.nome).split(" ")[0], lk = linkColab(sign, dia, s.id);
         const t2 = n === "c0" ? `Olá, ${pn}! 👋 Você está na escala de hoje em *${g.hubNome}* (${s.turno}), a partir das ${hm(s.inicio)}.\n\nVocê confirma que vai comparecer?\n👉 ${lk}`
           : n === "m1" ? `${pn}, seu turno em *${g.hubNome}* começa às ${hm(s.inicio)}.\n\nJá está a caminho? Confirme aqui:\n👉 ${lk}`
@@ -221,14 +222,15 @@ const relogio = { t: null };      // durante o vigia, o "agora" injetado (testá
 const agoraMs = () => relogio.t ?? Date.now();
 const evento = (f, tipo, msg, por) => { (f.eventos = f.eventos || []).push({ t: agoraMs(), tipo, msg, ...(por ? { por } : {}) }); };
 export async function vigiar(a) { relogio.t = a.agora ?? null; try { return await vigiarInterno({ ...a, agora: a.agora ?? Date.now() }); } finally { relogio.t = null; } }
-async function vigiarInterno({ agora, sign, presencas, escala }) {      // presencas: batidas de ontem e de hoje
+async function vigiarInterno({ agora, sign, presencas, escala, reler }) {      // presencas: batidas de ontem e de hoje
   const cfgA = await lerConfig(); if (!cfgA?.hubs) return { ok: false, motivo: "sem configuração" };
   const tol = cfgA.tolerancia ?? 15, escalarMin = cfgA.escalarMin ?? 15, lembrar = cfgA.lembreteMin ?? 30, grace = cfgA.graceTrocaMin ?? 30;
   const hoje = isoOf(agora), dias = [addDays(hoje, -1), hoje, ...(agora >= toMs(hoje, "22:00") ? [addDays(hoje, 1)] : [])];      // à noite também olha o dia seguinte: turnos que começam logo após a meia-noite precisam do aviso de 1 h antes
   escala = escala || await lerEscala(dias);
   // apelidos: nome na escala = nome no ponto/freela, quando são diferentes (ex.: "Ana Alice" = "Analice Vital")
   const apel = (cfgA.apelidos || []).filter(a => a?.escala && a?.ponto);
-  const pres = apel.length ? presencas.map(p => { const a = apel.find(x => mesmoNome(p.nome, x.ponto)); return a ? { ...p, nome: a.escala } : p; }) : presencas;
+  const mapApel = ps => apel.length ? ps.map(p => { const a = apel.find(x => mesmoNome(p.nome, x.ponto)); return a ? { ...p, nome: a.escala } : p; }) : ps;
+  const pres = mapApel(presencas);
   const resultado = { dias: {}, enviadas: 0 };
   const tels = {}; for (const h of Object.keys(cfgA.hubs || {})) tels[h] = (await getJ(`tel/${h}`)) || {};      // telefones dos colaboradores, por hub (reserva na central)
   sobreporCadastro(tels, escala?.cfg?.colaboradores, Object.keys(cfgA.hubs || {}));      // e o cadastro de colaboradores da escala, que tem prioridade
@@ -378,6 +380,7 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
     }
     const euList = await listar(`eu/${dia}/`), resps = Object.fromEntries(euList.map(e => [e.sid, e]));
     for (const e of euList) { const f = furos[e.sid], l = e.locs?.[e.locs.length - 1];
+      { const sx = porId.get(e.sid); if (sx?.cheg && !e.chegouEm) { e.chegouEm = sx.cheg.t; await putJ(`eu/${dia}/${e.sid}`, e); } }      // guarda a batida: o link da pessoa passa a mostrar que o ponto já foi batido
       if (l && f && f.estado !== "resolvido" && !f.substituto && (!f.loc || f.loc.em < l.em)) { f.loc = { dist: l.dist, prec: l.prec ?? null, em: l.em }; evento(f, "localizacao", `${f.nome || "A pessoa"} compartilhou a localização: ${l.dist == null ? "sem referência do hub" : "a " + fmtDist(l.dist) + " do hub"}.`); }
       if (e.resp === "caminho" && f && f.estado !== "resolvido" && !f.substituto && !f.aCaminho) { f.aCaminho = true; f.aCaminhoEm = e.respEm || agora; f.aCaminhoPor = "colab"; if (f.estado === "aberto") f.estado = "cuidando"; evento(f, "caminho", `${f.nome || "A pessoa"} confirmou pelo link que está a caminho.`); } }
     for (const s of sit) { const f = furos[s.id]; s.coberto = !!(f && f.estado === "resolvido" && !f.encerrado && !s.cheg && !s.compareceu); s.trocaPor = s.cheg ? null : (f?.substituto && !f.substituto.via && !mesmoNome(f.substituto.nome, s.nome)) ? f.substituto.nome : (s.subAuto?.nome || null); if (s.subAuto && !f) s.coberto = true; }
@@ -386,7 +389,9 @@ async function vigiarInterno({ agora, sign, presencas, escala }) {      // prese
       const cad = (await getJ(`cad/${dia}`)) || {};
       const r = cadenciaTurnos({ dia, agora, sit, furos, cad, cfgA, sign, tels, resps });
       for (const m of r.msgs) msgs.push(m);
-      for (const c of r.colabs || []) { await putJ(`eu/${dia}/${c.eu.sid}`, { ...(resps[c.eu.sid] || {}), ...c.eu }); msgs.push({ tel: c.tel, texto: c.texto, meta: c.meta }); }
+      // relê as batidas imediatamente antes de enviar: quem bateu o ponto desde o início desta rodada não recebe cobrança
+      let fresca = null; if (reler && (r.colabs || []).length) { try { fresca = mapApel(await reler()); } catch { fresca = null; } }
+      for (const c of r.colabs || []) { if (fresca && chegada({ nome: c.eu.nome, hubId: c.eu.hubId, inicio: c.eu.inicio, fim: c.eu.fim }, fresca, cfgA)) continue; await putJ(`eu/${dia}/${c.eu.sid}`, { ...(resps[c.eu.sid] || {}), ...c.eu }); msgs.push({ tel: c.tel, texto: c.texto, meta: c.meta }); }
       await putJ(`cad/${dia}`, r.cad);
     }
     // 4) turno completo depois de ter tido furo
@@ -641,8 +646,9 @@ export async function rotaAlerta(req, path, ctx) {
     const b = req.method === "POST" ? await req.json().catch(() => ({})) : {}, dia = String(b.d ?? q.get("d") ?? ""), sid = String(b.s ?? q.get("s") ?? ""), t = String(b.t ?? q.get("t") ?? "");
     if (!/^\d{4}-\d\d-\d\d$/.test(dia) || !sid || t !== tokenColab(sign, dia, sid)) return erro("Link inválido ou expirado.", 403);
     const e = await getJ(`eu/${dia}/${sid}`); if (!e) return erro("Link não encontrado.", 404); const agora = Date.now();
-    const fase = agora >= e.fim ? "encerrado" : agora < e.inicio - 35 * MIN ? "antes" : agora < e.inicio + 4 * MIN ? "perto" : "atrasado", ult = e.locs?.[e.locs.length - 1];
-    if (req.method === "GET") return json({ nome: e.nome, hubNome: e.hubNome, turno: e.turno, inicioHm: hm(e.inicio), resp: e.resp || null, fase, encerrado: fase === "encerrado", dist: ult?.dist ?? null, distEm: ult ? hm(ult.em) : null });
+    const fase = e.chegouEm ? "bateu" : agora >= e.fim ? "encerrado" : agora < e.inicio - 35 * MIN ? "antes" : agora < e.inicio + 4 * MIN ? "perto" : "atrasado", ult = e.locs?.[e.locs.length - 1];
+    if (req.method === "GET") return json({ nome: e.nome, hubNome: e.hubNome, turno: e.turno, inicioHm: hm(e.inicio), resp: e.resp || null, fase, encerrado: fase === "encerrado", pontoHm: e.chegouEm ? hm(e.chegouEm) : null, dist: ult?.dist ?? null, distEm: ult ? hm(ult.em) : null });
+    if (fase === "bateu") return json({ ok: true, jaBateu: true, pontoHm: hm(e.chegouEm), resp: e.resp || null });      // ponto já batido: não registra mais nada
     if (fase === "encerrado") return erro("Este turno já terminou.", 409);
     const acao = b.acao; if (!["vou", "caminho", "nao_vou", "loc"].includes(acao)) return erro("Ação inválida.");
     const anterior = e.resp || null, lat = Number(b.lat), lon = Number(b.lon);
