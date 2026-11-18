@@ -478,6 +478,7 @@ export async function montarAcompanhamento({ dia, hubId, esc, agora }) {
   const sit = situacoes(esc, dia, cfgA, agora).filter(s => s.hubId === hubId && !s.extra);
   for (const s of sit) s.id = idDe(dia, s.hubId, s.turnoId, s.vaga, s.pidx || 0);
   const [euL, furoL, outL, resumo, telsRaw] = await Promise.all([listar(`eu/${dia}/`), listar(`furo/${dia}/`), listar(`out/${dia}/`), getJ(`dia/${dia}`), getJ(`tel/${hubId}`)]);
+  const semLocHub = !(await getJ(`hubloc/${hubId}`));      // sem o ponto de referência do hub não dá para calcular a distância
   const eus = Object.fromEntries(euL.map(e => [e.sid, e])), furos = Object.fromEntries(furoL.map(f => [f.id, f]));
   const tels = sobreporCadastro({ [hubId]: telsRaw || {} }, esc.cfg.colaboradores, [hubId]);
   const hubNome = esc.cfg.hubs.find(h => h.id === hubId)?.nome || "";
@@ -486,7 +487,8 @@ export async function montarAcompanhamento({ dia, hubId, esc, agora }) {
   const contagem = { presente: 0, caminho: 0, confirmou: 0, nao_vai: 0, sem_resposta: 0, aguardando: 0, sem_tel: 0, vaga: 0, coberto: 0 };
   const ORDEM = { nao_vai: 0, vaga: 1, sem_resposta: 2, sem_tel: 3, aguardando: 4, caminho: 5, confirmou: 6, substituido: 7, coberto: 8, presente: 9 };
   const txtResp = h => h.a === "vou" ? "Confirmou presença" : h.a === "nao_vou" ? "Avisou que não vai"
-    : h.a === "caminho" ? (h.dist != null ? `Está a caminho · a ${fmtDist(h.dist)} do hub` : "Marcou que está a caminho") : (h.dist != null ? `Localização: a ${fmtDist(h.dist)} do hub` : "Compartilhou a localização");
+    : h.a === "caminho" ? (h.dist != null ? `Está a caminho · 📍 a ${fmtDist(h.dist)} do hub` : "Marcou que está a caminho")
+    : (h.dist != null ? `📍 Localização: a ${fmtDist(h.dist)} do hub` : `📍 Compartilhou a localização${semLocHub ? " (distância indisponível: o local deste hub ainda não foi marcado)" : ""}`);
   const montar = (s, p) => {
     const r = eus[s.id], f = furos[s.id], ev = [], msgs = s.vazia ? [] : msgsHub.filter(o => mesmoNome(o.nome, s.nome)), sb = f?.substituto;
     // vaga com substituto: o cartão é do substituto, "no lugar de" quem faltou
@@ -518,7 +520,7 @@ export async function montarAcompanhamento({ dia, hubId, esc, agora }) {
     else if (f && f.estado === "resolvido" && !f.encerrado) { st = "coberto"; rot = sub ? `Coberto por ${sub}` : "Vaga coberta"; }
     else if (sub) { st = "substituido"; rot = `Substituto: ${sub}`; }
     else if (r?.resp === "nao_vou" || f?.naoVai) { st = "nao_vai"; rot = "Não vai"; }
-    else if (r?.resp === "caminho" || f?.aCaminho) { st = "caminho"; dist = ultDist; rot = dist != null ? `A caminho · ${fmtDist(dist)} do hub` : "A caminho"; }
+    else if (r?.resp === "caminho" || f?.aCaminho) { st = "caminho"; dist = ultDist; rot = dist != null ? `A caminho · 📍 ${fmtDist(dist)} do hub` : "A caminho"; }
     else if (r?.resp === "vou") { st = "confirmou"; rot = "Confirmou presença"; }
     else if (!tel) { st = "sem_tel"; rot = semTelDe(tels, hubId, s.nome) ? "Sem celular" : "Sem telefone cadastrado"; }
     else if (msgs.some(m => m.estado === "enviado")) { st = "sem_resposta"; rot = "Sem resposta"; }
