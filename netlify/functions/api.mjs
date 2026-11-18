@@ -137,12 +137,13 @@ async function withHistory(api, a, b) {
 }
 const loadPunches = (d0, d1) => { const a = isoToLocalStartMs(d0), b = isoToLocalStartMs(addDays(d1, 1)) - 1; return cached(`p${a}-${b}`, 120000, async () => withHistory(await fetchPunches(a, b), a, b)); };
 // quem bateu ponto em um dia (Tangerino + freelancers), com o hub de cada um: base da central de alertas de furo de escala
-export async function presencasDoDia(iso) {
+export async function presencasDoDia(iso, fim = iso) {      // fim: lê vários dias de uma vez só (uma única consulta ao Tangerino)
   deadline.t = Date.now() + 22000;
-  const [emps, hubs, punches] = await Promise.all([loadEmployees(), readKey("hubs"), loadPunches(iso, iso)]), byId = new Map(emps.map(e => [e.id, e])), out = [];
+  const [emps, hubs, punches] = await Promise.all([loadEmployees(), readKey("hubs"), loadPunches(iso, fim)]), byId = new Map(emps.map(e => [e.id, e])), out = [];
   for (const p of punches) { const eid = empId(p), din = pick(p, "dateIn", "startDate", "date", "punchDate"), e = byId.get(eid); if (!e || din == null) continue;
     out.push({ fonte: "tangerino", nome: pick(e, "name", "nome") || "", unidade: hubs[String(eid)] || "", t: din }); }
-  return out.concat(await entradasFreela(iso));
+  for (let d = iso; d <= fim; d = addDays(d, 1)) out.push(...await entradasFreela(d));
+  return out;
 }
 const loadAdjustments = (d0, d1) => { const a = isoToLocalStartMs(d0), b = isoToLocalStartMs(addDays(d1, 1)) - 1;
   return cached(`a${a}-${b}`, 300000, async () => { try { return await paged(EMPLOYER + "/adjustment/find-all", { startDate: a, endDate: b }); } catch { return []; } }); };
