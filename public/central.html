@@ -333,7 +333,8 @@
 <script>
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const hoje=()=>new Date(Date.now()-3*3600e3).toISOString().slice(0,10);
-$('dia').value=hoje();
+let diaAuto=hoje();$('dia').value=diaAuto;
+setInterval(()=>{const h=hoje();if(h!==diaAuto&&$('dia').value===diaAuto){diaAuto=h;$('dia').value=h;load()}},30000);   // virou o dia com a tela aberta: acompanha o dia novo (se a pessoa não escolheu outra data)
 async function get(p){const r=await fetch(p,{credentials:'same-origin'});if(r.status===401){location.href='/';throw new Error('login')}const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
 const ST={completo:'Completo',furo:'Com furo',aguardando:'Aguardando',presente:'Presente',ausente:'Ausente',coberto:'Coberto','vaga vazia':'Vaga vazia',aberto:'Aberto',cuidando:'Cuidando',trocado:'Trocado',resolvido:'Resolvido'};
 const ini=n=>String(n||'?').trim().charAt(0).toUpperCase();
