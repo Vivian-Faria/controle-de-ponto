@@ -572,23 +572,77 @@ function renderSemana() {
         <div class="dia-corpo">${htmlDia(x.d)}</div>
       </article>`;
   } else {
-    el.quadro.className = 'quadro-semana';
-    el.quadro.innerHTML = dias.map(({ d, iso, c, marcos }) => `
-      <article class="${classesDia('dia', iso, hoje, marcos, c)}">
-        <header class="dia-cab">
-          <span class="dia-num">${d.getDate()}</span>
-          <span class="dia-info">
-            <span class="dia-sem">${DIAS_CURTO[d.getDay()]}${iso === hoje ? ', hoje' : ''}</span>
-            ${c.total ? `<span class="dia-cont">${htmlContDia(c)}</span>` : ''}
-          </span>
-        </header>
-        ${htmlMarcos(marcos)}
-        ${c.total ? medidor(c) : ''}
-        <div class="dia-corpo">${htmlDia(d)}</div>
-      </article>`).join('');
+    renderPainelSemana(dias, hoje, tot);
   }
   el.titulo.textContent = tituloSemana(ini, fim);
-  el.resumo.innerHTML = htmlResumo(tot, hoje >= isoDate(ini) && hoje <= isoDate(fim));
+  el.resumo.innerHTML = TELA_COMPACTA.matches ? htmlResumo(tot, hoje >= isoDate(ini) && hoje <= isoDate(fim)) : '';
+}
+
+
+// Semana no computador: barra de preenchimento no topo, grade turno × dia (cada card abre o dia para lançar)
+// e, na lateral, o saldo de furos. Só muda o layout: os dados e as regras são os mesmos.
+function celulaTurnoDia(d, t) {
+  const iso = isoDate(d), dow = d.getDay();
+  const n = vagasNoDia(t, dow);
+  const ap = situacaoVagas(iso, t, dow).filter((v) => !v.dispensada);
+  if (!n && !ap.length) return { vazio: true };
+  const total = ap.length, cob = ap.filter((v) => v.coberta).length;
+  return { total, cob, falta: total - cob, pct: total ? Math.round((cob / total) * 100) : 100, dispensado: !total };
+}
+
+function renderPainelSemana(dias, hoje, tot) {
+  const turnos = ordenaTurnos(turnosDoHub());
+  const hub = estado.cfg.hubs.find((h) => h.id === estado.hubId)?.nome || '';
+  const pct = tot.total ? Math.round((tot.cobertas / tot.total) * 100) : 0;
+  const buracos = [];
+  const colunas = dias.map(({ d, iso, c, marcos }) => {
+    const marca = marcos.length ? `<span class="ps-marco" title="${escapeHtml(marcos[0].nome)}"></span>` : '';
+    return `<button type="button" class="${classesDia('ps-dia', iso, hoje, marcos, c)}" data-abrir="${iso}"
+      aria-label="Abrir ${DIAS_LONGO[d.getDay()]} ${d.getDate()}">${DIAS_CURTO[d.getDay()]}<b>${d.getDate()}</b>${marca}</button>`;
+  }).join('');
+  const linhas = turnos.map((t) => {
+    const cels = dias.map(({ d, iso }) => {
+      const x = celulaTurnoDia(d, t);
+      if (x.vazio) return '<span class="ps-cel vazio" aria-hidden="true">–</span>';
+      const nivel = x.dispensado || !x.falta ? 'ok' : (x.pct >= 60 ? 'meio' : 'ruim');
+      if (x.falta && iso >= hoje) buracos.push({ iso, d, t, falta: x.falta });
+      const rot = `${DIAS_LONGO[d.getDay()]} ${d.getDate()}, ${t.nome}: ${x.cob} de ${x.total}`;
+      return `<button type="button" class="ps-cel ${nivel}${iso < hoje ? ' passado' : ''}${iso === hoje ? ' hoje' : ''}" data-abrir="${iso}" aria-label="${escapeHtml(rot)}">
+        <strong>${x.dispensado ? '—' : `${x.cob}/${x.total}`}</strong>
+        <small>${x.dispensado ? 'dispensado' : x.falta ? `faltam ${x.falta}` : 'completo'}</small>
+        <i><u style="width:${x.pct}%"></u></i></button>`;
+    }).join('');
+    return `<div class="ps-turno"><b>${escapeHtml(t.nome)}</b><small>${t.inicio}–${t.fim}</small></div>${cels}`;
+  }).join('');
+  buracos.sort((a, b) => a.iso.localeCompare(b.iso) || a.t.inicio.localeCompare(b.t.inicio));
+  const lista = buracos.length ? buracos.map((b) => `<button type="button" class="ps-furo" data-abrir="${b.iso}">
+      <span><b>${DIAS_CURTO[b.d.getDay()].toUpperCase()} ${b.d.getDate()} · ${escapeHtml(b.t.nome)}</b> — ${b.falta === 1 ? 'falta 1 pessoa' : `faltam ${b.falta} pessoas`}</span>
+      <small>${b.t.inicio}–${b.t.fim}</small></button>`).join('')
+    : '<p class="ps-ok">Nenhum furo daqui para frente. 🎉</p>'.replace(' 🎉', '');
+  const pilulas = [
+    tot.faltas ? `<span class="pilula pilula-falta">${plural(tot.faltas, 'falta', 'faltas')}</span>` : '',
+    tot.pendentes ? `<span class="pilula pilula-pendente">${tot.pendentes} sem tipo confirmado</span>` : '',
+    ...['freelancer', 'intermitente'].filter((k) => tot[k]).map((k) => `<span class="pilula">${plural(tot[k], ...TIPOS[k].plural)}</span>`)
+  ].join('');
+  el.quadro.className = 'quadro-painel';
+  el.quadro.innerHTML = !estado.escalasProntas ? '<p class="ps-ok">Carregando escala…</p>' : `
+    <div class="ps-topo">
+      <div class="ps-pct"><strong>${pct}%</strong><span>da escala da semana preenchida${hub ? ` · ${escapeHtml(hub)}` : ''}</span></div>
+      <div class="ps-barra ${pct >= 100 ? 'completo' : ''}" aria-hidden="true"><span style="width:${pct}%"></span></div>
+      <div class="ps-sub"><span>${tot.cobertas} de ${tot.total} vagas cobertas</span>${pilulas}</div>
+    </div>
+    <div class="ps-corpo">
+      <div class="ps-grade" style="--cols:7">
+        <span></span>${colunas}
+        ${linhas}
+      </div>
+      <aside class="ps-lateral">
+        <small>SALDO DE FUROS</small>
+        <div class="ps-saldo ${tot.descobertas ? 'furo' : 'ok'}"><strong>${tot.descobertas}</strong><span>${tot.descobertas === 1 ? 'vaga descoberta' : 'vagas descobertas'}${tot.descobertas ? ' a partir de hoje' : ''}</span></div>
+        <h3>Falta cobrir</h3>
+        <div class="ps-lista">${lista}</div>
+      </aside>
+    </div>`;
 }
 
 // Quem está escalado em cada turno, para a visão mensal.
