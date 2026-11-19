@@ -195,6 +195,7 @@ function drawDashboard(first){
   const hd = D.days.slice(-14), hmMax = Math.max(...sh.flatMap(h => hubRows(h.id,-14,undefined).map(r => r.erros)), 1);
   $('#errHeat').innerHTML = `<table class="hm"><thead><tr><th></th>${hd.map(d => `<th>${d.slice(8)}</th>`).join('')}</tr></thead><tbody>` +
     sh.map(h => `<tr><td>${h.short}</td>${hubRows(h.id,-14,undefined).map((r,i) => { const a = r.erros/hmMax; return `<td style="background:rgba(${Math.round(184+a*71)},${Math.round(244+a*11)},${Math.round(a*255)},${.1+a*.75});color:${a>.55?'#0a0d00':'#fff'};animation-delay:${i*.03}s" title="${shortDate(r.date)} · ${r.erros} erros">${r.erros}</td>`; }).join('')}</tr>`).join('') + '</tbody></table>';
+  drawMaint(sh, n);
   // fluxo por hora
   hourly(sh);
   jarvis(first === true || !$('#jvText').dataset.plain);
@@ -244,6 +245,31 @@ function advice(r, n){
     erros:'faça um alinhamento rápido com a equipe sobre os erros do dia anterior e cheque se o checklist de coleta está sendo seguido.'}[w.k];
   return {w, T, tip};
 }
+
+/* ---------- Manutenção dos hubs (dados reais, vêm da aba Compras → Manutenções) ---------- */
+function manData(sh, n){
+  if(!window.Manut) return null;
+  const r = Manut.resumo(n); const items = sh.map(h => ({h, v:r.porHub[h.id] || 0}));
+  return {r, items, tot: items.reduce((a,x) => a + x.v, 0)};
+}
+function drawMaint(sh, n){
+  const host = $('#cMan'); if(!host) return;
+  const d = manData(sh, n); if(!d) return;
+  const avg = d.tot / Math.max(1, d.items.length);
+  $('#manSub').textContent = 'ÚLTIMOS ' + n + ' DIAS';
+  $('#manHint').textContent = d.tot ? d.tot + ' registro' + (d.tot>1?'s':'') + ' · ' + d.r.abertas + ' em aberto' : '';
+  if(!d.tot){ host.innerHTML = '<div class="mn-empty">Nenhuma manutenção registrada neste período. Registre em Compras → Manutenções dos hubs.</div>'; $('#manRank').innerHTML = ''; return; }
+  const items = d.items.map(x => ({name:x.h.short, color:x.h.color, val:x.v, st: x.v >= 3 && x.v >= avg*1.5 ? 'bad' : x.v > avg ? 'wa' : 'ok'})).sort((a,b) => b.val-a.val);
+  barH(host, {items, fmt:v => String(v), aria:'Manutenções por hub'});
+  const tp = Object.entries(d.r.porTipo).sort((a,b) => b[1]-a[1]).slice(0,6), mx = Math.max(...tp.map(x => x[1]), 1);
+  $('#manRank').innerHTML = tp.map(([t,v]) => `<div style="--c:var(--lime)"><span>${t}</span><b>${v}</b><div class="bg"><i style="width:${v/mx*100}%"></i></div></div>`).join('');
+}
+function manLine(sh, n){
+  const d = manData(sh, n); if(!d || !d.tot) return '';
+  const top = [...d.items].sort((a,b) => b.v-a.v)[0], pct = Math.round(top.v/d.tot*100);
+  const tp = Object.entries(d.r.porTipo).sort((a,b) => b[1]-a[1])[0];
+  return `Em manutenção, <b>${top.h.short}</b> concentra <b>${top.v}</b> de ${d.tot} registros (${pct}%) nos últimos ${n} dias${tp ? `, sobretudo <b>${tp[0].toLowerCase()}</b>` : ''}${d.r.abertas ? `. Há <b class="war">${d.r.abertas} em aberto</b>` : ''}. ${pct >= 50 && d.tot >= 3 ? 'Vale uma vistoria preventiva nesse hub.' : ''}`;
+}
 function briefing(){
   const sh = selHubs(), n = S.period, a = analyze(sh, n), nm = sh.length > 1 ? 'dos hubs selecionados' : 'do ' + sh[0].short;
   const L = []; const dN = (a.net.prod - a.netP.prod)/(a.netP.prod||1)*100;
@@ -259,10 +285,12 @@ function briefing(){
   const pk = peakGap(sh); items.push(`O horário mais pressionado é às <b>${pk.h}h</b>, com ${nf(pk.r,1)} pedidos por pessoa na escala. Vale reforçar esse intervalo antes de aumentar a equipe no restante do dia.`);
   const best7 = lastN(sh[0].id, 7); const wk = {}; sh.forEach(h => lastN(h.id, Math.min(28,n*2)).forEach(r => { const d = new Date(r.date+'T12:00').getDay(); wk[d] = (wk[d]||0) + r.erros; }));
   const wd = Object.entries(wk).sort((x,y) => y[1]-x[1])[0]; if(wd) items.push(`Os erros se concentram às <b>${['domingos','segundas','terças','quartas','quintas','sextas','sábados'][wd[0]]}</b>; prepare um reforço de conferência nesse dia.`);
+  const ml = manLine(sh, n); if(ml) items.push(ml);
   return {intro:L[0], items, speak: a.netScore, a};
 }
 function answer(q){
   q = q.toLowerCase(); const sh = selHubs(), n = S.period;
+  if(q.includes('manuten')||q.includes('conserto')){ const ml = manLine(D.hubs, n); return {intro:'<p>Sobre manutenção dos hubs:</p>', items:[ml || 'Ainda não há manutenções registradas neste período. Registre em Compras → Manutenções dos hubs.']}; }
   const hub = D.hubs.find(h => q.includes(h.short.toLowerCase()) || q.includes(h.name.toLowerCase()));
   const key = q.includes('cancel') ? 'cancel' : q.includes('assert') ? 'assert' : (q.includes('tempo')||q.includes('process')) ? 'tempo' : q.includes('produt') ? 'prod' : (q.includes('erro')) ? 'erros' : null;
   if(hub){ const m = agg([lastN(hub.id,n)]), r = {h:hub, m, sc:score(m)}, ad = advice(r,n);
@@ -324,7 +352,8 @@ document.addEventListener('DOMContentLoaded', () => {
   Dd.load().then(data => {
     D = data; D.hubs.forEach(h => S.sel.add(h.id)); initJarvis();
     $$('#periodSeg button').forEach(b => b.onclick = () => { S.period = +b.dataset.p; $('#jvText').dataset.plain = ''; drawDashboard(false); });
-    window.CentralApp = {go, data: D, agg, lastN, status, score, band, fmtM, nf, KEYS};
+    if(window.ComprasStore) ComprasStore.onChange(() => { if(window.CentralApp && D && !$('#v-dashboard').hidden) drawMaint(selHubs(), S.period); });
+window.CentralApp = {go, data: D, agg, lastN, status, score, band, fmtM, nf, KEYS};
     const start = (location.hash.match(/#\/(\w+)/) || [])[1] || 'dashboard';
     go(start, false); if(start !== 'dashboard') drawDashboard(true);
   });

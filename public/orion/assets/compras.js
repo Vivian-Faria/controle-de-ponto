@@ -34,7 +34,7 @@ function mergeInto(list){
   const map = new Map(state.orders.map(o => [o.id, o]));
   list.forEach(o => map.set(o.id, mergeOrder(map.get(o.id), o)));
   state.orders = [...map.values()];
-  state.seq = Math.max(state.seq||0, ...state.orders.map(o => parseInt(o.id.slice(3))||0));
+  state.seq = Math.max(state.seq||0, ...state.orders.filter(o => o.kind !== 'manutencao').map(o => parseInt(o.id.slice(3))||0));
 }
 
 /* ---- Firebase (Firestore) ---- */
@@ -137,7 +137,7 @@ function answer(o, text){
 function removeOrder(o){ o.deleted = true; touch(o); save(o); toast('Pedido removido'); }
 
 /* ============ RENDER ============ */
-function visibleOrders(){ return state.orders.filter(o => !o.deleted); }
+function visibleOrders(){ return state.orders.filter(o => !o.deleted && o.kind !== 'manutencao'); }   // manutenções ficam no mesmo banco, mas só aparecem na aba própria
 
 function filtered(){
   const q = F.q.trim().toLowerCase();
@@ -203,6 +203,7 @@ function render(){
   $('#list').innerHTML = list.length ? list.map(rowHTML).join('') : `<div class="empty"><b>${n.total ? 'Nada encontrado com esses filtros' : 'Nenhum pedido ainda'}</b>${n.total ? 'Ajuste a busca, o hub ou o período.' : 'Clique em “Novo pedido” para registrar o primeiro.'}</div>`;
 
   if(openId) drawDrawer();
+  if(window.ComprasStore) ComprasStore.emit();
 }
 
 function rowHTML(o){
@@ -381,6 +382,25 @@ function toCsv(){
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
   a.download = 'compras-orion-' + dayKey(nowISO()) + '.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
+
+
+/* ============ MANUTENÇÕES DOS HUBS (mesmo banco/coleção dos pedidos; campo kind:'manutencao') ============ */
+window.ComprasStore = {
+  hubs: HUBS, subs: [],
+  list(){ return state.orders.filter(o => o.kind === 'manutencao' && !o.deleted); },
+  onChange(cb){ this.subs.push(cb); },
+  emit(){ this.subs.forEach(cb => { try{ cb(); }catch(e){ console.warn(e); } }); },
+  async add(d){
+    await pull();
+    const n = Math.max(0, ...state.orders.filter(o => o.kind === 'manutencao').map(o => parseInt(o.id.slice(3)) || 0)) + 1;
+    const rec = { id:'MT-' + String(n).padStart(4,'0'), kind:'manutencao', hub:d.hub, tipo:d.tipo, title:d.title, desc:d.desc || '', urgencia:d.urgencia,
+      custo:d.custo || '', ocorreuEm:d.ocorreuEm || dayKey(nowISO()), status:'aberta', resolvedAt:null,
+      createdAt:nowISO(), updatedAt:nowISO(), thread:[], deleted:false, awaiting:false, alert:null };
+    state.orders.push(rec); save(rec); toast('Manutenção ' + rec.id + ' registrada'); return rec;
+  },
+  update(id, fn){ const o = state.orders.find(x => x.id === id && x.kind === 'manutencao'); if(!o) return; fn(o); touch(o); save(o); },
+  toast(m, bad){ toast(m, bad); }
+};
 
 /* ============ EVENTOS ============ */
 function init(){

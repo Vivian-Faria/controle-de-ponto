@@ -9,8 +9,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/compras.css?v=20261119e">
-<link rel="stylesheet" href="assets/central.css?v=20261119e">
+<link rel="stylesheet" href="assets/compras.css?v=20261119g">
+<link rel="stylesheet" href="assets/central.css?v=20261119g">
 </head>
 <body class="shell locked" data-role="gestao">
 <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -60,14 +60,19 @@
   <div class="card"><div class="ch"><div><small>NO PERÍODO</small><h3>Tipos mais frequentes</h3></div></div><div class="rank" id="errRank"></div></div></div>
   <div class="card" style="margin-top:16px"><div class="ch"><div><small>MAPA DE CALOR · 14 DIAS</small><h3>Erros por hub e por dia</h3></div><div class="hint">Quanto mais claro, mais erros no dia.</div></div><div id="errHeat"></div></div></section>
 
+<section class="sec" id="secMan"><div class="eyebrow">MANUTENÇÃO DOS HUBS · <span style="color:var(--lime)">DADOS REAIS</span></div>
+  <div class="grid g-21"><div class="card"><div class="ch"><div><small id="manSub">NO PERÍODO</small><h3>Manutenções por hub</h3></div><div class="hint" id="manHint"></div></div><div class="chart" id="cMan"></div></div>
+  <div class="card"><div class="ch"><div><small>NO PERÍODO</small><h3>Tipos mais frequentes</h3></div></div><div class="rank" id="manRank"></div></div></div></section>
+
 <section class="sec"><div class="eyebrow">FLUXO E ATENÇÃO</div>
   <div class="grid g-21"><div class="card"><div class="ch"><div><small>MÉDIA POR HORA</small><h3>Pedidos × pessoas na escala</h3></div><div class="hint">Barras: pedidos por hora · linha branca: pessoas escaladas.</div></div><div class="chart" id="cHour"></div></div>
   <div class="card"><div class="ch"><div><small>PONTOS DE ATENÇÃO</small><h3>Fora da meta</h3></div></div><ul class="attn" id="attn"></ul></div></div></section>
-<div class="note"><b>Dados fictícios.</b> Estes números são de exemplo, só para validar o layout. Quando a API de integração chegar, os mesmos painéis passam a usar os dados reais (a troca é feita em um único ponto: <code>assets/central-data.js</code>).</div>
+<div class="note"><b>Dados fictícios</b> (exceto o bloco de manutenções, que já é real). Estes números são de exemplo, só para validar o layout. Quando a API de integração chegar, os mesmos painéis passam a usar os dados reais (a troca é feita em um único ponto: <code>assets/central-data.js</code>).</div>
 </div></section>
 <section class="view" id="v-compras" hidden><div class="vh" style="padding-bottom:0"><div class="ctl"><button class="btn ghost sm" id="navCsv">Exportar CSV</button><a class="btn ghost sm" id="navNovo" href="#" style="display:none">.</a><a class="btn ghost sm" href="financeiro.html">Área do Financeiro ↗</a></div>
   <div class="ctl"><button class="bell" id="bell" title="Notificações" aria-label="Notificações"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="n" id="bellN" hidden>0</span></button>
-  <button class="btn lime" id="btnNovo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Novo pedido</button></div></div><header class="hero">
+  <button class="btn lime" id="btnNovo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Novo pedido</button></div></div><div class="seg cp-tabs" id="cpTabs" role="tablist" style="margin:6px 0 4px"><button type="button" class="on" data-cp="ped" role="tab">Pedidos de compra</button><button type="button" data-cp="man" role="tab">Manutenções dos hubs</button></div>
+<div id="cp-ped"><header class="hero">
     <div>
       <div class="live"><b>AO VIVO</b><span id="liveTxt">Compras</span></div>
       <h1><span class="a">Solicitações</span><br>de compras.</h1>
@@ -114,7 +119,22 @@
     <div class="list" id="list"></div>
   </section>
 
-  <div class="foot"><span>CENTRAL · COMPRAS · ÓRION</span><span class="sync" id="sync">…</span></div></section>
+  <div class="foot"><span>CENTRAL · COMPRAS · ÓRION</span><span class="sync" id="sync">…</span></div></div>
+<div id="cp-man" hidden>
+  <div class="section-h"><div><div class="eyebrow">MANUTENÇÕES</div><h2>Manutenções dos hubs</h2></div><div class="ctl"><div class="hint" id="mnCount"></div><button class="btn lime" id="btnMan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Nova manutenção</button></div></div>
+  <p class="mn-note">Registro de tudo que quebra ou precisa de conserto em cada hub. É só documentação: o Financeiro não atua aqui. Os números alimentam o indicador de manutenção do dashboard.</p>
+  <div class="stats" id="mnStats"></div>
+  <div class="mn-grid"><div class="card"><div class="ch"><div><small>NO PERÍODO</small><h3>Manutenções por hub</h3></div></div><div id="mnHubs"></div></div>
+    <div class="card"><div class="ch"><div><small>NO PERÍODO</small><h3>Tipos mais frequentes</h3></div></div><div id="mnTipos"></div></div></div>
+  <div class="toolbar" style="margin-top:18px">
+    <div class="field"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="mnQ" type="search" placeholder="Buscar por descrição, código ou hub…"></div>
+    <div class="field"><label>HUB</label><select id="mnHub"></select></div>
+    <div class="field"><label>TIPO</label><select id="mnTipo"></select></div>
+  </div>
+  <div class="chips" id="mnChips"></div>
+  <div class="list" id="mnList"></div>
+</div>
+</section>
 <section class="view" id="v-ponto" hidden><div class="vh" style="padding-bottom:14px"><div><div class="eyebrow">CONTROLE DE PONTO</div><h1>Ponto da <span class="a">equipe</span>.</h1><p>Dados reais da Tangerino: atrasos, faltas, horários, hubs e freelancers.</p></div><div class="seg fv-tabs" data-fv="ponto" hidden></div></div><div class="fv"><div class="fv-load">Carregando…</div><div class="mod" id="mod-painel" data-tab="0"></div></div></section>
 <section class="view" id="v-alertas" hidden><div class="vh" style="padding-bottom:14px"><div><div class="eyebrow">CENTRAL DE ALERTAS</div><h1>Alertas e <span class="a">furos</span> de escala.</h1><p>Monitoramento por unidade, configuração dos avisos e links da equipe.</p></div><div class="seg fv-tabs" data-fv="alertas" hidden></div></div><div class="fv"><div class="fv-load">Carregando…</div><div class="mod" id="mod-alertas" data-tab="0"></div><div class="mod" id="mod-equipe" data-tab="1" hidden></div></div></section>
 <section class="view" id="v-escala" hidden><div class="vh" style="padding-bottom:14px"><div><div class="eyebrow">ESCALA</div><h1>Escala <span class="a">operacional</span>.</h1><p>Lançamento dos supervisores e cadastros de hubs, turnos e colaboradores.</p></div><div class="seg fv-tabs" data-fv="escala" hidden></div></div><div class="fv"><div class="fv-load">Carregando…</div><div class="mod" id="mod-escala-lanc" data-tab="0"></div><div class="mod" id="mod-escala-cad" data-tab="1" hidden></div></div></section>
@@ -137,6 +157,24 @@
     <div class="acts"><button type="button" class="btn ghost" data-close>Cancelar</button><button class="btn lime" type="submit">Registrar pedido</button></div>
   </form>
 </dialog>
+<!-- Nova manutenção -->
+<dialog id="dMan">
+  <form class="dlg" id="fMan" novalidate>
+    <div><div class="eyebrow" id="mEye">NOVA MANUTENÇÃO</div><h3 id="mTit">O que precisou de conserto?</h3></div>
+    <div class="fg"><label>O QUE ACONTECEU <i>*</i></label><input class="inp" id="mTitle" maxlength="140" placeholder="Ex.: Freezer parou de gelar"></div>
+    <div class="g2">
+      <div class="fg"><label>HUB <i>*</i></label><select class="inp" id="mHub"></select></div>
+      <div class="fg"><label>TIPO <i>*</i></label><select class="inp" id="mTipo"></select></div>
+    </div>
+    <div class="g2">
+      <div class="fg"><label>DATA DA OCORRÊNCIA</label><input class="inp" id="mData" type="date"></div>
+      <div class="fg"><label>URGÊNCIA</label><select class="inp" id="mUrg"><option value="baixa">Baixa</option><option value="media" selected>Média</option><option value="alta">Alta</option></select></div>
+    </div>
+    <div class="fg"><label>CUSTO DO CONSERTO <s>(opcional)</s></label><input class="inp" id="mCusto" maxlength="20" placeholder="Ex.: 350,00"></div>
+    <div class="fg"><label>DETALHES <s>(opcional)</s></label><textarea class="inp" id="mDesc" rows="3" maxlength="1200" placeholder="O que foi feito, quem atendeu, peça trocada, prazo…"></textarea></div>
+    <div class="acts"><button type="button" class="btn ghost" data-close>Cancelar</button><button class="btn lime" type="submit" id="mOk">Registrar manutenção</button></div>
+  </form>
+</dialog>
 <!-- Prompt genérico -->
 <dialog id="dAsk">
   <form class="dlg" id="fAsk" novalidate>
@@ -152,11 +190,12 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="assets/config.js"></script>
-<script src="assets/compras.js?v=20261119e"></script>
-<script src="assets/central-data.js?v=20261119e"></script>
-<script src="assets/brain3d.js?v=20261119e"></script>
-<script src="assets/central.js?v=20261119e"></script>
-<script>window.__V="20261119e"</script>
-<script src="assets/modulos.js?v=20261119e"></script>
+<script src="assets/compras.js?v=20261119g"></script>
+<script src="assets/manutencoes.js?v=20261119g"></script>
+<script src="assets/central-data.js?v=20261119g"></script>
+<script src="assets/brain3d.js?v=20261119g"></script>
+<script src="assets/central.js?v=20261119g"></script>
+<script>window.__V="20261119g"</script>
+<script src="assets/modulos.js?v=20261119g"></script>
 </body>
 </html>
