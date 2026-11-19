@@ -13,7 +13,8 @@ MODS = [  # nome, arquivo html, scripts extras
     ('equipe', 'equipe-links.html', []),
     ('acomp', 'acompanhar.html', []),
 ]
-OVERRIDE = ':host{--amb:#d9ddcf;--ambbg:rgba(217,221,207,.10);--blue:#ffffff;--bluebg:rgba(255,255,255,.08);--vio:#9aa39a;--viobg:rgba(154,163,154,.12)}\n.__body{background:transparent !important;min-height:0 !important}\n'
+FUSION = open(os.path.join(ROOT, 'tools', 'fusion.css'), encoding='utf-8').read()
+OVERRIDE_OLD = ':host{--amb:#d9ddcf;--ambbg:rgba(217,221,207,.10);--blue:#ffffff;--bluebg:rgba(255,255,255,.08);--vio:#9aa39a;--viobg:rgba(154,163,154,.12)}\n.__body{background:transparent !important;min-height:0 !important}\n'
 
 def css_scope(css):
     css = re.sub(r':root\b', ':host', css)
@@ -51,7 +52,7 @@ for mod, fname, extras in MODS:
   const NAME={json.dumps(mod)}, host=document.getElementById('mod-'+NAME);
   if(!host || host.__mounted) return; host.__mounted = true;
   const root = host.shadowRoot || host.attachShadow({{mode:'open'}});
-  root.innerHTML = '<style>'+{json.dumps(OVERRIDE + css)}+'</style><div class="__body">'+{json.dumps(body)}+'</div>';
+  root.innerHTML = '<style>'+{json.dumps(css + '\n' + FUSION)}+'</style><div class="__body">'+{json.dumps(body)}+'</div>';
   const M = (window.__M = window.__M || {{}}); M[NAME] = M[NAME] || {{}};
   const $b = () => root.querySelector('.__body');
   const docP = new Proxy(document, {{ get(t,p){{

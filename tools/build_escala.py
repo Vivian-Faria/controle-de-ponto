@@ -9,6 +9,7 @@ def scope(css):
     css = re.sub(r'(^|[},\s])html(?=[\s{,.:>\[])', r'\1:host', css)
     css = re.sub(r'(^|[},\s])body(?=[\s{,.:>\[])', r'\1.__body', css)
     return css
+FUSION = open(os.path.join(ROOT, 'tools', 'fusion.css'), encoding='utf-8').read()
 OVER = ':host{display:block}\n.__body{background:transparent !important;min-height:0 !important}\n.topo{display:none !important}\n'
 css = scope(open(os.path.join(E, 'style.css'), encoding='utf-8').read())
 def body_of(f):
@@ -20,7 +21,7 @@ for f in ['custom-select.js', 'hora-mascara.js']:
     sup += '\n;(function(document){\n' + open(os.path.join(E, f), encoding='utf-8').read() + '\n})(__docP);\n'
 out = f"""/* GERADO por tools/build_escala.py a partir de public/escala/. Não edite à mão. */
 (function(){{
-  const CSS = {json.dumps(OVER + css)};
+  const CSS = {json.dumps(css + '\n' + FUSION)};
   const HTML = {{'escala-lanc': {json.dumps(body_of('index.html'))}, 'escala-cad': {json.dumps(body_of('cadastros.html'))}}};
   const CLS = {{'escala-lanc':'', 'escala-cad':'pagina-cadastros'}};
   function build(name){{

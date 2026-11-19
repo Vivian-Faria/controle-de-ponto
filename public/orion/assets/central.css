@@ -267,19 +267,8 @@ body.sb-open:not(.pinned) .shade{opacity:1;pointer-events:auto}
 
 /* ===== James (cérebro) ===== */
 .brain-s{position:relative;width:64px;height:58px;flex:none}
-.brain-s svg,.brain-l svg{width:100%;height:100%;overflow:visible}
-.brain-l{position:relative;width:100%;max-width:380px;margin:0 auto}
-.bn{fill:var(--lime);animation:tw 3.2s ease-in-out infinite}
-.be{stroke:var(--lime);stroke-width:.5;opacity:.38;fill:none}
-.bs{stroke:#fff;stroke-width:1;fill:none;stroke-dasharray:3 30;animation:sig 2.4s linear infinite;opacity:.85;filter:drop-shadow(0 0 2px var(--lime))}
-@keyframes tw{50%{opacity:.25;transform:scale(.6)}}
-@keyframes sig{to{stroke-dashoffset:-66}}
-.bn{transform-box:fill-box;transform-origin:center}
-.brain-fl{animation:fl 6s ease-in-out infinite}
-@keyframes fl{50%{transform:translateY(-5px)}}
-.holo-r{fill:none;stroke:var(--lime);stroke-width:.8;opacity:.5}
-.holo-b{stroke:var(--lime);stroke-width:.5;opacity:.25}
-.talk .bn{animation-duration:.7s}.talk .bs{animation-duration:.9s}
+.brain-s canvas,.brain-l canvas{display:block;width:100%;height:100%}
+.brain-l{position:relative;width:100%;max-width:520px;height:340px;margin:0 auto}
 .jv-b select{background:rgba(255,255,255,.04);border:1px solid var(--line2);border-radius:11px;color:var(--muted);font:inherit;font-size:12px;padding:7px 8px;max-width:150px}
 .jv-flow{flex-direction:column;justify-content:center;gap:10px;text-align:center}
 .jv-score{display:flex;justify-content:center;gap:26px;flex-wrap:wrap;font:500 10px var(--mono);letter-spacing:.16em;color:var(--dim)}
@@ -292,3 +281,5 @@ body.locked .main,body.locked .top{visibility:hidden}
 .fv-load{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font:500 12px var(--mono);letter-spacing:.14em;pointer-events:none;z-index:1}
 .fv-load[hidden]{display:none}
 .mod{min-height:300px}.mod[hidden]{display:none}
+.seg[hidden],.fv-tabs[hidden]{display:none !important}
+.sb a,.sb a:hover{text-decoration:none}

@@ -279,9 +279,9 @@ function say(res){
   const tok = ++jvTok, box = $('#jvText'), orb = $('#orb');
   const html = res.intro + '<ul style="padding:0">' + res.items.map(i => '<li>' + i + '</li>').join('') + '</ul>';
   box.innerHTML = ''; box.dataset.plain = (res.intro + ' ' + res.items.join('. ')).replace(/<[^>]+>/g,'');
-  orb.classList.add('talk'); $('#brainL').classList.add('talk'); box.classList.add('caret');
+  BR.talk(true); box.classList.add('caret');
   const tmp = document.createElement('div'); tmp.innerHTML = html; const total = tmp.textContent.length; let shown = 0;
-  const walk = () => { if(tok !== jvTok) return; shown = Math.min(total, shown + 5); box.innerHTML = clip(html, shown); if(shown < total) setTimeout(walk, 14); else { box.classList.remove('caret'); orb.classList.remove('talk'); $('#brainL').classList.remove('talk'); } };
+  const walk = () => { if(tok !== jvTok) return; shown = Math.min(total, shown + 5); box.innerHTML = clip(html, shown); if(shown < total) setTimeout(walk, 14); else { box.classList.remove('caret'); BR.talk(false); } };
   walk();
 }
 function clip(html, n){        // corta o HTML mantendo as tags (efeito de digitação)
@@ -293,32 +293,16 @@ function clip(html, n){        // corta o HTML mantendo as tags (efeito de digit
   return out + stack.reverse().map(t => '</' + t + '>').join('');
 }
 /* ---------- James: cérebro em rede neural ---------- */
-function brainSVG(big){
-  const NS = 'http://www.w3.org/2000/svg';
-  const OUT = 'M30 88 C14 78 12 52 34 38 C46 22 74 14 98 18 C124 12 156 20 168 42 C184 58 184 84 170 98 C164 106 154 108 146 106 C156 112 160 126 144 132 C130 136 114 128 112 116 L108 114 L104 142 L92 142 L90 114 C80 120 62 120 52 110 C44 106 36 100 30 88 Z';
-  const SULCI = ['M44 86 C66 76 88 84 112 80','M97 20 C90 44 102 58 92 80','M60 40 C70 52 62 62 72 70','M128 24 C122 44 136 54 128 74','M150 50 C142 62 154 72 146 88','M50 62 C60 66 58 76 68 78','M120 90 C132 96 142 94 150 100'];
-  const tmp = document.createElementNS(NS,'svg'), pp = document.createElementNS(NS,'path'); pp.setAttribute('d', OUT); tmp.appendChild(pp); tmp.setAttribute('style','position:absolute;width:0;height:0;visibility:hidden'); document.body.appendChild(tmp);
-  const inside = (x,y) => { try{ return pp.isPointInFill(new DOMPoint(x,y)); }catch(e){ return true; } };
-  const r = (function(seed){return function(){seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}})(7);
-  const pts = []; let guard = 0, want = big ? 105 : 58, dmin = big ? 9.5 : 12;
-  while(pts.length < want && guard++ < 9000){ const x = 14+r()*172, y = 14+r()*130; if(!inside(x,y)) continue; if(pts.some(p => Math.hypot(p[0]-x,p[1]-y) < dmin)) continue; pts.push([x,y]); }
-  tmp.remove();
-  const edges = []; pts.forEach((p,i) => { pts.map((q,j) => ({j,d:Math.hypot(p[0]-q[0],p[1]-q[1])})).filter(o => o.j>i && o.d<(big?22:27)).sort((a,b) => a.d-b.d).slice(0,3).forEach(o => edges.push([i,o.j])); });
-  let s = `<svg viewBox="0 0 200 ${big?215:150}" role="img" aria-label="James, assistente da Central"><g class="${big?'brain-fl':''}">`;
-  s += `<path d="${OUT}" fill="rgba(184,244,0,.05)" stroke="var(--lime)" stroke-width="1.3" stroke-linejoin="round" opacity=".85"/>`;
-  SULCI.forEach(d => s += `<path d="${d}" fill="none" stroke="var(--lime)" stroke-width=".9" stroke-linecap="round" opacity=".45"/>`);
-  edges.forEach(e => s += `<line class="be" x1="${pts[e[0]][0].toFixed(1)}" y1="${pts[e[0]][1].toFixed(1)}" x2="${pts[e[1]][0].toFixed(1)}" y2="${pts[e[1]][1].toFixed(1)}"/>`);
-  for(let k=0;k<(big?10:4);k++){ const e = edges[Math.floor(r()*edges.length)]; if(e) s += `<line class="bs" style="animation-delay:${(k*.37).toFixed(2)}s" x1="${pts[e[0]][0].toFixed(1)}" y1="${pts[e[0]][1].toFixed(1)}" x2="${pts[e[1]][0].toFixed(1)}" y2="${pts[e[1]][1].toFixed(1)}"/>`; }
-  pts.forEach(p => s += `<circle class="bn" style="animation-delay:${(r()*3).toFixed(2)}s" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${(1.1+r()*1.4).toFixed(2)}"/>`);
-  s += '</g>';
-  if(big){ for(let i=0;i<16;i++){ const x = 58 + i*5.6; s += `<line class="holo-b" x1="${x}" y1="150" x2="${x}" y2="188"/>`; }
-    s += `<ellipse class="holo-r" cx="100" cy="192" rx="60" ry="8"/><ellipse class="holo-r" cx="100" cy="198" rx="80" ry="11" opacity=".35"/><ellipse class="holo-r" cx="100" cy="205" rx="96" ry="13" opacity=".2"/>`; }
-  return s + '</svg>';
+const BR = { big:null, small:null, talk(v){ if(this.big) this.big.talk(v); if(this.small) this.small.talk(v); } };
+function initBrains(){
+  if(BR.big || !window.Brain3D) return;
+  const L = $('#brainL'), S = $('#orb');
+  L.innerHTML = '<canvas aria-label="James, assistente da Central" role="img"></canvas>'; S.innerHTML = '<canvas aria-hidden="true"></canvas>';
+  BR.big = Brain3D.mount(L.firstChild); BR.small = Brain3D.mount(S.firstChild, {small:true, start:2});
 }
 function drawFlow(sh){
   const a = analyze(sh, S.period), col = `var(--${band(a.netScore)==='ok'?'lime':band(a.netScore)==='wa'?'amber':'red'})`;
-  if(!$('#brainL').firstChild) $('#brainL').innerHTML = brainSVG(true);
-  if(!$('#orb').firstChild) $('#orb').innerHTML = brainSVG(false);
+  initBrains();
   const best = a.best.h.short, worst = a.worst.h.short;
   $('#jvScore').innerHTML = `<div>SAÚDE DA REDE<strong style="color:${col}">${a.netScore}</strong></div><div>DESTAQUE<strong style="font-size:18px;color:#fff">${best}</strong></div><div>ATENÇÃO<strong style="font-size:18px;color:#fff">${worst}</strong></div>`;
 }

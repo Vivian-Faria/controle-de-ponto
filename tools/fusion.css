@@ -1,0 +1,62 @@
+/* FUSÃO VISUAL — camada que faz os módulos (ponto, alertas, equipe, presenças, escala) usarem o
+   mesmo design da Central: mesmas cores, fontes, cartões e botões, sem cabeçalho/menu próprio e sem faixas de fundo.
+   Fonte única: tools/fusion.css (embutida nos módulos por tools/build_modulos.py e tools/build_escala.py). */
+:host{display:block;
+  --lime:#b8f400;--pri:#b8f400;--grn:#b8f400;--acento:#b8f400;--acento2:#d6ff5e;--foco:#b8f400;--ok:#b8f400;--ok-fundo:rgba(184,244,0,.12);
+  --limeglow:rgba(184,244,0,.30);--limebg:rgba(184,244,0,.10);--grnbg:rgba(184,244,0,.10);
+  --amb:#d9ddcf;--ambbg:rgba(217,221,207,.10);--blue:#ffffff;--blu:#ffffff;--bluebg:rgba(255,255,255,.08);--blubg:rgba(255,255,255,.08);--vio:#9aa39a;--viobg:rgba(154,163,154,.12);
+  --glass:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012));
+  --line:rgba(255,255,255,.10);--line2:rgba(255,255,255,.18);--bd:rgba(255,255,255,.10);--bd2:rgba(255,255,255,.18);
+  --tx:#f5f7f6;--mut:#8d95a3;--dim:#5d6572;--card:#0c0f0e;
+  --disp:"Space Grotesk","Segoe UI",system-ui,sans-serif;--body:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  /* escala */
+  --papel:#070808;--superficie:#0d0f0e;--superficie2:#151816;--tinta:#f5f7f6;--grafite:#8d95a3;--nevoa:#5d6572;--linha:rgba(255,255,255,.10);--linha-forte:rgba(255,255,255,.20);
+  --fonte:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--margem:0px;
+  color:var(--tx);font-family:var(--body)}
+.__body{background:transparent !important;min-height:0 !important;margin:0 !important;padding:0 !important;font-family:var(--body);overflow:visible !important;color:var(--tx)}
+.__body *{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.16) transparent}
+
+/* ---- sem cabeçalho / marca / navegação próprios: quem navega é a Central ---- */
+.topo,.brand,.marca,.links,.topo-acoes,.hero .waves,.hero .orbit-wrap,.hero h1,.hero .cta,.hero .floats{display:none !important}
+header:not(.hero){position:static !important;background:transparent !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important;border:0 !important;padding:0 0 14px !important;margin:0 !important}
+.nav{display:block !important;position:static !important;margin:0 0 16px !important;padding:0 !important;max-width:none !important}
+.nav-in{background:var(--glass) !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important;border:1px solid var(--line) !important;border-radius:18px !important;box-shadow:none !important;padding:10px 14px !important;justify-content:flex-end}
+.hero{display:block !important;position:static !important;margin:0 0 18px !important;padding:0 !important;overflow:visible !important;background:none !important;min-height:0 !important}
+.hero-g{display:block !important}
+.wrap{max-width:none !important;padding:0 !important;margin:0 !important}
+main{max-width:none !important;gap:30px !important;padding:0 0 40px !important;margin:0 !important}
+.sec-h{margin-bottom:16px !important;gap:12px !important}
+.sec-h h2{font-size:clamp(20px,2vw,26px) !important;max-width:none !important;letter-spacing:-.02em !important}
+.sec-h p{max-width:420px !important;font-size:13px !important}
+.k{min-height:0 !important;border-radius:20px !important}
+.panel,.card{border-radius:20px !important}
+
+/* ---- barra de filtros do Ponto: um cartão só, igual aos da Central ---- */
+header .ctl{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:18px;background:var(--glass)}
+header .ctl button:nth-last-child(-n+2){display:none !important}   /* "Alertas" e "Sair": já existem no menu da Central */
+.tabs .tab{font-family:var(--body)}
+
+/* ---- Presenças: ocupa a tela toda, em grade, em vez da coluna estreita de celular ---- */
+main:has(> .filtros){max-width:none !important;padding:0 0 40px !important;gap:16px !important}
+.filtros{position:static !important;margin:0 !important;padding:14px 16px !important;background:var(--glass) !important;border:1px solid var(--line) !important;border-radius:18px !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important}
+.filtros .row{max-width:560px}
+.filtros select,.filtros input[type=date]{font-size:14px !important;padding:10px 16px !important;min-height:0 !important}
+.comp{grid-template-columns:repeat(auto-fit,minmax(180px,1fr)) !important}
+.tc{border-radius:20px !important;padding:16px 12px 14px !important}
+#corpo{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;align-items:start}
+#corpo>.card{grid-column:1/-1}
+.turno{background:var(--glass);border:1px solid var(--line);border-radius:20px;padding:16px 18px 18px}
+.turno h2{margin:0 0 12px !important;font-size:17px !important}
+.turno .p{border-radius:14px !important}
+.solo .lista{gap:8px}
+
+/* ---- Escala: seletor como cartão, sem a faixa de largura total ---- */
+.seletor{background:var(--glass) !important;border:1px solid var(--line) !important;border-radius:18px !important;padding:14px 18px !important;margin:0 0 16px !important}
+.area{padding:0 0 60px !important}
+.lembrete{border-radius:16px !important}
+.status{z-index:60}
+
+/* ---- botões e campos no mesmo desenho da Central ---- */
+.__body button.ghost,.__body .ghost{border-radius:99px}
+.__body input:not([type=checkbox]):not([type=radio]),.__body select{font-family:var(--body)}
+.__body>.tabs{padding:0 0 14px !important;border-bottom:0 !important}
