@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#060606">
+<title>Central Órion</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/compras.css">
+<link rel="stylesheet" href="assets/central.css">
+</head>
+<body class="shell locked" data-role="gestao">
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+<div class="edge" id="edge" aria-hidden="true"></div>
+<div class="shade" id="shade"></div>
+<aside class="sb" id="sb" aria-label="Menu principal">
+  <div class="sb-h"><div class="brand"><i></i><span>CENTRAL<b>.</b></span></div>
+    <button class="pin" id="pin" title="Fixar menu" aria-label="Fixar menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z"/></svg></button></div>
+  <div class="sb-t">OPERAÇÃO</div>
+  <nav><a class="it" href="#/dashboard" data-go="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg><span>Dashboard</span></a><a class="it" href="#/compras" data-go="compras"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.4 11h10.2L20 7H6"/><circle cx="9" cy="19.5" r="1.4"/><circle cx="17" cy="19.5" r="1.4"/></svg><span>Compras</span></a><a class="it" href="#/ponto" data-go="ponto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 3h6"/></svg><span>Controle de ponto</span></a><a class="it" href="#/alertas" data-go="alertas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a2 2 0 0 0 3.4 0"/></svg><span>Central de alertas</span><span class="nb" id="nbAlert" hidden>0</span></a><a class="it" href="#/escala" data-go="escala"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 10h18M8 2v4M16 2v4"/></svg><span>Escala</span></a><a class="it" href="#/presencas" data-go="presencas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="m16.5 11 2 2 3.5-4"/></svg><span>Presenças</span></a></nav>
+  <div class="sb-f"><small>ACESSO EXTERNO</small><a href="financeiro.html" target="_blank" rel="noopener">Área do Financeiro <span>↗</span></a><a href="#" id="logout">Sair <span>⎋</span></a></div>
+</aside>
+<header class="top">
+  <button class="burger" id="burger" aria-label="Abrir menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h10M4 17h16"/></svg></button>
+  <div class="brand"><i></i><span>CENTRAL<b>.</b></span></div>
+  <div class="crumb" id="crumb"></div>
+  <div class="sp"></div>
+  <span class="pill demo">DADOS FICTÍCIOS</span><span class="clock" id="clock"></span>
+</header>
+<main class="main">
+<section class="view" id="v-dashboard" hidden><div class="wrapx">
+<div class="vh"><div><div class="eyebrow">VISÃO GERAL</div><h1>Saúde <span class="a">operacional</span> dos hubs.</h1><p>Comparativo entre os hubs nos cinco indicadores que definem a operação. Clique nos hubs para incluí-los ou tirá-los da comparação.</p></div>
+  <div class="ctl"><div class="seg" id="periodSeg"><button data-p="7">7 dias</button><button data-p="14">14 dias</button><button data-p="30">30 dias</button></div></div></div>
+<div class="ctl" id="hubChips" style="margin-bottom:18px"></div>
+<section class="jv" id="jv" aria-label="James, assistente da Central">
+  <div class="card jv-chat">
+    <div class="jv-h"><div class="brain-s" id="orb" aria-hidden="true"></div>
+      <div><small>JAMES · ASSISTENTE DA CENTRAL</small><h3>Análise em tempo real</h3></div>
+      <div class="jv-b"><select id="jvVoice" aria-label="Voz do James" title="Escolher voz"></select><button class="btn ghost sm" id="jvSpeak" title="Ouvir o resumo">🔊 Ouvir</button><button class="btn ghost sm" id="jvAgain">↻ Reanalisar</button></div></div>
+    <div class="jv-t" id="jvText" aria-live="polite"></div>
+    <div class="jv-q" id="jvChips"></div>
+    <form class="jv-in" id="jvForm" autocomplete="off"><input id="jvInput" placeholder="Pergunte ao James: “como está o Castelo?”, “onde devo agir?”…" aria-label="Pergunte ao James"><button class="btn lime sm" type="submit">Perguntar</button></form>
+  </div>
+  <div class="card jv-flow"><div class="brain-l" id="brainL" aria-hidden="true"></div><div class="jv-score" id="jvScore"></div></div>
+</section>
+<div class="grid g-kpi" id="kpis" style="margin-top:16px"></div>
+
+<section class="sec"><div class="eyebrow">SAÚDE POR HUB · ÍNDICE 0–100</div><div class="grid g-hubs" id="hubCards"></div></section>
+
+<section class="sec"><div class="eyebrow">COMPARATIVO ENTRE HUBS</div>
+  <div class="card"><div class="ch"><div><small>INDICADOR</small><h3 id="mDefT">Escolha o indicador</h3></div><div class="hint" id="mDef"></div></div>
+    <div class="tabs" id="mTabs"></div>
+    <div class="grid g-2"><div><div class="chart" id="cBar"></div></div><div><div class="chart" id="cLine"></div><div class="lg" id="cLegend"></div></div></div></div></section>
+
+<section class="sec"><div class="eyebrow">ERROS POR OPERAÇÃO</div>
+  <div class="grid g-21"><div class="card"><div class="ch"><div><small>POR DIA</small><h3>Erros reportados por tipo</h3></div></div><div class="chart" id="cErr"></div><div class="lg" id="errLegend"></div></div>
+  <div class="card"><div class="ch"><div><small>NO PERÍODO</small><h3>Tipos mais frequentes</h3></div></div><div class="rank" id="errRank"></div></div></div>
+  <div class="card" style="margin-top:16px"><div class="ch"><div><small>MAPA DE CALOR · 14 DIAS</small><h3>Erros por hub e por dia</h3></div><div class="hint">Quanto mais claro, mais erros no dia.</div></div><div id="errHeat"></div></div></section>
+
+<section class="sec"><div class="eyebrow">FLUXO E ATENÇÃO</div>
+  <div class="grid g-21"><div class="card"><div class="ch"><div><small>MÉDIA POR HORA</small><h3>Pedidos × pessoas na escala</h3></div><div class="hint">Barras: pedidos por hora · linha branca: pessoas escaladas.</div></div><div class="chart" id="cHour"></div></div>
+  <div class="card"><div class="ch"><div><small>PONTOS DE ATENÇÃO</small><h3>Fora da meta</h3></div></div><ul class="attn" id="attn"></ul></div></div></section>
+<div class="note"><b>Dados fictícios.</b> Estes números são de exemplo, só para validar o layout. Quando a API de integração chegar, os mesmos painéis passam a usar os dados reais (a troca é feita em um único ponto: <code>assets/central-data.js</code>).</div>
+</div></section>
+<section class="view" id="v-compras" hidden><div class="vh" style="padding-bottom:0"><div class="ctl"><button class="btn ghost sm" id="navCsv">Exportar CSV</button><a class="btn ghost sm" id="navNovo" href="#" style="display:none">.</a><a class="btn ghost sm" href="financeiro.html">Área do Financeiro ↗</a></div>
+  <div class="ctl"><button class="bell" id="bell" title="Notificações" aria-label="Notificações"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="n" id="bellN" hidden>0</span></button>
+  <button class="btn lime" id="btnNovo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Novo pedido</button></div></div><header class="hero">
+    <div>
+      <div class="live"><b>AO VIVO</b><span id="liveTxt">Compras</span></div>
+      <h1><span class="a">Solicitações</span><br>de compras.</h1>
+      <p style="color:var(--muted);font-size:16px;line-height:1.55;max-width:520px;margin-bottom:22px">Registre o que precisa ser comprado e acompanhe cada item até a decisão do Financeiro.</p>
+      <div id="heroAlert"></div>
+    </div>
+    <div class="flow" aria-hidden="true">
+      <svg viewBox="0 0 260 90">
+        <line class="ln" x1="22" y1="34" x2="238" y2="34"/>
+        <line class="prog" x1="22" y1="34" x2="238" y2="34"/>
+        <circle class="nd n1" cx="22" cy="34" r="9"/><circle class="nd n2" cx="130" cy="34" r="9"/><circle class="nd n3" cx="238" cy="34" r="9"/>
+        <circle class="pk" r="3.5" cy="34"><animate attributeName="cx" values="22;130;238;238" keyTimes="0;.37;.73;1" dur="6s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;1;1;0" keyTimes="0;.73;.9;1" dur="6s" repeatCount="indefinite"/></circle>
+        <text x="22" y="66">PEDIDO</text><text x="130" y="66">FINANCEIRO</text><text x="238" y="66">COMPRADO</text>
+      </svg>
+    </div>
+  </header>
+
+  <div class="stats">
+    <div><small>EM ABERTO</small><strong id="stOpen">0</strong></div>
+    <div class="am"><small>AGUARDANDO RESPOSTA</small><strong id="stAw">0</strong></div>
+    <div class="gr"><small>COMPRADOS</small><strong id="stOk">0</strong><div class="bar"><i id="stBar"></i></div></div>
+    <div class="rd"><small>NÃO COMPRADOS</small><strong id="stNo">0</strong></div>
+  </div>
+  <div class="hint" id="stPct" style="text-align:right;margin-top:8px;font-family:var(--mono)"></div>
+
+  <section id="notificacoes" hidden>
+    <div class="section-h"><div><div class="eyebrow" id="nEyebrow">NOTIFICAÇÕES</div><h2 id="nTitle"></h2></div></div>
+    <div class="np" id="np"></div>
+  </section>
+
+  <section id="pedidos">
+    <div class="section-h"><div><div class="eyebrow">PEDIDOS</div><h2>Todas as solicitações</h2></div>
+      <div class="hint" id="countTxt"></div></div>
+    <div class="toolbar">
+      <div class="field"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="q" type="search" placeholder="Buscar produto, código, link ou observação…"></div>
+      <div class="field"><label>HUB</label><select id="fHub"><option value="">Todos os hubs</option></select></div>
+      <div class="dates">
+        <div class="field"><label>DE</label><input type="date" id="dFrom"></div>
+        <div class="field"><label>ATÉ</label><input type="date" id="dTo"></div>
+      </div>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="list" id="list"></div>
+  </section>
+
+  <div class="foot"><span>CENTRAL · COMPRAS · ÓRION</span><span class="sync" id="sync">…</span></div></section>
+<section class="view" id="v-ponto" hidden><div class="vh" style="padding-bottom:14px"><div><div class="eyebrow">CONTROLE DE PONTO</div><h1>Ponto da <span class="a">equipe</span>.</h1><p>Dados reais da Tangerino: atrasos, faltas, horários, hubs e freelancers.</p></div><div class="seg fv-tabs" data-fv="ponto" hidden></div></div><div class="fv"><div class="fv-load">Carregando…</div><iframe class="fr" title="CONTROLE DE PONTO"></iframe></div></section>
+<section class="view" id="v-alertas" hidden><div class="vh" style="padding-bottom:14px"><div><div class="eyebrow">CENTRAL DE ALERTAS</div><h1>Alertas e <span class="a">furos</span> de escala.</h1><p>Monitoramento por unidade, configuração dos avisos e links da equipe.</p></div><div class="seg fv-tabs" data-fv="alertas" hidden></div></div><div class="fv"><div class="fv-load">Carregando…</div><iframe class="fr" title="CENTRAL DE ALERTAS"></iframe></div></section>
+<section class="view" id="v-escala" hidden><div class="vh" style="padding-bottom:14px"><div><div class="eyebrow">ESCALA</div><h1>Escala <span class="a">operacional</span>.</h1><p>Lançamento dos supervisores e cadastros de hubs, turnos e colaboradores.</p></div><div class="seg fv-tabs" data-fv="escala" hidden></div></div><div class="fv"><div class="fv-load">Carregando…</div><iframe class="fr" title="ESCALA"></iframe></div></section>
+<section class="view" id="v-presencas" hidden><div class="vh" style="padding-bottom:14px"><div><div class="eyebrow">ACOMPANHAMENTO DO DIA</div><h1>Presenças <span class="a">ao vivo</span>.</h1><p>Quem está no turno, quem confirmou e onde há vaga descoberta.</p></div><div class="seg fv-tabs" data-fv="presencas" hidden></div></div><div class="fv"><div class="fv-load">Carregando…</div><iframe class="fr" title="ACOMPANHAMENTO DO DIA"></iframe></div></section>
+</main>
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-hidden="true"></aside>
+
+<!-- Novo pedido -->
+<dialog id="dNovo">
+  <form class="dlg" id="fNovo" novalidate>
+    <div><div class="eyebrow">NOVO PEDIDO</div><h3>O que precisa ser comprado?</h3></div>
+    <div class="fg"><label>NOME DO PRODUTO <i>*</i></label><input class="inp" id="nName" maxlength="140" placeholder="Ex.: Caixa térmica 45L"></div>
+    <div class="g2">
+      <div class="fg"><label>HUB DESIGNADO <i>*</i></label><select class="inp" id="nHub"></select></div>
+      <div class="fg"><label>QUANTIDADE <s>(opcional)</s></label><input class="inp" id="nQty" maxlength="30" placeholder="Ex.: 4 un."></div>
+    </div>
+    <div class="fg"><label>LINK DE SUGESTÃO <s>(opcional)</s></label><input class="inp" id="nLink" type="url" placeholder="https://…"></div>
+    <div class="fg"><label>ESPECIFICAÇÕES TÉCNICAS <s>(opcional)</s></label><textarea class="inp" id="nSpec" rows="3" maxlength="1200" placeholder="Modelo, cor, medidas, voltagem, marca de referência…"></textarea></div>
+    <div class="acts"><button type="button" class="btn ghost" data-close>Cancelar</button><button class="btn lime" type="submit">Registrar pedido</button></div>
+  </form>
+</dialog>
+<!-- Prompt genérico -->
+<dialog id="dAsk">
+  <form class="dlg" id="fAsk" novalidate>
+    <div><div class="eyebrow" id="aEye"></div><h3 id="aTitle"></h3></div>
+    <div class="fg"><label id="aLab"></label><textarea class="t inp" id="aTxt" maxlength="800"></textarea><div class="hint" id="aHint"></div></div>
+    <div class="acts"><button type="button" class="btn ghost" data-close>Cancelar</button><button class="btn lime" type="submit" id="aOk">Confirmar</button></div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast"></div>
+
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="assets/config.js"></script>
+<script src="assets/compras.js"></script>
+<script src="assets/central-data.js"></script>
+<script src="assets/central.js"></script>
+<script src="assets/frames.js"></script>
+</body>
+</html>

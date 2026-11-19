@@ -63,7 +63,7 @@ const $=id=>document.getElementById(id);
 async function go(btn,err,path,body,dest){btn.disabled=true;err.textContent='';
   try{const r=await fetch(path,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(j.error||'Erro '+r.status);location.href=dest}catch(e){err.textContent=e.message;btn.disabled=false}}
-$('fa').onsubmit=e=>{e.preventDefault();go($('ba'),$('ea'),'/api/login',{password:$('pw').value},'/painel.html')};
+$('fa').onsubmit=e=>{e.preventDefault();go($('ba'),$('ea'),'/api/login',{password:$('pw').value},'/orion/')};
 $('bf').onclick=()=>go($('bf'),$('ef'),'/api/freela/entrar',{},'/freela.html');
 </script>
 </body>

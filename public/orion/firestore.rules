@@ -1,0 +1,16 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Central Compras: ferramenta interna sem login.
+    // Pode ler, criar e alterar pedidos; apagar não é permitido.
+    match /compras_pedidos/{pedido} {
+      allow read: if true;
+      allow create, update: if request.resource.data.id == pedido;
+      allow delete: if false;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -22,3 +22,10 @@ Depois de criar ou mudar variáveis, faça um novo deploy (Deploys → Trigger d
 ## Limites
 - Cada consulta tem ~10 s no Netlify. Se o período for grande demais, o painel avisa para escolher um menor (semana ou quinzena).
 - Login: após 8 senhas erradas, bloqueia por 10 minutos.
+
+## Central unificada (`/orion/`)
+Página única que reúne Dashboard, Compras, Controle de ponto, Central de alertas, Escala e Presenças, com menu lateral.
+- `public/orion/` — a Central (menu, dashboard, compras). O login é o mesmo do ponto (senha administrativa); depois de entrar em `/`, o acesso vai direto para `/orion/`.
+- `public/escala/` — sistema de escala (Firebase `escalas-operacional-orion`), servido no mesmo site.
+- Os módulos reais abrem dentro da Central com `?embed=1` (esconde o cabeçalho próprio de cada página).
+- `public/orion/financeiro.html` — interface do Financeiro (sem senha).

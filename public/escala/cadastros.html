@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a0f0a">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="favicon-180.png">
+  <title>Cadastros da escala</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+<script>if(/[?&]embed=1/.test(location.search)){document.documentElement.classList.add('embed');document.write('<link rel="stylesheet" href="/orion/embed.css">')}</script>
+</head>
+<body class="pagina-cadastros">
+  <header class="topo">
+    <div class="topo-marca">
+      <span class="marca">Escala</span>
+      <span class="marca-sub">Cadastros</span>
+    </div>
+    <nav class="topo-acoes">
+      <a class="topo-link" href="index.html">Abrir escala</a>
+      <button type="button" class="topo-link" id="btnSair" hidden>Sair</button>
+    </nav>
+  </header>
+
+  <main class="area">
+    <div class="aviso" id="avisoConfig" hidden>
+      <h2>Falta conectar o Firebase</h2>
+      <p>Preencha o arquivo <code>firebase-config.js</code> com os dados do seu projeto. O passo a passo está no README.</p>
+    </div>
+
+    <section id="telaLogin" class="login" hidden>
+      <form id="formLogin" class="login-caixa">
+        <h1>Cadastros</h1>
+        <p>Digite a senha de administrador para editar hubs, turnos, vagas e equipe.</p>
+        <label class="campo">
+          <span>Senha</span>
+          <input type="password" id="senha" autocomplete="current-password" required>
+        </label>
+        <p class="erro" id="erroLogin" role="alert"></p>
+        <button class="btn-primario" type="submit">Entrar</button>
+      </form>
+    </section>
+
+    <section id="telaApp" hidden>
+      <nav class="abas" role="tablist" aria-label="Seções de cadastro">
+        <button type="button" role="tab" data-aba="hubs" aria-selected="true">Hubs</button>
+        <button type="button" role="tab" data-aba="turnos" aria-selected="false">Turnos e vagas</button>
+        <button type="button" role="tab" data-aba="supervisores" aria-selected="false">Supervisores</button>
+        <button type="button" role="tab" data-aba="colaboradores" aria-selected="false">Colaboradores</button>
+        <button type="button" role="tab" data-aba="datas" aria-selected="false">Feriados e datas</button>
+      </nav>
+      <div id="conteudo" class="conteudo" role="tabpanel"></div>
+    </section>
+  </main>
+
+  <div class="barra-salvar" id="barraSalvar" hidden>
+    <p>Você tem alterações não salvas.</p>
+    <button type="button" class="btn-texto" id="btnDescartar">Descartar</button>
+    <button type="button" class="btn-primario" id="btnSalvar">Salvar alterações</button>
+  </div>
+  <div class="status" id="status" role="status" aria-live="polite"></div>
+
+  <script type="module" src="cadastros.js"></script>
+  <script defer src="custom-select.js"></script>
+  <script defer src="hora-mascara.js"></script>
+</body>
+</html>

@@ -1,0 +1,367 @@
+/* ============ CENTRAL · shell + dashboard ============ */
+(function(){
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const nf = (v,d=1) => Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
+const svgNS = 'http://www.w3.org/2000/svg';
+const Dd = window.CentralData;
+
+/* ---------- navegação e menu lateral ---------- */
+const ROUTES = {dashboard:'Dashboard', compras:'Compras', ponto:'Controle de ponto', alertas:'Central de alertas', escala:'Escala', presencas:'Presenças'};
+const rendered = {};
+function go(name, push){
+  if(!ROUTES[name]) name = 'dashboard';
+  $$('.view').forEach(v => { const on = v.id === 'v-' + name; v.hidden = !on; if(on){ v.classList.remove('in'); void v.offsetWidth; v.classList.add('in'); } });
+  $$('.sb a.it').forEach(a => a.classList.toggle('on', a.dataset.go === name));
+  $('#crumb').innerHTML = 'CENTRAL <b>/ ' + ROUTES[name] + '</b>';
+  document.title = ROUTES[name] + ' · Central Órion';
+  if(push !== false) history.replaceState(null,'','#/' + name);
+  if(!rendered[name]){ rendered[name] = true; (window.CentralModules && CentralModules.render) && CentralModules.render(name); }
+  if(name === 'dashboard') drawDashboard(false);
+  const dm = $('.pill.demo'); if(dm) dm.style.visibility = name === 'dashboard' ? 'visible' : 'hidden';
+  window.scrollTo({top:0});
+  if(!document.body.classList.contains('pinned')) setSb(false);
+}
+const setSb = on => document.body.classList.toggle('sb-open', on);
+function initShell(){
+  $('#burger').addEventListener('click', () => setSb(!document.body.classList.contains('sb-open')));
+  const edge = $('#edge'), sb = $('#sb'); let t;
+  edge.addEventListener('mouseenter', () => { clearTimeout(t); setSb(true); });
+  sb.addEventListener('mouseenter', () => clearTimeout(t));
+  sb.addEventListener('mouseleave', () => { if(!document.body.classList.contains('pinned')) t = setTimeout(() => setSb(false), 380); });
+  $('#shade').addEventListener('click', () => setSb(false));
+  document.addEventListener('keydown', e => { if(e.key === 'Escape' && !document.querySelector('dialog[open]')) setSb(false); });
+  $$('.sb a.it').forEach(a => a.addEventListener('click', e => { e.preventDefault(); go(a.dataset.go); }));
+  $('#pin').addEventListener('click', () => {
+    const on = document.body.classList.toggle('pinned');
+    try{ localStorage.setItem('orion_sb_pin', on ? '1' : '0'); }catch(e){}
+    if(on) setSb(true);
+  });
+  try{ if(localStorage.getItem('orion_sb_pin') === '1' && innerWidth >= 1280){ document.body.classList.add('pinned'); } }catch(e){}
+  window.addEventListener('hashchange', () => go((location.hash.match(/#\/(\w+)/) || [])[1], false));
+  const tick = () => { const c = $('#clock'); if(c) c.textContent = new Date().toLocaleString('pt-BR',{weekday:'short',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}).replace('.',''); };
+  tick(); setInterval(tick, 15000);
+}
+
+/* ---------- cálculo dos indicadores ---------- */
+let D = null;
+const S = {period:14, sel:new Set(), metric:'prod'};
+const KEYS = ['prod','cancel','assert','tempo','erros'];
+function agg(slices){           // slices: lista de arrays de linhas (um array por hub)
+  let ped=0, canc=0, err=0, tp=0, pph=0, ppl=0, errDia=0;
+  slices.forEach(rows => {
+    const n = rows.length || 1; let p=0, h=0, pe=0, e=0;
+    rows.forEach(r => { p += r.pedidos; h += r.horas; pe += r.pessoas; e += r.erros; canc += r.cancel; tp += r.tempo*r.pedidos; });
+    ped += p; err += e; pph += p / (h||1); ppl += pe / n; errDia += e / n;
+  });
+  return {ped, prod: pph/(ppl||1), cancel: canc/(ped||1)*100, assert: (1-err/(ped||1))*100, tempo: tp/(ped||1), erros: errDia};
+}
+const hubRows = (id, from, to) => D.byHub[id].slice(from, to);
+const lastN = (id, n) => D.byHub[id].slice(-n);
+const prevN = (id, n) => D.byHub[id].slice(-2*n, -n);
+function gap(k, v, mult){
+  const T = D.targets[k]; const G = T.goal*(mult||1);
+  if(k === 'assert') return ((100-v) - (100-T.goal)) / (100-T.goal);
+  return T.dir === 'up' ? (G - v)/G : (v - G)/G;
+}
+const status = (k,v,m) => { const g = gap(k,v,m); return g <= 0 ? 'ok' : g <= .15 ? 'wa' : 'bd'; };
+const score = m => Math.round(KEYS.reduce((a,k) => { const g = gap(k,m[k]); return a + (g <= 0 ? 100 : 100 - Math.min(65, g*200)); }, 0) / KEYS.length);
+const band = s => s >= 85 ? 'ok' : s >= 65 ? 'wa' : 'bd';
+const fmtM = (k,v) => nf(v, D.targets[k].dec);
+const selHubs = () => D.hubs.filter(h => S.sel.has(h.id));
+
+/* ---------- helpers de gráfico ---------- */
+function tipFor(host){ let t = host.querySelector('.tip'); if(!t){ t = document.createElement('div'); t.className = 'tip'; host.appendChild(t); } return t; }
+function showTip(host, html, x, y){
+  const t = tipFor(host); t.innerHTML = html; t.classList.add('on');
+  const w = host.clientWidth, tw = t.offsetWidth;
+  t.style.left = Math.max(4, Math.min(w - tw - 4, x - tw/2)) + 'px'; t.style.top = Math.max(0, y - t.offsetHeight - 14) + 'px';
+}
+const hideTip = host => { const t = host.querySelector('.tip'); if(t) t.classList.remove('on'); };
+const shortDate = iso => iso.slice(8,10) + '/' + iso.slice(5,7);
+function pathLen(pts){ let L = 0; for(let i=1;i<pts.length;i++) L += Math.hypot(pts[i][0]-pts[i-1][0], pts[i][1]-pts[i-1][1]); return Math.ceil(L) + 4; }
+
+function lineChart(host, o){
+  const W = 640, H = o.h || 260, pl = 42, pr = 14, pt = 14, pb = 26, n = o.labels.length;
+  const all = o.series.flatMap(s => s.vals).concat(o.goal != null ? [o.goal] : []);
+  let lo = Math.min(...all), hi = Math.max(...all); const sp = (hi-lo) || 1; lo -= sp*.12; hi += sp*.12; if(o.zero) lo = Math.max(0, lo);
+  const X = i => pl + (W-pl-pr) * (n === 1 ? .5 : i/(n-1)), Y = v => pt + (H-pt-pb) * (1 - (v-lo)/(hi-lo));
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${o.aria||'Gráfico de linhas'}">`;
+  for(let i=0;i<=4;i++){ const v = lo + (hi-lo)*i/4, y = Y(v); s += `<line class="gl" x1="${pl}" x2="${W-pr}" y1="${y}" y2="${y}"/><text x="${pl-7}" y="${y+3}" text-anchor="end">${o.fmt(v)}</text>`; }
+  const step = Math.ceil(n/7); for(let i=0;i<n;i+=step) s += `<text x="${X(i)}" y="${H-7}" text-anchor="middle">${shortDate(o.labels[i])}</text>`;
+  if(o.goal != null) s += `<line class="tg" x1="${pl}" x2="${W-pr}" y1="${Y(o.goal)}" y2="${Y(o.goal)}"/><text x="${W-pr}" y="${Y(o.goal)-5}" text-anchor="end" style="fill:var(--lime)">META ${o.fmt(o.goal)}</text>`;
+  o.series.forEach((se,si) => { const pts = se.vals.map((v,i) => [X(i), Y(v)]); s += `<polyline class="ln" style="--l:${pathLen(pts)};animation-delay:${si*.08}s" stroke="${se.color}" points="${pts.map(p => p.join(',')).join(' ')}"/>`; });
+  s += `<line id="cur" y1="${pt}" y2="${H-pb}" stroke="rgba(255,255,255,.25)" style="display:none"/><g id="dots"></g><rect x="${pl}" y="${pt}" width="${W-pl-pr}" height="${H-pt-pb}" fill="transparent" class="hit"/></svg>`;
+  host.innerHTML = s; const svg = host.querySelector('svg');
+  const hit = svg.querySelector('.hit'), cur = svg.querySelector('#cur'), dots = svg.querySelector('#dots');
+  hit.addEventListener('mousemove', e => {
+    const r = svg.getBoundingClientRect(), vx = (e.clientX - r.left)/r.width*W; const i = Math.max(0, Math.min(n-1, Math.round((vx-pl)/((W-pl-pr)/(n-1||1)))));
+    cur.style.display = ''; cur.setAttribute('x1', X(i)); cur.setAttribute('x2', X(i));
+    dots.innerHTML = o.series.map(se => `<circle cx="${X(i)}" cy="${Y(se.vals[i])}" r="4.5" fill="${se.color}" stroke="#060606" stroke-width="2"/>`).join('');
+    const sorted = o.series.map(se => ({se, v: se.vals[i]})).sort((a,b) => o.dirUp === false ? a.v-b.v : b.v-a.v);
+    showTip(host, `<b>${shortDate(o.labels[i])}</b>` + sorted.map(x => `<div><i style="background:${x.se.color}"></i>${x.se.name}: ${o.fmt(x.v)}${o.unit?' '+o.unit:''}</div>`).join(''), X(i)/W*host.clientWidth, Y(sorted[0].v)/H*svg.getBoundingClientRect().height);
+  });
+  hit.addEventListener('mouseleave', () => { cur.style.display = 'none'; dots.innerHTML = ''; hideTip(host); });
+}
+
+function barH(host, o){
+  const W = 640, rowH = 44, H = o.items.length*rowH + 10, pl = 118, pr = 78;
+  const max = Math.max(...o.items.map(i => i.val), o.goal||0) * 1.12;
+  const X = v => pl + (W-pl-pr) * v/max;
+  let s = `<svg viewBox="0 0 ${W} ${H+16}" role="img" aria-label="${o.aria||'Comparativo entre hubs'}">`;
+  o.items.forEach((it,i) => {
+    const y = 6 + i*rowH;
+    s += `<text class="lab" x="0" y="${y+20}">${it.name}</text><rect x="${pl}" y="${y+6}" width="${W-pl-pr}" height="22" rx="8" fill="rgba(255,255,255,.04)"/>`
+      + `<rect class="bar" style="animation-delay:${i*.07}s" x="${pl}" y="${y+6}" width="${Math.max(4,X(it.val)-pl)}" height="22" rx="8" fill="${it.color}" opacity=".92"/>`
+      + `<text class="val" x="${X(it.val)+8}" y="${y+22}">${o.fmt(it.val)}</text><circle cx="${W-8}" cy="${y+17}" r="4.5" fill="var(--${it.st==='ok'?'lime':it.st==='wa'?'amber':'red'})"/>`;
+  });
+  if(o.goal != null) s += `<line class="tg" x1="${X(o.goal)}" x2="${X(o.goal)}" y1="0" y2="${H}"/><text x="${X(o.goal)}" y="${H+12}" text-anchor="middle" style="fill:var(--lime)">META ${o.fmt(o.goal)}</text>`;
+  host.innerHTML = s + '</svg>';
+}
+
+function stacked(host, labels, series){       // series: [{name,color,vals}]
+  const W = 640, H = 250, pl = 34, pr = 6, pt = 10, pb = 24, n = labels.length;
+  const tot = labels.map((_,i) => series.reduce((a,s) => a + s.vals[i], 0)), max = Math.max(...tot, 1) * 1.1;
+  const bw = (W-pl-pr)/n, Y = v => pt + (H-pt-pb)*(1 - v/max);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Erros por dia, por tipo">`;
+  for(let i=0;i<=4;i++){ const v = max*i/4, y = Y(v); s += `<line class="gl" x1="${pl}" x2="${W-pr}" y1="${y}" y2="${y}"/><text x="${pl-6}" y="${y+3}" text-anchor="end">${Math.round(v)}</text>`; }
+  labels.forEach((l,i) => {
+    let acc = 0; const x = pl + i*bw + bw*.16, w = bw*.68;
+    series.forEach(se => { const v = se.vals[i]; if(!v) return; const y1 = Y(acc+v), y0 = Y(acc); s += `<rect class="barv" style="animation-delay:${i*.02}s" x="${x}" y="${y1}" width="${w}" height="${Math.max(0,y0-y1-1)}" rx="2" fill="${se.color}"/>`; acc += v; });
+    if(i % Math.ceil(n/8) === 0) s += `<text x="${x+w/2}" y="${H-7}" text-anchor="middle">${shortDate(l)}</text>`;
+    s += `<rect x="${pl+i*bw}" y="${pt}" width="${bw}" height="${H-pt-pb}" fill="transparent" data-i="${i}"/>`;
+  });
+  host.innerHTML = s + '</svg>';
+  host.querySelectorAll('rect[data-i]').forEach(r => {
+    r.addEventListener('mousemove', () => { const i = +r.dataset.i; const rect = host.querySelector('svg').getBoundingClientRect();
+      showTip(host, `<b>${shortDate(labels[i])} · ${tot[i]} erros</b>` + series.map(se => `<div><i style="background:${se.color}"></i>${se.name}: ${se.vals[i]}</div>`).join(''), (pl+(i+.5)*bw)/W*rect.width, Y(tot[i])/H*rect.height); });
+    r.addEventListener('mouseleave', () => hideTip(host));
+  });
+}
+
+function spark(vals, color){
+  const W = 120, H = 34, lo = Math.min(...vals), hi = Math.max(...vals), sp = (hi-lo)||1;
+  const pts = vals.map((v,i) => [i/(vals.length-1)*W, 3 + (H-6)*(1-(v-lo)/sp)]);
+  return `<svg class="sp" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" points="${pts.map(p => p.join(',')).join(' ')}"/></svg>`;
+}
+
+/* ---------- dashboard ---------- */
+function deltaHTML(k, cur, prev){
+  const d = prev ? (cur-prev)/prev*100 : 0, up = D.targets[k].dir === 'up';
+  const good = Math.abs(d) < .3 ? 'eq' : ((d > 0) === up ? 'up' : 'dn');
+  return `<span class="dl ${good}">${Math.abs(d)<.3?'▬':d>0?'▲':'▼'} ${nf(Math.abs(d),1)}% <span style="color:var(--dim)">vs. período anterior</span></span>`;
+}
+function drawDashboard(first){
+  if(!D) return;
+  const sh = selHubs(), n = S.period;
+  if(!sh.length) return;
+  // chips
+  $('#hubChips').innerHTML = D.hubs.map(h => `<button class="hchip ${S.sel.has(h.id)?'on':''}" style="--c:${h.color}" data-h="${h.id}"><i></i>${h.short}</button>`).join('');
+  $$('#hubChips .hchip').forEach(b => b.onclick = () => toggleHub(b.dataset.h));
+  $$('#periodSeg button').forEach(b => b.classList.toggle('on', +b.dataset.p === n));
+  // KPIs da rede (hubs selecionados)
+  const cur = agg(sh.map(h => lastN(h.id,n))), prev = agg(sh.map(h => prevN(h.id,n)));
+  const daily = KEYS.reduce((o,k) => (o[k] = [], o), {});
+  for(let i=n;i>=1;i--){ const m = agg(sh.map(h => [D.byHub[h.id][D.days.length-i]])); KEYS.forEach(k => daily[k].push(m[k])); }
+  $('#kpis').innerHTML = KEYS.map(k => { const T = D.targets[k], mu = k==='erros' ? sh.length : 1, GL = T.goal*mu, st = status(k,cur[k],mu), col = `var(--${st==='ok'?'lime':st==='wa'?'amber':'red'})`;
+    const w = Math.max(8, Math.min(100, T.dir==='up' ? cur[k]/GL*100 : GL/cur[k]*100));
+    return `<div class="card kpi" style="--k:${col};--w:${w}%"><small>${T.short}</small><strong>${fmtM(k,cur[k])}<u>${T.unit}</u></strong>${deltaHTML(k,cur[k],prev[k])}${spark(daily[k],col)}<div class="meta">META ${T.dir==='up'?'≥':'≤'} ${fmtM(k,GL)} ${T.unit}${mu>1?' (rede)':''}</div></div>`; }).join('');
+  // saúde por hub
+  const all = D.hubs.map(h => { const m = agg([lastN(h.id,n)]); return {h, m, sc: score(m)}; });
+  const order = [...all].sort((a,b) => b.sc - a.sc);
+  $('#hubCards').innerHTML = all.map(x => { const b = band(x.sc), len = 2*Math.PI*40*x.sc/100;
+    return `<div class="card hub s-${b} ${S.sel.has(x.h.id)?'':'off'}" style="--c:${x.h.color}" data-h="${x.h.id}" title="Clique para incluir/excluir da comparação">
+      <div class="t"><b><i></i>${x.h.short}</b><span class="rk">#${order.indexOf(x)+1}</span></div>
+      <div class="ring"><svg viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="40"/><circle class="fg" cx="50" cy="50" r="40" style="--len:${len}"/></svg><div><strong>${x.sc}</strong><span>SAÚDE</span></div></div>
+      <div class="ml">${KEYS.map(k => `<div class="s-${status(k,x.m[k])}">${D.targets[k].label.replace('Taxa de c','C').replace(' de processamento',' proc.').replace(' por dia','/dia')}<b><span class="dot"></span>${fmtM(k,x.m[k])}${k==='cancel'||k==='assert'?'%':k==='tempo'?'′':''}</b></div>`).join('')}</div></div>`; }).join('');
+  $$('#hubCards .hub').forEach(c => c.onclick = () => toggleHub(c.dataset.h));
+  // comparativo (abas + barras + linhas)
+  $('#mTabs').innerHTML = KEYS.map(k => `<button class="${S.metric===k?'on':''}" data-k="${k}">${D.targets[k].label}</button>`).join('');
+  $$('#mTabs button').forEach(b => b.onclick = () => { S.metric = b.dataset.k; drawDashboard(false); });
+  const k = S.metric, T = D.targets[k];
+  $('#mDefT').textContent = T.label + ' (' + T.unit + ')';
+  $('#mDef').textContent = T.def + ' · ' + (T.dir==='up' ? 'quanto maior, melhor' : 'quanto menor, melhor');
+  const items = sh.map(h => { const v = agg([lastN(h.id,n)])[k]; return {name:h.short, color:h.color, val:v, st:status(k,v)}; }).sort((a,b) => T.dir==='up' ? b.val-a.val : a.val-b.val);
+  barH($('#cBar'), {items, goal:T.goal, fmt:v => fmtM(k,v), aria:'Comparativo de '+T.label+' entre hubs'});
+  const labels = D.days.slice(-n);
+  lineChart($('#cLine'), {labels, goal:T.goal, fmt:v => nf(v, T.dec), unit:T.unit, dirUp:T.dir==='up', aria:'Evolução diária de '+T.label,
+    series: sh.map(h => ({id:h.id, name:h.short, color:h.color, vals: lastN(h.id,n).map((_,i,arr) => agg([[arr[i]]])[k])}))});
+  $('#cLegend').innerHTML = sh.map(h => `<span><i style="background:${h.color}"></i>${h.short}</span>`).join('');
+  // erros
+  const nn = Math.min(n, 30), lbl = D.days.slice(-nn);
+  stacked($('#cErr'), lbl, D.errTypes.map(t => ({name:t.name, color:t.color, vals: lbl.map((_,i) => sh.reduce((a,h) => a + lastN(h.id,nn)[i].errTipos[t.id], 0))})));
+  $('#errLegend').innerHTML = D.errTypes.map(t => `<span><i style="background:${t.color}"></i>${t.name}</span>`).join('');
+  const totT = D.errTypes.map(t => ({t, v: sh.reduce((a,h) => a + lastN(h.id,n).reduce((b,r) => b + r.errTipos[t.id], 0), 0)})), mx = Math.max(...totT.map(x => x.v), 1);
+  $('#errRank').innerHTML = totT.sort((a,b) => b.v-a.v).map(x => `<div style="--c:${x.t.color}"><span>${x.t.name}</span><b>${x.v}</b><div class="bg"><i style="width:${x.v/mx*100}%"></i></div></div>`).join('');
+  const hd = D.days.slice(-14), hmMax = Math.max(...sh.flatMap(h => hubRows(h.id,-14,undefined).map(r => r.erros)), 1);
+  $('#errHeat').innerHTML = `<table class="hm"><thead><tr><th></th>${hd.map(d => `<th>${d.slice(8)}</th>`).join('')}</tr></thead><tbody>` +
+    sh.map(h => `<tr><td>${h.short}</td>${hubRows(h.id,-14,undefined).map((r,i) => { const a = r.erros/hmMax; return `<td style="background:rgba(${Math.round(184+a*71)},${Math.round(244+a*11)},${Math.round(a*255)},${.1+a*.75});color:${a>.55?'#0a0d00':'#fff'};animation-delay:${i*.03}s" title="${shortDate(r.date)} · ${r.erros} erros">${r.erros}</td>`; }).join('')}</tr>`).join('') + '</tbody></table>';
+  // fluxo por hora
+  hourly(sh);
+  jarvis(first === true || !$('#jvText').dataset.plain);
+  // pontos de atenção
+  const att = []; sh.forEach(h => { const m = agg([lastN(h.id,n)]); KEYS.forEach(kk => { const g = gap(kk,m[kk]); if(g > 0) att.push({h, kk, g, v:m[kk]}); }); });
+  att.sort((a,b) => b.g-a.g);
+  $('#attn').innerHTML = att.slice(0,6).map(a => { const T = D.targets[a.kk]; return `<li class="s-${status(a.kk,a.v)}"><span class="ic"></span><div><b>${a.h.short}</b> · ${T.label}: <b>${fmtM(a.kk,a.v)} ${T.unit}</b><small>meta ${T.dir==='up'?'≥':'≤'} ${fmtM(a.kk,T.goal)} · ${nf(a.g*100,0)}% fora da meta</small></div></li>`; }).join('') || '<li class="s-ok"><span class="ic"></span><div>Todos os hubs selecionados dentro da meta 🎯</div></li>';
+}
+function hourly(sh){
+  const host = $('#cHour'), hrs = [...Array(14)].map((_,i) => i+10);
+  const ped = hrs.map(h => sh.reduce((a,x) => a + D.hourly[x.id][h].pedidos, 0)), pes = hrs.map(h => sh.reduce((a,x) => a + D.hourly[x.id][h].pessoas, 0));
+  const W = 640, H = 250, pl = 34, pr = 30, pt = 12, pb = 24, bw = (W-pl-pr)/hrs.length, mx = Math.max(...ped,1)*1.15, mp = Math.max(...pes,1)*1.3;
+  const Y = v => pt + (H-pt-pb)*(1-v/mx), Yp = v => pt + (H-pt-pb)*(1-v/mp);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Pedidos por hora do dia e pessoas na escala">`;
+  for(let i=0;i<=4;i++){ const v = mx*i/4; s += `<line class="gl" x1="${pl}" x2="${W-pr}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${pl-6}" y="${Y(v)+3}" text-anchor="end">${Math.round(v)}</text>`; }
+  hrs.forEach((h,i) => { const x = pl + i*bw + bw*.14; s += `<rect class="barv" style="animation-delay:${i*.03}s" x="${x}" y="${Y(ped[i])}" width="${bw*.72}" height="${H-pb-Y(ped[i])}" rx="4" fill="var(--lime)" opacity=".85"/><text x="${x+bw*.36}" y="${H-7}" text-anchor="middle">${h}h</text><rect x="${pl+i*bw}" y="${pt}" width="${bw}" height="${H-pt-pb}" fill="transparent" data-i="${i}"/>`; });
+  const pts = pes.map((v,i) => [pl+(i+.5)*bw, Yp(v)]); s += `<polyline class="ln" style="--l:${pathLen(pts)}" stroke="#ffffff" points="${pts.map(p => p.join(',')).join(' ')}"/>`;
+  host.innerHTML = s + '</svg>';
+  host.querySelectorAll('rect[data-i]').forEach(r => { r.addEventListener('mousemove', () => { const i = +r.dataset.i, rect = host.querySelector('svg').getBoundingClientRect();
+    showTip(host, `<b>${hrs[i]}h</b><div><i style="background:var(--lime)"></i>Pedidos/h: ${ped[i]}</div><div><i style="background:#ffffff"></i>Pessoas na escala: ${pes[i]}</div><div>Produtividade: ${nf(ped[i]/Math.max(pes[i],1),2)}</div>`, (pl+(i+.5)*bw)/W*rect.width, Y(ped[i])/H*rect.height); });
+    r.addEventListener('mouseleave', () => hideTip(host)); });
+}
+function toggleHub(id){ $('#jvText').dataset.plain = ''; if(S.sel.has(id)){ if(S.sel.size > 1) S.sel.delete(id); } else S.sel.add(id); drawDashboard(false); }
+
+
+/* ---------- assistente: análise por regras sobre os dados do dashboard ---------- */
+let jvTok = 0;
+const cls = st => st==='bd' ? 'bad' : st==='wa' ? 'war' : '';
+function analyze(sh, n){
+  const rows = sh.map(h => { const m = agg([lastN(h.id,n)]), p = agg([prevN(h.id,n)]); return {h, m, p, sc: score(m)}; });
+  const net = agg(sh.map(h => lastN(h.id,n))), netP = agg(sh.map(h => prevN(h.id,n)));
+  const netScore = Math.round(rows.reduce((a,r) => a + r.sc, 0)/rows.length);
+  const best = [...rows].sort((a,b) => b.sc-a.sc)[0], worst = [...rows].sort((a,b) => a.sc-b.sc)[0];
+  return {rows, net, netP, netScore, best, worst};
+}
+function worstMetric(r){ return KEYS.map(k => ({k, g:gap(k,r.m[k])})).sort((a,b) => b.g-a.g)[0]; }
+function errTop(h, n){ const t = D.errTypes.map(e => ({e, v: lastN(h.id,n).reduce((a,r) => a + r.errTipos[e.id], 0)})).sort((a,b) => b.v-a.v); const tot = t.reduce((a,x) => a + x.v, 0) || 1; return {name:t[0].e.name, pct:Math.round(t[0].v/tot*100)}; }
+function peakGap(sh){   // hora com maior carga por pessoa
+  let best = {h:0, r:0}; for(let h=10; h<24; h++){ const p = sh.reduce((a,x) => a + D.hourly[x.id][h].pedidos, 0), q = sh.reduce((a,x) => a + D.hourly[x.id][h].pessoas, 0); if(q && p/q > best.r) best = {h, r:p/q}; } return best;
+}
+function advice(r, n){
+  const w = worstMetric(r), T = D.targets[w.k], tip = {
+    cancel:'investigue os motivos de cancelamento por turno (ruptura de item? demora de preparo?) e revise a disponibilidade do cardápio.',
+    assert:'reforce a conferência na expedição antes do fechamento do pedido; o tipo de erro mais comum é “' + errTop(r.h,n).name.toLowerCase() + '” (' + errTop(r.h,n).pct + '% dos erros).',
+    tempo:'revise a distribuição de pessoas no pico e a ordem de preparo; tempo alto costuma indicar gargalo na bancada ou equipe curta no horário de maior volume.',
+    prod:'a produtividade abaixo da meta sugere equipe superdimensionada para o volume (ou fluxo lento). Reavalie a escala dos turnos de menor movimento.',
+    erros:'faça um alinhamento rápido com a equipe sobre os erros do dia anterior e cheque se o checklist de coleta está sendo seguido.'}[w.k];
+  return {w, T, tip};
+}
+function briefing(){
+  const sh = selHubs(), n = S.period, a = analyze(sh, n), nm = sh.length > 1 ? 'dos hubs selecionados' : 'do ' + sh[0].short;
+  const L = []; const dN = (a.net.prod - a.netP.prod)/(a.netP.prod||1)*100;
+  L.push(`<p>Panorama dos últimos <b>${n} dias</b> ${nm}: saúde operacional <b class="${cls(band(a.netScore))}">${a.netScore}/100</b>. A produtividade está em <b>${nf(a.net.prod,2)}</b> pedidos/h por pessoa (${dN>=0?'+':''}${nf(dN,1)}% vs. período anterior) e o tempo médio de processamento é <b>${nf(a.net.tempo,1)} min</b>.</p>`);
+  const items = [];
+  if(sh.length > 1){
+    items.push(`<b>${a.best.h.short}</b> lidera com índice ${a.best.sc}. <b class="${cls(band(a.worst.sc))}">${a.worst.h.short}</b> é o ponto mais frágil (${a.worst.sc}).`);
+    const ad = advice(a.worst, n); items.push(`Em <b>${a.worst.h.short}</b>, ${ad.T.label.toLowerCase()} é o que mais pesa (${fmtM(ad.w.k,a.worst.m[ad.w.k])} ${ad.T.unit}, meta ${D.targets[ad.w.k].dir==='up'?'≥':'≤'} ${fmtM(ad.w.k,D.targets[ad.w.k].goal)}). Recomendo: ${ad.tip}`);
+    const bad2 = a.rows.filter(r => r !== a.worst && band(r.sc) !== 'ok').sort((x,y) => x.sc-y.sc)[0];
+    if(bad2){ const b2 = advice(bad2,n); items.push(`<b>${bad2.h.short}</b> também pede atenção em ${b2.T.label.toLowerCase()} (${fmtM(b2.w.k,bad2.m[b2.w.k])} ${b2.T.unit}).`); }
+  } else { const ad = advice(a.rows[0], n), ok = band(a.rows[0].sc) === 'ok';
+    items.push(ok ? 'Todos os indicadores estão perto da meta. Mantenha o ritmo e monitore a tendência dos próximos dias.' : `O principal desvio é ${ad.T.label.toLowerCase()} (${fmtM(ad.w.k,a.rows[0].m[ad.w.k])} ${ad.T.unit}). Recomendo: ${ad.tip}`); }
+  const pk = peakGap(sh); items.push(`O horário mais pressionado é às <b>${pk.h}h</b>, com ${nf(pk.r,1)} pedidos por pessoa na escala. Vale reforçar esse intervalo antes de aumentar a equipe no restante do dia.`);
+  const best7 = lastN(sh[0].id, 7); const wk = {}; sh.forEach(h => lastN(h.id, Math.min(28,n*2)).forEach(r => { const d = new Date(r.date+'T12:00').getDay(); wk[d] = (wk[d]||0) + r.erros; }));
+  const wd = Object.entries(wk).sort((x,y) => y[1]-x[1])[0]; if(wd) items.push(`Os erros se concentram às <b>${['domingos','segundas','terças','quartas','quintas','sextas','sábados'][wd[0]]}</b>; prepare um reforço de conferência nesse dia.`);
+  return {intro:L[0], items, speak: a.netScore, a};
+}
+function answer(q){
+  q = q.toLowerCase(); const sh = selHubs(), n = S.period;
+  const hub = D.hubs.find(h => q.includes(h.short.toLowerCase()) || q.includes(h.name.toLowerCase()));
+  const key = q.includes('cancel') ? 'cancel' : q.includes('assert') ? 'assert' : (q.includes('tempo')||q.includes('process')) ? 'tempo' : q.includes('produt') ? 'prod' : (q.includes('erro')) ? 'erros' : null;
+  if(hub){ const m = agg([lastN(hub.id,n)]), r = {h:hub, m, sc:score(m)}, ad = advice(r,n);
+    return {intro:`<p><b>${hub.name}</b>: índice de saúde <b class="${cls(band(r.sc))}">${r.sc}/100</b> nos últimos ${n} dias.</p>`, items: KEYS.map(k => `${D.targets[k].label}: <b class="${cls(status(k,m[k]))}">${fmtM(k,m[k])} ${D.targets[k].unit}</b> (meta ${D.targets[k].dir==='up'?'≥':'≤'} ${fmtM(k,D.targets[k].goal)})`).concat([band(r.sc)==='ok' ? 'Operação saudável; nada urgente.' : 'Prioridade: ' + ad.tip])}; }
+  if(key){ const T = D.targets[key], list = D.hubs.map(h => ({h, v:agg([lastN(h.id,n)])[key]})).sort((a,b) => T.dir==='up' ? b.v-a.v : a.v-b.v);
+    return {intro:`<p><b>${T.label}</b> (${T.def.toLowerCase()}). Meta ${T.dir==='up'?'≥':'≤'} ${fmtM(key,T.goal)} ${T.unit}.</p>`, items: list.map((x,i) => `${i+1}º <b>${x.h.short}</b>: <b class="${cls(status(key,x.v))}">${fmtM(key,x.v)} ${T.unit}</b>`)}; }
+  if(q.includes('agir')||q.includes('priorid')||q.includes('urgent')){ const a = analyze(D.hubs, n), top = a.rows.map(r => ({r, w:worstMetric(r)})).sort((x,y) => y.w.g-x.w.g).slice(0,3);
+    return {intro:'<p>Onde eu agiria primeiro:</p>', items: top.map(x => { const ad = advice(x.r,n); return `<b>${x.r.h.short}</b> — ${ad.T.label.toLowerCase()} (${fmtM(ad.w.k,x.r.m[ad.w.k])} ${ad.T.unit}). ${ad.tip}`; })}; }
+  if(q.includes('pior')||q.includes('fraco')){ const a = analyze(D.hubs, n); const ad = advice(a.worst,n); return {intro:`<p>O hub mais frágil é <b class="bad">${a.worst.h.name}</b> (índice ${a.worst.sc}).</p>`, items:[ad.tip]}; }
+  if(q.includes('melhor')||q.includes('destaque')){ const a = analyze(D.hubs, n); return {intro:`<p>O destaque é <b>${a.best.h.name}</b> (índice ${a.best.sc}).</p>`, items:[`Produtividade ${nf(a.best.m.prod,2)} · cancelamento ${nf(a.best.m.cancel,1)}% · tempo ${nf(a.best.m.tempo,1)} min.`]}; }
+  return briefing();
+}
+function say(res){
+  const tok = ++jvTok, box = $('#jvText'), orb = $('#orb');
+  const html = res.intro + '<ul style="padding:0">' + res.items.map(i => '<li>' + i + '</li>').join('') + '</ul>';
+  box.innerHTML = ''; box.dataset.plain = (res.intro + ' ' + res.items.join('. ')).replace(/<[^>]+>/g,'');
+  orb.classList.add('talk'); $('#brainL').classList.add('talk'); box.classList.add('caret');
+  const tmp = document.createElement('div'); tmp.innerHTML = html; const total = tmp.textContent.length; let shown = 0;
+  const walk = () => { if(tok !== jvTok) return; shown = Math.min(total, shown + 5); box.innerHTML = clip(html, shown); if(shown < total) setTimeout(walk, 14); else { box.classList.remove('caret'); orb.classList.remove('talk'); $('#brainL').classList.remove('talk'); } };
+  walk();
+}
+function clip(html, n){        // corta o HTML mantendo as tags (efeito de digitação)
+  let out = '', cnt = 0, i = 0, stack = [];
+  while(i < html.length && cnt < n){
+    if(html[i] === '<'){ const j = html.indexOf('>', i), tag = html.slice(i, j+1); out += tag; const m = tag.match(/^<(\/)?(\w+)/); if(m){ if(m[1]) stack.pop(); else if(!/\/>$/.test(tag)) stack.push(m[2]); } i = j+1; }
+    else { out += html[i]; cnt++; i++; }
+  }
+  return out + stack.reverse().map(t => '</' + t + '>').join('');
+}
+/* ---------- James: cérebro em rede neural ---------- */
+function brainSVG(big){
+  const r = (function(seed){return function(){seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}})(big?11:11);
+  const inside = (x,y) => { const e = (cx,cy,rx,ry) => ((x-cx)/rx)**2 + ((y-cy)/ry)**2 <= 1;
+    return e(100,66,78,48) || e(70,48,40,30) || e(128,48,40,30) || e(138,114,26,15) || (x>104&&x<122&&y>100&&y<150 && Math.abs(x-113) < 7 + (y-100)*.02); };
+  const pts = []; let guard = 0; while(pts.length < (big?96:64) && guard++ < 6000){ const x = 14+r()*172, y = 8+r()*148; if(!inside(x,y)) continue; if(pts.some(p => Math.hypot(p[0]-x,p[1]-y) < (big?9:11))) continue; pts.push([x,y]); }
+  const edges = []; pts.forEach((p,i) => { pts.map((q,j) => ({j,d:Math.hypot(p[0]-q[0],p[1]-q[1])})).filter(o => o.j>i && o.d<(big?24:28)).sort((a,b) => a.d-b.d).slice(0,3).forEach(o => edges.push([i,o.j])); });
+  let s = `<svg viewBox="0 0 200 ${big?232:160}" role="img" aria-label="James, assistente da Central"><g class="${big?'brain-fl':''}">`;
+  edges.forEach(e => s += `<line class="be" x1="${pts[e[0]][0]}" y1="${pts[e[0]][1]}" x2="${pts[e[1]][0]}" y2="${pts[e[1]][1]}"/>`);
+  for(let k=0;k<(big?9:4);k++){ const e = edges[Math.floor(r()*edges.length)]; s += `<line class="bs" style="animation-delay:${(k*.37).toFixed(2)}s" x1="${pts[e[0]][0]}" y1="${pts[e[0]][1]}" x2="${pts[e[1]][0]}" y2="${pts[e[1]][1]}"/>`; }
+  pts.forEach((p,i) => s += `<circle class="bn" style="animation-delay:${(r()*3).toFixed(2)}s" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${(1.1+r()*1.5).toFixed(2)}"/>`);
+  s += `<path d="M104 22 C96 40 112 52 100 70 C90 86 108 96 102 112" fill="none" stroke="var(--lime)" stroke-width=".7" opacity=".4"/></g>`;
+  if(big){ for(let i=0;i<14;i++){ const x = 70 + i*4.6; s += `<line class="holo-b" x1="${x}" y1="152" x2="${x}" y2="196"/>`; }
+    s += `<ellipse class="holo-r" cx="100" cy="200" rx="62" ry="9"/><ellipse class="holo-r" cx="100" cy="206" rx="82" ry="12" opacity=".35"/><ellipse class="holo-r" cx="100" cy="213" rx="98" ry="15" opacity=".2"/>`; }
+  return s + '</svg>';
+}
+function drawFlow(sh){
+  const a = analyze(sh, S.period), col = `var(--${band(a.netScore)==='ok'?'lime':band(a.netScore)==='wa'?'amber':'red'})`;
+  if(!$('#brainL').firstChild) $('#brainL').innerHTML = brainSVG(true);
+  if(!$('#orb').firstChild) $('#orb').innerHTML = brainSVG(false);
+  const best = a.best.h.short, worst = a.worst.h.short;
+  $('#jvScore').innerHTML = `<div>SAÚDE DA REDE<strong style="color:${col}">${a.netScore}</strong></div><div>DESTAQUE<strong style="font-size:18px;color:#fff">${best}</strong></div><div>ATENÇÃO<strong style="font-size:18px;color:#fff">${worst}</strong></div>`;
+}
+function jarvis(first){
+  const sh = selHubs(); drawFlow(sh);
+  $('#jvChips').innerHTML = ['Resumo','Onde devo agir?','Pior hub','Melhor hub','Cancelamento','Tempo de processamento'].map(t => `<button type="button">${t}</button>`).join('');
+  $$('#jvChips button').forEach(b => b.onclick = () => say(b.textContent === 'Resumo' ? briefing() : answer(b.textContent)));
+  if(first) say(briefing());
+}
+
+/* ---------- voz do James ---------- */
+let voices = [];
+function rankVoice(v){ const n = v.name.toLowerCase(); let sc = 0;
+  if(/natural|neural|online/.test(n)) sc += 50; if(/google/.test(n)) sc += 30; if(/francisca|thalita|luciana|vit[oó]ria|camila|fernanda|maria/.test(n)) sc += 15; if(/antonio|daniel|felipe|ricardo|microsoft.*desktop/.test(n)) sc -= 5; if(v.lang === 'pt-BR') sc += 20; return sc; }
+function loadVoices(){
+  if(!('speechSynthesis' in window)) return;
+  voices = speechSynthesis.getVoices().filter(v => /^pt/i.test(v.lang)).sort((a,b) => rankVoice(b)-rankVoice(a));
+  const sel = $('#jvVoice'); if(!sel) return;
+  let saved = ''; try{ saved = localStorage.getItem('orion_james_voice') || ''; }catch(e){}
+  sel.innerHTML = voices.length ? voices.map(v => `<option value="${v.name}" ${v.name===saved?'selected':''}>${v.name.replace(/Microsoft |Google /,'').replace(/ - .*/,'')}${/natural|online|google/i.test(v.name)?' ★':''}</option>`).join('') : '<option>Voz padrão</option>';
+}
+function speakable(t){
+  return t.replace(/(\d+),(\d+)/g,'$1 vírgula $2').replace(/(\d+)\/100/g,'$1 de 100').replace(/≤/g,'no máximo ').replace(/≥/g,'no mínimo ').replace(/%/g,' por cento').replace(/′/g,' minutos').replace(/ped\/h\/pessoa/g,'pedidos por hora por pessoa').replace(/ped\/h/g,'pedidos por hora').replace(/\bmin\b/g,'minutos').replace(/\((.*?)\)/g,', $1,').replace(/\s+/g,' ').replace(/ ,/g,',');
+}
+function speak(text){
+  if(!('speechSynthesis' in window)) return; speechSynthesis.cancel();
+  const sel = $('#jvVoice'), v = voices.find(x => sel && x.name === sel.value) || voices[0];
+  const parts = ('Oi, Ví! Aqui é o James. ' + speakable(text)).match(/[^.!?]+[.!?]*/g) || [text];
+  parts.forEach((p,i) => { const u = new SpeechSynthesisUtterance(p.trim()); u.lang = 'pt-BR'; if(v) u.voice = v; u.rate = 1.0; u.pitch = 1.04; u.volume = 1;
+    if(i === 0) u.onstart = () => { $('#orb').classList.add('talk'); $('#brainL').classList.add('talk'); };
+    if(i === parts.length-1) u.onend = () => { $('#orb').classList.remove('talk'); $('#brainL').classList.remove('talk'); };
+    speechSynthesis.speak(u); });
+}
+function initJarvis(){
+  loadVoices(); if('speechSynthesis' in window) speechSynthesis.onvoiceschanged = loadVoices;
+  $('#jvVoice').addEventListener('change', e => { try{ localStorage.setItem('orion_james_voice', e.target.value); }catch(_){} speak('Prontinho, essa é a minha nova voz.'); });
+  $('#jvForm').addEventListener('submit', e => { e.preventDefault(); const v = $('#jvInput').value.trim(); if(v){ say(answer(v)); $('#jvInput').value = ''; } });
+  $('#jvAgain').onclick = () => say(briefing());
+  $('#jvSpeak').onclick = () => speak($('#jvText').dataset.plain || '');
+}
+
+/* ---------- init ---------- */
+document.addEventListener('DOMContentLoaded', () => {
+  initShell();
+  Dd.load().then(data => {
+    D = data; D.hubs.forEach(h => S.sel.add(h.id)); initJarvis();
+    $$('#periodSeg button').forEach(b => b.onclick = () => { S.period = +b.dataset.p; $('#jvText').dataset.plain = ''; drawDashboard(false); });
+    window.CentralApp = {go, data: D, agg, lastN, status, score, band, fmtM, nf, KEYS};
+    const start = (location.hash.match(/#\/(\w+)/) || [])[1] || 'dashboard';
+    go(start, false); if(start !== 'dashboard') drawDashboard(true);
+  });
+});
+})();
