@@ -8,7 +8,7 @@
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/compras.css">
 <link rel="stylesheet" href="assets/central.css">
 </head>
@@ -39,7 +39,7 @@
   <div class="card jv-chat">
     <div class="jv-h"><div class="brain-s" id="orb" aria-hidden="true"></div>
       <div><small>JAMES · ASSISTENTE DA CENTRAL</small><h3>Análise em tempo real</h3></div>
-      <div class="jv-b"><select id="jvVoice" aria-label="Voz do James" title="Escolher voz"></select><button class="btn ghost sm" id="jvSpeak" title="Ouvir o resumo">🔊 Ouvir</button><button class="btn ghost sm" id="jvAgain">↻ Reanalisar</button></div></div>
+      <div class="jv-b"><button class="btn ghost sm" id="jvAgain">↻ Reanalisar</button></div></div>
     <div class="jv-t" id="jvText" aria-live="polite"></div>
     <div class="jv-q" id="jvChips"></div>
     <form class="jv-in" id="jvForm" autocomplete="off"><input id="jvInput" placeholder="Pergunte ao James: “como está o Castelo?”, “onde devo agir?”…" aria-label="Pergunte ao James"><button class="btn lime sm" type="submit">Perguntar</button></form>
@@ -115,10 +115,10 @@
   </section>
 
   <div class="foot"><span>CENTRAL · COMPRAS · ÓRION</span><span class="sync" id="sync">…</span></div></section>
-<section class="view" id="v-ponto" hidden><div class="vh" style="padding-bottom:14px"><div><div class="eyebrow">CONTROLE DE PONTO</div><h1>Ponto da <span class="a">equipe</span>.</h1><p>Dados reais da Tangerino: atrasos, faltas, horários, hubs e freelancers.</p></div><div class="seg fv-tabs" data-fv="ponto" hidden></div></div><div class="fv"><div class="fv-load">Carregando…</div><iframe class="fr" title="CONTROLE DE PONTO"></iframe></div></section>
-<section class="view" id="v-alertas" hidden><div class="vh" style="padding-bottom:14px"><div><div class="eyebrow">CENTRAL DE ALERTAS</div><h1>Alertas e <span class="a">furos</span> de escala.</h1><p>Monitoramento por unidade, configuração dos avisos e links da equipe.</p></div><div class="seg fv-tabs" data-fv="alertas" hidden></div></div><div class="fv"><div class="fv-load">Carregando…</div><iframe class="fr" title="CENTRAL DE ALERTAS"></iframe></div></section>
-<section class="view" id="v-escala" hidden><div class="vh" style="padding-bottom:14px"><div><div class="eyebrow">ESCALA</div><h1>Escala <span class="a">operacional</span>.</h1><p>Lançamento dos supervisores e cadastros de hubs, turnos e colaboradores.</p></div><div class="seg fv-tabs" data-fv="escala" hidden></div></div><div class="fv"><div class="fv-load">Carregando…</div><iframe class="fr" title="ESCALA"></iframe></div></section>
-<section class="view" id="v-presencas" hidden><div class="vh" style="padding-bottom:14px"><div><div class="eyebrow">ACOMPANHAMENTO DO DIA</div><h1>Presenças <span class="a">ao vivo</span>.</h1><p>Quem está no turno, quem confirmou e onde há vaga descoberta.</p></div><div class="seg fv-tabs" data-fv="presencas" hidden></div></div><div class="fv"><div class="fv-load">Carregando…</div><iframe class="fr" title="ACOMPANHAMENTO DO DIA"></iframe></div></section>
+<section class="view" id="v-ponto" hidden><div class="vh" style="padding-bottom:14px"><div><div class="eyebrow">CONTROLE DE PONTO</div><h1>Ponto da <span class="a">equipe</span>.</h1><p>Dados reais da Tangerino: atrasos, faltas, horários, hubs e freelancers.</p></div><div class="seg fv-tabs" data-fv="ponto" hidden></div></div><div class="fv"><div class="fv-load">Carregando…</div><div class="mod" id="mod-painel" data-tab="0"></div></div></section>
+<section class="view" id="v-alertas" hidden><div class="vh" style="padding-bottom:14px"><div><div class="eyebrow">CENTRAL DE ALERTAS</div><h1>Alertas e <span class="a">furos</span> de escala.</h1><p>Monitoramento por unidade, configuração dos avisos e links da equipe.</p></div><div class="seg fv-tabs" data-fv="alertas" hidden></div></div><div class="fv"><div class="fv-load">Carregando…</div><div class="mod" id="mod-alertas" data-tab="0"></div><div class="mod" id="mod-equipe" data-tab="1" hidden></div></div></section>
+<section class="view" id="v-escala" hidden><div class="vh" style="padding-bottom:14px"><div><div class="eyebrow">ESCALA</div><h1>Escala <span class="a">operacional</span>.</h1><p>Lançamento dos supervisores e cadastros de hubs, turnos e colaboradores.</p></div><div class="seg fv-tabs" data-fv="escala" hidden></div></div><div class="fv"><div class="fv-load">Carregando…</div><div class="mod" id="mod-escala-lanc" data-tab="0"></div><div class="mod" id="mod-escala-cad" data-tab="1" hidden></div></div></section>
+<section class="view" id="v-presencas" hidden><div class="vh" style="padding-bottom:14px"><div><div class="eyebrow">ACOMPANHAMENTO DO DIA</div><h1>Presenças <span class="a">ao vivo</span>.</h1><p>Quem está no turno, quem confirmou e onde há vaga descoberta.</p></div><div class="seg fv-tabs" data-fv="presencas" hidden></div></div><div class="fv"><div class="fv-load">Carregando…</div><div class="mod" id="mod-acomp" data-tab="0"></div></div></section>
 </main>
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer" aria-hidden="true"></aside>
@@ -155,6 +155,6 @@
 <script src="assets/compras.js"></script>
 <script src="assets/central-data.js"></script>
 <script src="assets/central.js"></script>
-<script src="assets/frames.js"></script>
+<script src="assets/modulos.js"></script>
 </body>
 </html>

@@ -1,3 +1,5 @@
+import { docFor } from '/orion/mod/docproxy.js';
+const document = docFor('escala-cad');
 // Página 1 — Cadastros: hubs, turnos com vagas por dia, supervisores, colaboradores, datas especiais e buracos na escala.
 import { configuracaoPronta, lerConfig, salvarConfig, ouvirEscalas, lerEscalas, salvarVagasEmLote } from './db.js';
 import { entrar, sair, aoMudarLogin, tokenAdmin } from './auth.js';

@@ -291,3 +291,4 @@ body.locked .main,body.locked .top{visibility:hidden}
 .fr{display:block;width:100%;height:calc(100vh - 210px);min-height:520px;border:1px solid var(--line);border-radius:20px;background:#050607}
 .fv-load{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font:500 12px var(--mono);letter-spacing:.14em;pointer-events:none;z-index:1}
 .fv-load[hidden]{display:none}
+.mod{min-height:300px}.mod[hidden]{display:none}

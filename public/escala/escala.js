@@ -1,3 +1,5 @@
+import { docFor } from '/orion/mod/docproxy.js';
+const document = docFor('escala-lanc');
 // Página 2 — Escala: o supervisor escolhe seu nome e o hub e preenche as vagas.
 import {
   configuracaoPronta, ouvirConfig, ouvirEscalas, salvarVaga, lancarAusencia, removerAusencia,

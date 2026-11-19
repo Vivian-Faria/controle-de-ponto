@@ -37,7 +37,7 @@ function initShell(){
     if(on) setSb(true);
   });
   try{ if(localStorage.getItem('orion_sb_pin') === '1' && innerWidth >= 1280){ document.body.classList.add('pinned'); } }catch(e){}
-  window.addEventListener('hashchange', () => go((location.hash.match(/#\/(\w+)/) || [])[1], false));
+  window.addEventListener('hashchange', () => { if(!/^#\//.test(location.hash)) return; go((location.hash.match(/#\/(\w+)/) || [])[1], false); });
   const tick = () => { const c = $('#clock'); if(c) c.textContent = new Date().toLocaleString('pt-BR',{weekday:'short',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}).replace('.',''); };
   tick(); setInterval(tick, 15000);
 }
@@ -294,18 +294,25 @@ function clip(html, n){        // corta o HTML mantendo as tags (efeito de digit
 }
 /* ---------- James: cérebro em rede neural ---------- */
 function brainSVG(big){
-  const r = (function(seed){return function(){seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}})(big?11:11);
-  const inside = (x,y) => { const e = (cx,cy,rx,ry) => ((x-cx)/rx)**2 + ((y-cy)/ry)**2 <= 1;
-    return e(100,66,78,48) || e(70,48,40,30) || e(128,48,40,30) || e(138,114,26,15) || (x>104&&x<122&&y>100&&y<150 && Math.abs(x-113) < 7 + (y-100)*.02); };
-  const pts = []; let guard = 0; while(pts.length < (big?96:64) && guard++ < 6000){ const x = 14+r()*172, y = 8+r()*148; if(!inside(x,y)) continue; if(pts.some(p => Math.hypot(p[0]-x,p[1]-y) < (big?9:11))) continue; pts.push([x,y]); }
-  const edges = []; pts.forEach((p,i) => { pts.map((q,j) => ({j,d:Math.hypot(p[0]-q[0],p[1]-q[1])})).filter(o => o.j>i && o.d<(big?24:28)).sort((a,b) => a.d-b.d).slice(0,3).forEach(o => edges.push([i,o.j])); });
-  let s = `<svg viewBox="0 0 200 ${big?232:160}" role="img" aria-label="James, assistente da Central"><g class="${big?'brain-fl':''}">`;
-  edges.forEach(e => s += `<line class="be" x1="${pts[e[0]][0]}" y1="${pts[e[0]][1]}" x2="${pts[e[1]][0]}" y2="${pts[e[1]][1]}"/>`);
-  for(let k=0;k<(big?9:4);k++){ const e = edges[Math.floor(r()*edges.length)]; s += `<line class="bs" style="animation-delay:${(k*.37).toFixed(2)}s" x1="${pts[e[0]][0]}" y1="${pts[e[0]][1]}" x2="${pts[e[1]][0]}" y2="${pts[e[1]][1]}"/>`; }
-  pts.forEach((p,i) => s += `<circle class="bn" style="animation-delay:${(r()*3).toFixed(2)}s" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${(1.1+r()*1.5).toFixed(2)}"/>`);
-  s += `<path d="M104 22 C96 40 112 52 100 70 C90 86 108 96 102 112" fill="none" stroke="var(--lime)" stroke-width=".7" opacity=".4"/></g>`;
-  if(big){ for(let i=0;i<14;i++){ const x = 70 + i*4.6; s += `<line class="holo-b" x1="${x}" y1="152" x2="${x}" y2="196"/>`; }
-    s += `<ellipse class="holo-r" cx="100" cy="200" rx="62" ry="9"/><ellipse class="holo-r" cx="100" cy="206" rx="82" ry="12" opacity=".35"/><ellipse class="holo-r" cx="100" cy="213" rx="98" ry="15" opacity=".2"/>`; }
+  const NS = 'http://www.w3.org/2000/svg';
+  const OUT = 'M30 88 C14 78 12 52 34 38 C46 22 74 14 98 18 C124 12 156 20 168 42 C184 58 184 84 170 98 C164 106 154 108 146 106 C156 112 160 126 144 132 C130 136 114 128 112 116 L108 114 L104 142 L92 142 L90 114 C80 120 62 120 52 110 C44 106 36 100 30 88 Z';
+  const SULCI = ['M44 86 C66 76 88 84 112 80','M97 20 C90 44 102 58 92 80','M60 40 C70 52 62 62 72 70','M128 24 C122 44 136 54 128 74','M150 50 C142 62 154 72 146 88','M50 62 C60 66 58 76 68 78','M120 90 C132 96 142 94 150 100'];
+  const tmp = document.createElementNS(NS,'svg'), pp = document.createElementNS(NS,'path'); pp.setAttribute('d', OUT); tmp.appendChild(pp); tmp.setAttribute('style','position:absolute;width:0;height:0;visibility:hidden'); document.body.appendChild(tmp);
+  const inside = (x,y) => { try{ return pp.isPointInFill(new DOMPoint(x,y)); }catch(e){ return true; } };
+  const r = (function(seed){return function(){seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}})(7);
+  const pts = []; let guard = 0, want = big ? 105 : 58, dmin = big ? 9.5 : 12;
+  while(pts.length < want && guard++ < 9000){ const x = 14+r()*172, y = 14+r()*130; if(!inside(x,y)) continue; if(pts.some(p => Math.hypot(p[0]-x,p[1]-y) < dmin)) continue; pts.push([x,y]); }
+  tmp.remove();
+  const edges = []; pts.forEach((p,i) => { pts.map((q,j) => ({j,d:Math.hypot(p[0]-q[0],p[1]-q[1])})).filter(o => o.j>i && o.d<(big?22:27)).sort((a,b) => a.d-b.d).slice(0,3).forEach(o => edges.push([i,o.j])); });
+  let s = `<svg viewBox="0 0 200 ${big?215:150}" role="img" aria-label="James, assistente da Central"><g class="${big?'brain-fl':''}">`;
+  s += `<path d="${OUT}" fill="rgba(184,244,0,.05)" stroke="var(--lime)" stroke-width="1.3" stroke-linejoin="round" opacity=".85"/>`;
+  SULCI.forEach(d => s += `<path d="${d}" fill="none" stroke="var(--lime)" stroke-width=".9" stroke-linecap="round" opacity=".45"/>`);
+  edges.forEach(e => s += `<line class="be" x1="${pts[e[0]][0].toFixed(1)}" y1="${pts[e[0]][1].toFixed(1)}" x2="${pts[e[1]][0].toFixed(1)}" y2="${pts[e[1]][1].toFixed(1)}"/>`);
+  for(let k=0;k<(big?10:4);k++){ const e = edges[Math.floor(r()*edges.length)]; if(e) s += `<line class="bs" style="animation-delay:${(k*.37).toFixed(2)}s" x1="${pts[e[0]][0].toFixed(1)}" y1="${pts[e[0]][1].toFixed(1)}" x2="${pts[e[1]][0].toFixed(1)}" y2="${pts[e[1]][1].toFixed(1)}"/>`; }
+  pts.forEach(p => s += `<circle class="bn" style="animation-delay:${(r()*3).toFixed(2)}s" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${(1.1+r()*1.4).toFixed(2)}"/>`);
+  s += '</g>';
+  if(big){ for(let i=0;i<16;i++){ const x = 58 + i*5.6; s += `<line class="holo-b" x1="${x}" y1="150" x2="${x}" y2="188"/>`; }
+    s += `<ellipse class="holo-r" cx="100" cy="192" rx="60" ry="8"/><ellipse class="holo-r" cx="100" cy="198" rx="80" ry="11" opacity=".35"/><ellipse class="holo-r" cx="100" cy="205" rx="96" ry="13" opacity=".2"/>`; }
   return s + '</svg>';
 }
 function drawFlow(sh){
@@ -322,35 +329,9 @@ function jarvis(first){
   if(first) say(briefing());
 }
 
-/* ---------- voz do James ---------- */
-let voices = [];
-function rankVoice(v){ const n = v.name.toLowerCase(); let sc = 0;
-  if(/natural|neural|online/.test(n)) sc += 50; if(/google/.test(n)) sc += 30; if(/francisca|thalita|luciana|vit[oó]ria|camila|fernanda|maria/.test(n)) sc += 15; if(/antonio|daniel|felipe|ricardo|microsoft.*desktop/.test(n)) sc -= 5; if(v.lang === 'pt-BR') sc += 20; return sc; }
-function loadVoices(){
-  if(!('speechSynthesis' in window)) return;
-  voices = speechSynthesis.getVoices().filter(v => /^pt/i.test(v.lang)).sort((a,b) => rankVoice(b)-rankVoice(a));
-  const sel = $('#jvVoice'); if(!sel) return;
-  let saved = ''; try{ saved = localStorage.getItem('orion_james_voice') || ''; }catch(e){}
-  sel.innerHTML = voices.length ? voices.map(v => `<option value="${v.name}" ${v.name===saved?'selected':''}>${v.name.replace(/Microsoft |Google /,'').replace(/ - .*/,'')}${/natural|online|google/i.test(v.name)?' ★':''}</option>`).join('') : '<option>Voz padrão</option>';
-}
-function speakable(t){
-  return t.replace(/(\d+),(\d+)/g,'$1 vírgula $2').replace(/(\d+)\/100/g,'$1 de 100').replace(/≤/g,'no máximo ').replace(/≥/g,'no mínimo ').replace(/%/g,' por cento').replace(/′/g,' minutos').replace(/ped\/h\/pessoa/g,'pedidos por hora por pessoa').replace(/ped\/h/g,'pedidos por hora').replace(/\bmin\b/g,'minutos').replace(/\((.*?)\)/g,', $1,').replace(/\s+/g,' ').replace(/ ,/g,',');
-}
-function speak(text){
-  if(!('speechSynthesis' in window)) return; speechSynthesis.cancel();
-  const sel = $('#jvVoice'), v = voices.find(x => sel && x.name === sel.value) || voices[0];
-  const parts = ('Oi, Ví! Aqui é o James. ' + speakable(text)).match(/[^.!?]+[.!?]*/g) || [text];
-  parts.forEach((p,i) => { const u = new SpeechSynthesisUtterance(p.trim()); u.lang = 'pt-BR'; if(v) u.voice = v; u.rate = 1.0; u.pitch = 1.04; u.volume = 1;
-    if(i === 0) u.onstart = () => { $('#orb').classList.add('talk'); $('#brainL').classList.add('talk'); };
-    if(i === parts.length-1) u.onend = () => { $('#orb').classList.remove('talk'); $('#brainL').classList.remove('talk'); };
-    speechSynthesis.speak(u); });
-}
 function initJarvis(){
-  loadVoices(); if('speechSynthesis' in window) speechSynthesis.onvoiceschanged = loadVoices;
-  $('#jvVoice').addEventListener('change', e => { try{ localStorage.setItem('orion_james_voice', e.target.value); }catch(_){} speak('Prontinho, essa é a minha nova voz.'); });
   $('#jvForm').addEventListener('submit', e => { e.preventDefault(); const v = $('#jvInput').value.trim(); if(v){ say(answer(v)); $('#jvInput').value = ''; } });
   $('#jvAgain').onclick = () => say(briefing());
-  $('#jvSpeak').onclick = () => speak($('#jvText').dataset.plain || '');
 }
 
 /* ---------- init ---------- */

@@ -1,4 +1,0 @@
-/* usado quando uma página é aberta dentro da Central (?embed=1): esconde o cabeçalho próprio */
-html.embed .brand, html.embed header.topo, html.embed .nav .links a[href="/painel.html"]{display:none !important}
-html.embed .foot{display:none}
-html.embed body{background-attachment:scroll}
