@@ -984,3 +984,29 @@ input[type=tel]:disabled { color: var(--nevoa); opacity: .55; }
 .ps-furo small { color: var(--nevoa); font: 500 11px var(--mono, monospace); letter-spacing: .04em; }
 .ps-ok { color: var(--grafite); font-size: 13.5px; margin: 4px 0; }
 @media (max-width: 1280px) { .ps-corpo { grid-template-columns: 1fr; } }
+
+/* ---------- mês (computador) ---------- */
+.pm-grade-wrap { background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--raio-m); padding: 16px; }
+.pm-sem, .pm-grade { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.pm-sem { margin-bottom: 8px; text-align: center; font: 500 11px var(--mono, monospace); letter-spacing: .14em; text-transform: uppercase; color: var(--nevoa); }
+.pm-cel { display: flex; flex-direction: column; gap: 6px; min-height: 108px; padding: 9px 9px 10px; text-align: left; border-radius: 14px; border: 1px solid var(--linha-forte); background: rgba(255,255,255,.04); color: var(--tinta); transition: transform .15s, border-color .15s; }
+.pm-cel.fora { border: 0; background: none; }
+.pm-topo { display: flex; justify-content: space-between; align-items: baseline; }
+.pm-topo b { font: 700 16px var(--fonte); }
+.pm-topo strong { font: 700 13px var(--mono, monospace); }
+.pm-marco { font-size: 10.5px; color: var(--grafite); line-height: 1.2; }
+.pm-linhas { display: flex; flex-direction: column; gap: 2px; }
+.pm-t { display: flex; justify-content: space-between; gap: 6px; font: 500 10.5px var(--mono, monospace); color: var(--grafite); }
+.pm-t em { font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-t.falta { color: var(--furo-texto); }
+.pm-cel i { display: block; height: 4px; margin-top: auto; border-radius: 99px; background: rgba(255,255,255,.10); overflow: hidden; }
+.pm-cel u { display: block; height: 100%; background: currentColor; border-radius: inherit; }
+.pm-cel.ok { background: rgba(184,244,0,.10); border-color: rgba(184,244,0,.40); color: var(--acento); }
+.pm-cel.ok .pm-t { color: var(--grafite); }
+.pm-cel.ruim { background: rgba(255,107,107,.10); border-color: rgba(255,107,107,.45); }
+.pm-cel.ruim .pm-topo strong { color: var(--furo-texto); }
+.pm-cel.vazio { border-style: dashed; border-color: var(--linha); background: none; color: var(--nevoa); }
+.pm-cel.passado { opacity: .55; }
+.pm-cel.hoje { box-shadow: 0 0 0 1px var(--acento), 0 0 18px -4px rgba(184,244,0,.45); opacity: 1; }
+.pm-cel:not(.fora):hover { transform: translateY(-2px); border-color: var(--acento); }
+.pm-cel.ok .pm-topo b { color: var(--tinta); }

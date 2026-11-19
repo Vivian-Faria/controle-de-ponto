@@ -614,35 +614,43 @@ function renderPainelSemana(dias, hoje, tot) {
     }).join('');
     return `<div class="ps-turno"><b>${escapeHtml(t.nome)}</b><small>${t.inicio}–${t.fim}</small></div>${cels}`;
   }).join('');
-  buracos.sort((a, b) => a.iso.localeCompare(b.iso) || a.t.inicio.localeCompare(b.t.inicio));
-  const lista = buracos.length ? buracos.map((b) => `<button type="button" class="ps-furo" data-abrir="${b.iso}">
-      <span><b>${DIAS_CURTO[b.d.getDay()].toUpperCase()} ${b.d.getDate()} · ${escapeHtml(b.t.nome)}</b> — ${b.falta === 1 ? 'falta 1 pessoa' : `faltam ${b.falta} pessoas`}</span>
-      <small>${b.t.inicio}–${b.t.fim}</small></button>`).join('')
-    : '<p class="ps-ok">Nenhum furo daqui para frente. 🎉</p>'.replace(' 🎉', '');
-  const pilulas = [
-    tot.faltas ? `<span class="pilula pilula-falta">${plural(tot.faltas, 'falta', 'faltas')}</span>` : '',
-    tot.pendentes ? `<span class="pilula pilula-pendente">${tot.pendentes} sem tipo confirmado</span>` : '',
-    ...['freelancer', 'intermitente'].filter((k) => tot[k]).map((k) => `<span class="pilula">${plural(tot[k], ...TIPOS[k].plural)}</span>`)
-  ].join('');
   el.quadro.className = 'quadro-painel';
   el.quadro.innerHTML = !estado.escalasProntas ? '<p class="ps-ok">Carregando escala…</p>' : `
-    <div class="ps-topo">
-      <div class="ps-pct"><strong>${pct}%</strong><span>da escala da semana preenchida${hub ? ` · ${escapeHtml(hub)}` : ''}</span></div>
-      <div class="ps-barra ${pct >= 100 ? 'completo' : ''}" aria-hidden="true"><span style="width:${pct}%"></span></div>
-      <div class="ps-sub"><span>${tot.cobertas} de ${tot.total} vagas cobertas</span>${pilulas}</div>
-    </div>
+    ${htmlTopoPainel(tot, pct, hub, 'semana')}
     <div class="ps-corpo">
       <div class="ps-grade" style="--cols:7">
         <span></span>${colunas}
         ${linhas}
       </div>
-      <aside class="ps-lateral">
+      ${htmlLateralPainel(tot, buracos)}
+    </div>`;
+}
+
+function htmlTopoPainel(tot, pct, hub, periodo) {
+  const pilulas = [
+    tot.faltas ? `<span class="pilula pilula-falta">${plural(tot.faltas, 'falta', 'faltas')}</span>` : '',
+    tot.pendentes ? `<span class="pilula pilula-pendente">${tot.pendentes} sem tipo confirmado</span>` : '',
+    ...['freelancer', 'intermitente'].filter((k) => tot[k]).map((k) => `<span class="pilula">${plural(tot[k], ...TIPOS[k].plural)}</span>`)
+  ].join('');
+  return `<div class="ps-topo">
+      <div class="ps-pct"><strong>${pct}%</strong><span>da escala ${periodo === 'mes' ? 'do mês' : 'da semana'} preenchida${hub ? ` · ${escapeHtml(hub)}` : ''}</span></div>
+      <div class="ps-barra ${pct >= 100 ? 'completo' : ''}" aria-hidden="true"><span style="width:${pct}%"></span></div>
+      <div class="ps-sub"><span>${tot.cobertas} de ${tot.total} vagas cobertas</span>${pilulas}</div>
+    </div>`;
+}
+
+function htmlLateralPainel(tot, buracos) {
+  buracos.sort((a, b) => a.iso.localeCompare(b.iso) || a.t.inicio.localeCompare(b.t.inicio));
+  const lista = buracos.length ? buracos.map((b) => `<button type="button" class="ps-furo" data-abrir="${b.iso}">
+      <span><b>${DIAS_CURTO[b.d.getDay()].toUpperCase()} ${b.d.getDate()} · ${escapeHtml(b.t.nome)}</b> — ${b.falta === 1 ? 'falta 1 pessoa' : `faltam ${b.falta} pessoas`}</span>
+      <small>${b.t.inicio}–${b.t.fim}</small></button>`).join('')
+    : '<p class="ps-ok">Nenhum furo daqui para frente.</p>';
+  return `<aside class="ps-lateral">
         <small>SALDO DE FUROS</small>
         <div class="ps-saldo ${tot.descobertas ? 'furo' : 'ok'}"><strong>${tot.descobertas}</strong><span>${tot.descobertas === 1 ? 'vaga descoberta' : 'vagas descobertas'}${tot.descobertas ? ' a partir de hoje' : ''}</span></div>
         <h3>Falta cobrir</h3>
         <div class="ps-lista">${lista}</div>
-      </aside>
-    </div>`;
+      </aside>`;
 }
 
 // Quem está escalado em cada turno, para a visão mensal.
@@ -694,6 +702,7 @@ function renderMes() {
   const { ini, fim, primeiro } = faixaPeriodo();
   const hoje = hojeIso();
   const tot = totalZerado();
+  if (!TELA_COMPACTA.matches) return renderPainelMes(ini, fim, primeiro, hoje, tot);
   let celulas = '';
   for (let d = ini; d <= fim; d = addDays(d, 1)) {
     if (d.getMonth() !== primeiro.getMonth()) { celulas += '<div class="cel fora" aria-hidden="true"></div>'; continue; }
@@ -727,6 +736,53 @@ function renderMes() {
   el.titulo.textContent = `${capitalizar(MESES[primeiro.getMonth()])} de ${primeiro.getFullYear()}`;
   const mesAtual = hoje.slice(0, 7) === isoDate(primeiro).slice(0, 7);
   el.resumo.innerHTML = htmlResumo(tot, mesAtual);
+}
+
+
+// Mês no computador: mesmo painel da semana (barra, calendário de cards e saldo de furos na lateral)
+function renderPainelMes(ini, fim, primeiro, hoje, tot) {
+  const turnos = ordenaTurnos(turnosDoHub());
+  const hub = estado.cfg.hubs.find((h) => h.id === estado.hubId)?.nome || '';
+  const buracos = [];
+  let celulas = '';
+  for (let d = ini; d <= fim; d = addDays(d, 1)) {
+    if (d.getMonth() !== primeiro.getMonth()) { celulas += '<span class="pm-cel fora" aria-hidden="true"></span>'; continue; }
+    const iso = isoDate(d);
+    const c = contagemDia(d);
+    somar(tot, c, iso >= hoje);
+    const marcos = marcosDoDia(iso, estado.cfg.datasEspeciais);
+    const linhas = [];
+    for (const t of turnos) {
+      const x = celulaTurnoDia(d, t);
+      if (x.vazio || x.dispensado) continue;
+      if (x.falta && iso >= hoje) buracos.push({ iso, d, t, falta: x.falta });
+      linhas.push(`<span class="pm-t${x.falta ? ' falta' : ''}"><em>${escapeHtml(t.nome)}</em><b>${x.cob}/${x.total}</b></span>`);
+    }
+    const pct = c.total ? Math.round((c.cobertas / c.total) * 100) : 0;
+    const nivel = !c.total ? 'vazio' : !c.descobertas ? 'ok' : (pct >= 60 ? 'meio' : 'ruim');
+    const rot = [`${DIAS_LONGO[d.getDay()]}, ${d.getDate()}`, ...marcos.map((m) => `${ROTULO_TIPO[m.tipo]}: ${m.nome}`),
+      c.total ? `${c.cobertas} de ${c.total} vagas cobertas` : 'sem turnos',
+      c.descobertas ? plural(c.descobertas, 'vaga descoberta', 'vagas descobertas') : '',
+      c.faltas ? plural(c.faltas, 'falta', 'faltas') : ''].filter(Boolean).join('. ');
+    celulas += `<button type="button" class="pm-cel ${nivel}${iso < hoje ? ' passado' : ''}${iso === hoje ? ' hoje' : ''}" data-abrir="${iso}" aria-label="${escapeHtml(rot)}">
+      <span class="pm-topo"><b>${d.getDate()}</b>${c.total ? `<strong>${c.cobertas}/${c.total}</strong>` : ''}</span>
+      ${marcos.length ? `<span class="pm-marco">${escapeHtml(marcos[0].nome)}</span>` : ''}
+      ${c.total ? `<span class="pm-linhas">${linhas.join('')}</span><i><u style="width:${pct}%"></u></i>` : ''}
+    </button>`;
+  }
+  const pct = tot.total ? Math.round((tot.cobertas / tot.total) * 100) : 0;
+  el.quadro.className = 'quadro-painel';
+  el.quadro.innerHTML = !estado.escalasProntas ? '<p class="ps-ok">Carregando escala…</p>' : `
+    ${htmlTopoPainel(tot, pct, hub, 'mes')}
+    <div class="ps-corpo">
+      <div class="pm-grade-wrap">
+        <div class="pm-sem" aria-hidden="true">${DIAS_CURTO.map((x) => `<span>${x}</span>`).join('')}</div>
+        <div class="pm-grade">${celulas}</div>
+      </div>
+      ${htmlLateralPainel(tot, buracos)}
+    </div>`;
+  el.titulo.textContent = `${capitalizar(MESES[primeiro.getMonth()])} de ${primeiro.getFullYear()}`;
+  el.resumo.innerHTML = '';
 }
 
 // ================= dia aberto (visão mensal) =================
