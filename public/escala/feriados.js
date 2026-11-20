@@ -64,7 +64,9 @@ export function datasDoAno(ano) {
   return lista;
 }
 
-// Datas especiais de um dia: as automáticas + as cadastradas (que podem repetir todo ano)
+// Datas especiais de um dia: as automáticas + as cadastradas (que podem repetir todo ano).
+// Se a mesma data cair duas vezes (ex: cadastrada à mão repetindo um feriado
+// automático), mantém só uma — pelo nome, sem diferenciar maiúsculas/minúsculas.
 export function marcosDoDia(iso, cadastradas = []) {
   const lista = datasDoAno(Number(iso.slice(0, 4))).filter((x) => x.data === iso);
   for (const c of cadastradas) {
@@ -72,5 +74,12 @@ export function marcosDoDia(iso, cadastradas = []) {
     const bate = c.anual ? c.data.slice(5) === iso.slice(5) : c.data === iso;
     if (bate) lista.push({ data: iso, nome: c.nome, tipo: c.tipo || 'feriado' });
   }
-  return lista.sort((a, b) => PESO[b.tipo] - PESO[a.tipo]);
+  const vistos = new Set();
+  const unicos = lista.filter((x) => {
+    const chave = x.nome.trim().toLowerCase();
+    if (vistos.has(chave)) return false;
+    vistos.add(chave);
+    return true;
+  });
+  return unicos.sort((a, b) => PESO[b.tipo] - PESO[a.tipo]);
 }

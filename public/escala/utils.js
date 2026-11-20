@@ -166,13 +166,21 @@ export function hhmm(min) {
 }
 
 // Minutos que uma parte cobre, sempre dentro da janela do turno.
-// Trata turno que vira a noite: 18:00–01:20 vale 1080 a 1520.
+// Trata turno que vira a noite: 18:00–01:20 vale 1080 a 1520. Chegar antes do
+// horário do turno (ex: turno às 18:00, pessoa lançada às 16:20) é só cobrir
+// a vaga com folga — nunca conta como virada de dia.
 export function trechoDaParte(parte, tIni, tFim) {
   if (!parte.inicio && !parte.fim) return [tIni, tFim];
   let a = parte.inicio ? toMin(parte.inicio) : tIni;
   let b = parte.fim ? toMin(parte.fim) : tFim;
-  while (a < tIni) a += 1440;
-  while (b <= a) b += 1440;
+  if (tFim > 1440) {
+    // Turno vira a noite: horário de madrugada lançado é o dia seguinte.
+    while (a < tIni) a += 1440;
+    while (b <= a) b += 1440;
+  } else if (b <= a) {
+    // A própria pessoa que atravessa a meia-noite, mesmo o turno não virando.
+    b += 1440;
+  }
   return [Math.max(a, tIni), Math.min(b, tFim)];
 }
 
@@ -271,6 +279,31 @@ export function vagasDoTurno(cfg, escalasMap, hubId, turno, iso, dow) {
     if (credito > 0 && v.vazia) { v.dispensada = creditos[creditos.length - credito]; credito--; }
   }
   return vagas;
+}
+
+// Quantas pessoas eram esperadas (vagas configuradas, descontando dispensa
+// por folga de supervisor) e quantas foram lançadas de fato (inclui vagas
+// extras, lançadas além da quantidade configurada) num turno, num dia.
+// Mesma lógica de contagem que a tela de lançamento usa, só que sem montar
+// o HTML de cada vaga — pra uso em telas que só precisam do número.
+export function contagemTurno(cfg, escalasMap, hubId, turno, iso, dow) {
+  const doc = escalasMap[`${hubId}_${iso}`];
+  const salvas = vagasDe(doc?.slots?.[turno.id]);
+  const n = Number(turno.vagas?.[dow]) || 0;
+
+  const sobressalentes = new Set(
+    (cfg.colaboradores || []).filter((c) => c.papel === 'supervisor').map((c) => normalizaNome(c.nome))
+  );
+  const creditos = (doc?.folgas?.[turno.id] || []).filter((nome) => sobressalentes.has(normalizaNome(nome)));
+  let credito = creditos.length;
+  let necessarias = 0;
+  for (let i = 0; i < n; i++) {
+    const vazia = !(salvas[i] || []).length;
+    if (credito > 0 && vazia) { credito--; continue; }
+    necessarias++;
+  }
+  const lancadas = salvas.reduce((s, partes) => s + partes.filter((p) => p.nome).length, 0);
+  return { necessarias, lancadas };
 }
 
 // Junta os buracos de várias vagas do mesmo turno/dia num resumo por trecho

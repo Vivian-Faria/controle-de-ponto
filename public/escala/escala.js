@@ -3,13 +3,14 @@ const document = docFor('escala-lanc');
 // Página 2 — Escala: o supervisor escolhe seu nome e o hub e preenche as vagas.
 import {
   configuracaoPronta, ouvirConfig, ouvirEscalas, salvarVaga, lancarAusencia, removerAusencia,
-  alternarConfirmacao, marcarComparecimento, removerComparecimento
+  ouvirAprovacoes, aprovarLancamento
 } from './db.js';
+import { entrar, sair, aoMudarLogin } from './auth.js';
 import { marcosDoDia, ROTULO_TIPO } from './feriados.js';
 import {
   DIAS_CURTO, DIAS_LONGO, MESES, isoDate, parseIso, addDays, startOfWeek, capitalizar,
   ordenaTurnos, faixaDoDia, normalizaNome, limparNome, sobrepoe, escapeHtml, porNome,
-  vagasDe, plural, criarStatus, TIPOS, cobertura, ehDividida, textoBuraco, pedacos, hhmm, toMin, faixaCurta, horaCurta,
+  vagasDe, plural, criarStatus, TIPOS, cobertura, ehDividida, hhmm, toMin, faixaCurta, horaCurta,
   vagasDoTurno
 } from './utils.js';
 
@@ -18,7 +19,10 @@ const el = {
   selSup: $('#selSupervisor'), selHub: $('#selHub'), aviso: $('#aviso'), painel: $('#painel'),
   quadro: $('#quadro'), titulo: $('#tituloPeriodo'), resumo: $('#resumoPeriodo'),
   dlg: $('#dlgDia'), dlgTitulo: $('#dlgTitulo'), dlgCorpo: $('#dlgCorpo'),
-  lembrete: $('#lembrete')
+  lembrete: $('#lembrete'),
+  btnAdmin: $('#btnAdmin'), dlgAdmin: $('#dlgAdmin'), formAdmin: $('#formAdmin'),
+  senhaAdmin: $('#senhaAdmin'), erroAdmin: $('#erroAdmin'),
+  status: $('#status')
 };
 const mostrarStatus = criarStatus($('#status'));
 
@@ -54,7 +58,10 @@ const estado = {
   chaveFaixa: '',
   diaAberto: null,   // dia aberto na janela (visão mensal)
   diaSel: null,      // dia mostrado no celular (visão semanal)
-  lembrete: { cancelar: null, chaveFaixa: '', escalas: {}, prontas: false }
+  lembrete: { cancelar: null, chaveFaixa: '', escalas: {}, prontas: false },
+  aprovacoes: {}, cancelarAprovacoes: null, hubAprovacoes: '',
+  souAdmin: false, emailAdmin: '',
+  editandoParte: null   // chave "iso|turnoId|idx|pi" da linha aberta pra edição, ou null
 };
 
 function mostrarAviso(titulo, texto) {
@@ -103,6 +110,21 @@ function assinarEscalas() {
   }, erroLeitura);
 }
 
+// Lançamentos aprovados por Ví (por hub, por dia+turno): só avisos de
+// quantidade somem, nada é travado.
+function assinarAprovacoes() {
+  if (estado.hubId === estado.hubAprovacoes) return;
+  estado.hubAprovacoes = estado.hubId;
+  estado.cancelarAprovacoes?.();
+  estado.aprovacoes = {};
+  if (!estado.hubId) { estado.cancelarAprovacoes = null; return; }
+  estado.cancelarAprovacoes = ouvirAprovacoes(estado.hubId, (aprovacoes) => {
+    estado.aprovacoes = aprovacoes;
+    render();
+  }, () => { /* sem aprovação carregada, os avisos continuam aparecendo normalmente */ });
+}
+const turnoAprovado = (iso, turnoId) => Boolean(estado.aprovacoes[`${iso}_${turnoId}`]);
+
 const hojeIso = () => isoDate(new Date());
 const docDia = (iso, hubId = estado.hubId) => estado.escalas[`${hubId}_${iso}`];
 const vagasNoDia = (t, dow) => Number(t.vagas?.[dow]) || 0;
@@ -115,19 +137,29 @@ const supervisoresSobressalentes = () => new Set(
   estado.cfg.colaboradores.filter((c) => c.papel === 'supervisor').map((c) => normalizaNome(c.nome))
 );
 
+// Quem faltou/compareceu/confirmou num turno naquele dia — usado tanto para
+// montar as vagas cadastradas (situacaoVagas) quanto as extras lançadas além
+// da quantidade configurada.
+function marcasDoTurno(iso, turnoId) {
+  const faltas = new Set(listaDoTurno(iso, 'faltas', turnoId).map(normalizaNome));
+  const compareceram = new Set(listaDoTurno(iso, 'compareceram', turnoId).map(normalizaNome));
+  const confirmacoes = new Set(listaDoTurno(iso, 'confirmacoes', turnoId).map(normalizaNome));
+  const faltou = (nome) => faltas.has(normalizaNome(nome));
+  return {
+    faltou,
+    marcas: {
+      compareceu: (nome) => (faltou(nome) ? 'nao' : (compareceram.has(normalizaNome(nome)) ? 'sim' : '')),
+      confirmou: (nome) => confirmacoes.has(normalizaNome(nome))
+    }
+  };
+}
+
 // Situação de cada vaga cadastrada de um turno naquele dia.
 // A vaga pode ter uma pessoa no turno inteiro ou várias em horários quebrados.
 // Quem faltou deixa o seu trecho em aberto.
 function situacaoVagas(iso, t, dow) {
   const salvas = vagasSalvas(iso, t.id);
-  const faltas = new Set(listaDoTurno(iso, 'faltas', t.id).map(normalizaNome));
-  const compareceram = new Set(listaDoTurno(iso, 'compareceram', t.id).map(normalizaNome));
-  const confirmacoes = new Set(listaDoTurno(iso, 'confirmacoes', t.id).map(normalizaNome));
-  const faltou = (nome) => faltas.has(normalizaNome(nome));
-  const marcas = {
-    compareceu: (nome) => (faltou(nome) ? 'nao' : (compareceram.has(normalizaNome(nome)) ? 'sim' : '')),
-    confirmou: (nome) => confirmacoes.has(normalizaNome(nome))
-  };
+  const { faltou, marcas } = marcasDoTurno(iso, t.id);
   const vagas = Array.from({ length: vagasNoDia(t, dow) }, (_, i) => montarVaga(t, salvas[i] || [], faltou, marcas));
 
   // Vaga vazia + folga de um supervisor sobressalente naquele turno = não é furo.
@@ -306,6 +338,7 @@ function render() {
   }
   el.aviso.hidden = true;
   el.painel.hidden = false;
+  assinarAprovacoes();
 
   const foco = capturarFoco();
   if (estado.modo === 'semana') renderSemana(); else renderMes();
@@ -341,68 +374,63 @@ function htmlContDia(c) {
   return `${fracao}<span class="selo selo-furo">${plural(c.descobertas, 'descoberta', 'descobertas')}</span>`;
 }
 
-function htmlParte(iso, t, i, pi, p, alertas, travado, rotDia, mostrarHoras) {
+// Linha enxuta: "Nome 08:00 às 17:00", com um lápis pra abrir a edição do
+// nome e do horário. Sem tipo de contrato, confirmação, comparecimento ou
+// avisos de conflito — decisão da Ví de tirar essa informação da tela.
+function htmlLinhaVaga(iso, t, i, pi, p, travado, rotDia, extra) {
   const chave = `${iso}|${t.id}|${i}|${pi}`;
-  const temNome = Boolean(p.nome.trim());
   const dis = travado ? 'disabled' : '';
-  const rotulo = mostrarHoras ? `${t.nome}, vaga ${i + 1}, pessoa ${pi + 1}, ${rotDia}` : `${t.nome}, vaga ${i + 1}, ${rotDia}`;
-  const quem = escapeHtml(p.nome) || `pessoa ${pi + 1}`;
-  // Horário sempre editável por pessoa (não só quando a vaga é dividida):
-  // freelancer/intermitente muitas vezes não cobre o horário cheio do turno.
-  const horas = `
+  const temNome = Boolean(p.nome.trim());
+  const rotulo = `${t.nome}, vaga ${i + 1}, ${rotDia}`;
+  const quem = escapeHtml(p.nome) || 'pessoa';
+  // Hora sem sugestão: só mostra/pré-preenche quando alguém já digitou algo.
+  // Pra quem tem nome mas não mexeu no horário, assume o turno inteiro (sem
+  // forçar isso visualmente na hora de editar).
+  const inicio = p.inicio || (temNome ? t.inicio : ''), fim = p.fim || (temNome ? t.fim : '');
+
+  if (estado.editandoParte !== chave) {
+    if (!temNome) {
+      return `<div class="linha-vaga vazia">
+        <span class="lv-texto lv-nova">+ Adicionar pessoa</span>
+        <button type="button" class="btn-icone" data-editar="${chave}" aria-label="Lançar nova pessoa, ${escapeHtml(rotulo)}" ${dis}>✎</button>
+      </div>`;
+    }
+    return `<div class="linha-vaga${p.faltou ? ' faltou' : ''}">
+      <span class="lv-texto">${quem} <span class="lv-hora">${inicio} às ${fim}</span></span>
+      <button type="button" class="btn-icone" data-editar="${chave}" aria-label="Editar ${escapeHtml(rotulo)}" ${dis}>✎</button>
+      <button type="button" class="btn-icone perigo" data-excluir="${chave}"
+        aria-label="Excluir ${escapeHtml(p.nome)} desta vaga" ${dis}>×</button>
+      ${p.faltou ? '<p class="vaga-furo">Não compareceu. O horário está descoberto.</p>' : ''}
+    </div>`;
+  }
+  return `<div class="linha-vaga editando">
+    <div class="parte-nome">
+      <input type="text" class="${p.nome ? '' : 'vazio'}" value="${escapeHtml(p.nome)}"
+        placeholder="${extra ? 'Pessoa extra' : 'Nome'}" aria-label="${escapeHtml(rotulo)}"
+        autocomplete="off" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
+    </div>
     <div class="horas">
       <label class="hora"><span>Entra</span>
         <input type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="00:00"
-          class="campo-hora" value="${p.inicio || t.inicio}" aria-label="Entrada de ${quem}"
+          class="campo-hora" value="${p.inicio}" aria-label="Entrada de ${quem}"
           data-hora="${chave}|inicio" data-foco="hi|${chave}" ${dis}></label>
       <label class="hora"><span>Sai</span>
         <input type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="00:00"
-          class="campo-hora" value="${p.fim || t.fim}" aria-label="Saída de ${quem}"
+          class="campo-hora" value="${p.fim}" aria-label="Saída de ${quem}"
           data-hora="${chave}|fim" data-foco="hf|${chave}" ${dis}></label>
-    </div>`;
-  const acoes = temNome ? `
-    <div class="tipo" role="group" aria-label="Tipo de contrato de ${escapeHtml(p.nome)}">
-      ${!p.faltou && !p.tipo ? '<span class="tipo-pergunta">Tipo:</span>' : ''}
-      ${Object.entries(TIPOS).map(([valor, tp]) => `<button type="button" data-tipo-vaga="${chave}" data-valor="${valor}"
-        aria-pressed="${p.tipo === valor}" aria-label="${valor === 'fixo' ? 'Fixo' : valor === 'freelancer' ? 'Freelancer' : 'Intermitente'}" ${dis}>${tp.botao}</button>`).join('')}
+      <button type="button" class="btn-icone" data-concluir="${chave}" aria-label="Concluir edição">✓</button>
     </div>
-    <div class="presenca" role="group" aria-label="Presença de ${escapeHtml(p.nome)}">
-      <button type="button" class="btn-confirmou" data-confirmou="${iso}|${t.id}" data-nome="${escapeHtml(p.nome)}"
-        aria-pressed="${p.confirmou}" aria-label="Confirmou horário com ${escapeHtml(p.nome)}" title="Confirmou horário" ${dis}>${p.confirmou ? '✓ ' : ''}Confirmou</button>
-      <button type="button" class="btn-compareceu sim" data-compareceu="${iso}|${t.id}|sim" data-nome="${escapeHtml(p.nome)}"
-        aria-pressed="${p.compareceuEstado === 'sim'}" aria-label="${escapeHtml(p.nome)} compareceu" title="Compareceu" ${dis}>${p.compareceuEstado === 'sim' ? '✓ ' : ''}Compareceu</button>
-      <button type="button" class="btn-compareceu nao" data-compareceu="${iso}|${t.id}|nao" data-nome="${escapeHtml(p.nome)}"
-        aria-pressed="${p.compareceuEstado === 'nao'}" aria-label="${escapeHtml(p.nome)} não compareceu" title="Não compareceu" ${dis}>${p.compareceuEstado === 'nao' ? '✕ ' : ''}Faltou</button>
-    </div>` : '';
-  const tudoOk = temNome && !p.faltou && p.confirmou && p.compareceuEstado === 'sim';
-  return `<div class="parte${p.faltou ? ' faltou' : ''}${tudoOk ? ' ok' : ''}">
-    <div class="parte-nome">
-      <input type="text" class="${p.nome ? '' : 'vazio'}" value="${escapeHtml(p.nome)}"
-        placeholder="${mostrarHoras ? 'Quem cobre' : 'Descoberta'}" aria-label="${escapeHtml(rotulo)}"
-        autocomplete="off" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
-      ${mostrarHoras ? `<button type="button" class="btn-tirar" data-tirar-parte="${chave}"
-        aria-label="Tirar ${escapeHtml(p.nome) || 'esta pessoa'} da vaga" ${dis}>×</button>` : ''}
-    </div>
-    ${horas}
     ${p.faltou ? '<p class="vaga-furo">Não compareceu. O horário está descoberto.</p>' : ''}
-    ${acoes}
-    ${alertas.map((a) => `<p class="vaga-alerta">${escapeHtml(a)}</p>`).join('')}
   </div>`;
 }
 
-function htmlVaga(iso, t, i, v, ind, travado, rotDia) {
-  const dis = travado ? 'disabled' : '';
+function htmlVaga(iso, t, i, v, travado, rotDia, extra) {
   if (v.dispensada) return htmlVagaDispensada(iso, t, i, v, travado, rotDia);
-  const cls = ['vaga', v.coberta ? 'ocupada' : 'descoberta', v.dividida ? 'dividida' : ''].filter(Boolean).join(' ');
+  const cls = ['vaga', v.coberta ? 'ocupada' : 'descoberta', extra ? 'extra-nova' : ''].filter(Boolean).join(' ');
   const partes = v.partes.length ? v.partes : [{ nome: '', tipo: '', inicio: '', fim: '' }];
   const corpo = partes.map((p, pi) =>
-    htmlParte(iso, t, i, pi, p, alertasVaga(ind, t, i, pi, p), travado, rotDia, v.dividida)).join('');
-  const buracos = v.dividida && v.buracos.length && v.partes.some((p) => p.nome)
-    ? `<p class="vaga-buraco">Falta cobrir ${v.buracos.map(textoBuraco).join(' e ')}</p>` : '';
-  const rodape = v.dividida
-    ? `<button type="button" class="btn-dividir" data-add-parte="${iso}|${t.id}|${i}" ${dis}>+ pessoa</button>`
-    : `<button type="button" class="btn-dividir" data-dividir="${iso}|${t.id}|${i}" ${dis}>Dividir horário</button>`;
-  return `<div class="${cls}">${corpo}${buracos}${rodape}</div>`;
+    htmlLinhaVaga(iso, t, i, pi, p, travado, rotDia, extra)).join('');
+  return `<div class="${cls}">${corpo}</div>`;
 }
 
 // Vaga sobressalente vazia por folga de supervisor: sem cobrança de furo,
@@ -446,6 +474,67 @@ function htmlAusencias(iso, t, ind, travado, rotDia) {
   </div>`;
 }
 
+// Selo + aviso do cabeçalho do turno: quantas pessoas foram lançadas contra
+// a quantidade configurada. Não trava nada — é só um alerta. "necessarias"
+// já desconta vagas dispensadas por folga de supervisor.
+// Quantas pessoas eram esperadas (vagas configuradas, descontando dispensa
+// por folga de supervisor) e quantas foram lançadas de fato (inclui vagas
+// extras, lançadas além da quantidade configurada) num turno, num dia —
+// e as próprias vagas prontas pra desenhar na tela.
+function contagemTurnoDia(iso, dow, t) {
+  const n = vagasNoDia(t, dow);
+  const situacao = situacaoVagas(iso, t, dow);
+  const aplicaveis = situacao.filter((v) => !v.dispensada);
+  const necessarias = aplicaveis.length;
+
+  // Sem engessamento: quem lidera pode lançar mais ou menos gente do que o
+  // configurado, sem sugestão de horário pronta. A lista mostra só quem tem
+  // nome lançado (e as vagas dispensadas, que avisam o crédito de folga) —
+  // nada de linha vazia "fantasma" pra cada vaga ainda não preenchida.
+  // Sempre sobra uma linha em branco no fim pra lançar mais uma pessoa.
+  const salvas = vagasSalvas(iso, t.id);
+  const { faltou, marcas } = marcasDoTurno(iso, t.id);
+  const extrasFim = Math.max(n, salvas.length) + 1;
+  const linhas = [];
+  for (let i = 0; i < extrasFim; i++) {
+    const v = i < n ? situacao[i] : montarVaga(t, salvas[i] || [], faltou, marcas);
+    if (v.dispensada || v.partes.some((p) => p.nome)) linhas.push({ i, v });
+  }
+  linhas.push({ i: extrasFim, v: montarVaga(t, [], faltou, marcas) });
+
+  // Quem faltou não conta como cobertura — o horário continua descoberto,
+  // mesmo com o nome ainda lançado na vaga (é assim que a Central também conta).
+  const pessoasDe = (v) => v.partes.filter((p) => p.nome && !p.faltou).length;
+  const lancadas = linhas.reduce((s, x) => s + (x.v.dispensada ? 0 : pessoasDe(x.v)), 0);
+  const dispensado = necessarias === 0 && n > 0 && lancadas === 0;
+
+  return { t, n, linhas, necessarias, lancadas, dispensado };
+}
+
+// Estado de um turno num dia: "completo" (bateu a conta, ou a diferença já
+// foi aprovada), "pendente" (sobrou ou faltou gente e ainda não foi
+// aprovado) ou "neutro" (nada configurado pra comparar). Não trava nada —
+// é só pra avisar e, se for o caso, esperar aprovação.
+function situacaoTurno({ necessarias, lancadas, dispensado }, aprovado) {
+  if (dispensado) return { status: 'completo', texto: 'Dispensado' };
+  if (!necessarias) return { status: 'neutro', texto: lancadas ? plural(lancadas, 'pessoa lançada', 'pessoas lançadas') : '' };
+  if (lancadas === necessarias) return { status: 'completo', texto: 'Completo' };
+  const diff = lancadas - necessarias;
+  const palavra = diff > 0 ? `Sobram ${plural(diff, 'pessoa', 'pessoas')}` : `Faltam ${plural(-diff, 'pessoa', 'pessoas')}`;
+  if (aprovado) return { status: 'completo', texto: 'Completo' };
+  return { status: 'pendente', texto: palavra };
+}
+
+function htmlContTurno(info, aprovado) {
+  const { necessarias, lancadas } = info;
+  const { status, texto } = situacaoTurno(info, aprovado);
+  if (status === 'neutro') return { status, badge: lancadas ? `<span class="turno-cont">${texto}</span>` : '', aviso: '' };
+  if (info.dispensado) return { status, badge: '<span class="turno-cont completo">Dispensado</span>', aviso: '' };
+  const badge = `<span class="turno-cont ${status}">${lancadas}/${necessarias}</span>`;
+  const aviso = status === 'pendente' ? `${texto} — aguardando sua aprovação` : '';
+  return { status, badge, aviso };
+}
+
 function htmlDia(d) {
   const iso = isoDate(d);
   const dow = d.getDay();
@@ -456,29 +545,21 @@ function htmlDia(d) {
   const rotDia = `${DIAS_LONGO[dow]} ${d.getDate()}`;
 
   return turnos.map((t) => {
-    const n = vagasNoDia(t, dow);
-    const situacao = situacaoVagas(iso, t, dow);
-    const aplicaveis = situacao.filter((v) => !v.dispensada);
-    const cobertas = aplicaveis.filter((v) => v.coberta).length;
-    const htmlVagas = situacao.map((v, i) => htmlVaga(iso, t, i, v, ind, travado, rotDia)).join('');
-    const extras = vagasSalvas(iso, t.id).map((partes, i) => ({ partes, i })).slice(n).filter((x) => x.partes.length);
-    const htmlExtras = extras.length ? `<div class="extras">
-      <p>Acima das vagas cadastradas</p>
-      ${extras.map((x) => `<div class="extra"><span>${escapeHtml(x.partes.map((p) => p.nome).join(', '))}</span>
-        <button type="button" class="btn-texto" data-liberar="${iso}|${t.id}|${x.i}">Remover</button></div>`).join('')}
-    </div>` : '';
-    const cont = aplicaveis.length
-      ? `<span class="turno-cont ${cobertas >= aplicaveis.length ? 'completo' : 'incompleto'}">${cobertas}/${aplicaveis.length}</span>`
-      : n ? '<span class="turno-cont completo">Dispensado</span>' : '';
+    const info = contagemTurnoDia(iso, dow, t);
+    const { linhas } = info;
+    const { badge: cont, aviso, status } = htmlContTurno(info, turnoAprovado(iso, t.id));
 
-    return `<section class="turno faixa-${faixaDoDia(t.inicio)}">
+    const htmlVagas = linhas.map((x) => htmlVaga(iso, t, x.i, x.v, travado, rotDia, x.i >= info.n)).join('');
+
+    return `<section class="turno faixa-${faixaDoDia(t.inicio)}${status === 'pendente' ? ' turno-pendente' : ''}">
       <header class="turno-cab">
         <span class="turno-nome">${escapeHtml(t.nome)}</span>
         <span class="turno-hora">${t.inicio}–${t.fim}</span>
         ${cont}
       </header>
+      ${aviso ? `<p class="turno-aviso">${escapeHtml(aviso)}${status === 'pendente' && estado.souAdmin
+        ? ` <button type="button" class="btn-aprovar" data-aprovar="${iso}|${t.id}">Aprovar</button>` : ''}</p>` : ''}
       <div class="vagas">${htmlVagas}</div>
-      ${htmlExtras}
       ${htmlAusencias(iso, t, ind, travado, rotDia)}
     </section>`;
   }).join('');
@@ -527,167 +608,101 @@ function classesDia(base, iso, hoje, marcos, c) {
     .filter(Boolean).join(' ');
 }
 
+// Cartão compacto de um turno num dia, pro quadro-resumo da semana: número
+// grande (lançadas/necessárias), palavra de status e barrinha colorida.
+// Clicar abre o dia pra lançar/revisar de verdade.
+function htmlCartaoTurno(iso, info) {
+  const { status, texto } = situacaoTurno(info, turnoAprovado(iso, info.t.id));
+  const rotulo = `${info.t.nome}: ${texto || 'sem vagas configuradas'}`;
+  if (status === 'neutro' && !info.necessarias) {
+    return `<button type="button" class="cartao-turno neutro" data-abrir="${iso}" aria-label="${escapeHtml(rotulo)}">
+      <span class="ct-num">${info.lancadas || '—'}</span>
+      <span class="ct-texto">${escapeHtml(texto || 'sem vaga')}</span>
+    </button>`;
+  }
+  return `<button type="button" class="cartao-turno ${status}" data-abrir="${iso}" aria-label="${escapeHtml(rotulo)}">
+    <span class="ct-num">${info.lancadas}/${info.necessarias}</span>
+    <span class="ct-texto">${escapeHtml(texto)}</span>
+    <span class="ct-barra" aria-hidden="true"></span>
+  </button>`;
+}
+
 function renderSemana() {
   const { ini, fim } = faixaPeriodo();
   const hoje = hojeIso();
-  const tot = totalZerado();
+  const turnos = ordenaTurnos(turnosDoHub());
   const dias = Array.from({ length: 7 }, (_, i) => {
     const d = addDays(ini, i);
-    const iso = isoDate(d);
-    const c = contagemDia(d);
-    somar(tot, c, iso >= hoje);
-    return { d, iso, c, marcos: marcosDoDia(iso, estado.cfg.datasEspeciais) };
+    return { d, iso: isoDate(d), marcos: marcosDoDia(isoDate(d), estado.cfg.datasEspeciais) };
   });
+  const infos = dias.map(({ d, iso }) => turnos.map((t) => contagemTurnoDia(iso, d.getDay(), t)));
+
+  let necessarias = 0, lancadas = 0, pendentes = 0;
+  infos.forEach((linha, i) => linha.forEach((info) => {
+    necessarias += info.necessarias;
+    lancadas += Math.min(info.lancadas, info.necessarias || info.lancadas);
+    if (situacaoTurno(info, turnoAprovado(dias[i].iso, info.t.id)).status === 'pendente') pendentes++;
+  }));
+  const resumoPct = necessarias ? Math.round((lancadas / necessarias) * 100) : 100;
+  const pilPendentes = pendentes
+    ? ` <span class="pilula pilula-furo">${plural(pendentes, 'turno aguardando aprovação', 'turnos aguardando aprovação')}</span>` : '';
 
   if (TELA_COMPACTA.matches) {
     // Celular: faixa com os 7 dias e um dia aberto por vez
     if (!dias.some((x) => x.iso === estado.diaSel)) {
       estado.diaSel = dias.some((x) => x.iso === hoje) ? hoje : dias[0].iso;
     }
-    const faixa = dias.map(({ d, iso, c, marcos }) => {
+    const faixa = dias.map(({ d, iso, marcos }, i) => {
       const sel = iso === estado.diaSel;
-      const marca = !c.total ? '' : c.descobertas
-        ? `<span class="cd-marca furo">${c.descobertas}</span>`
-        : '<span class="cd-marca ok" aria-hidden="true">✓</span>';
-      const rot = [`${DIAS_LONGO[d.getDay()]} ${d.getDate()}`, marcos[0] ? marcos[0].nome : '',
-        c.total ? (c.descobertas ? plural(c.descobertas, 'vaga descoberta', 'vagas descobertas') : 'completo') : 'sem turnos']
-        .filter(Boolean).join(', ');
-      return `<button type="button" role="tab" class="${classesDia('chip-dia', iso, hoje, marcos, c)}${sel ? ' sel' : ''}"
-        data-dia="${iso}" aria-selected="${sel}" aria-label="${escapeHtml(rot)}">
+      const linha = infos[i];
+      const temPendente = linha.some((info) => situacaoTurno(info, turnoAprovado(iso, info.t.id)).status === 'pendente');
+      const marca = !linha.some((x) => x.necessarias) ? ''
+        : temPendente ? '<span class="cd-marca furo">!</span>' : '<span class="cd-marca ok" aria-hidden="true">✓</span>';
+      const cls = ['chip-dia', iso === hoje ? 'hoje' : '', iso < hoje ? 'passado' : '',
+        sel ? 'sel' : '', marcos.length ? `tem-${tipoPrincipal(marcos)}` : ''].filter(Boolean).join(' ');
+      return `<button type="button" role="tab" class="${cls}" data-dia="${iso}" aria-selected="${sel}">
         <span class="cd-sem">${iso === hoje ? 'Hoje' : DIAS_CURTO[d.getDay()]}</span>
         <span class="cd-num">${d.getDate()}</span>
         ${marca}
       </button>`;
     }).join('');
-    const x = dias.find((y) => y.iso === estado.diaSel);
+    const i = dias.findIndex((y) => y.iso === estado.diaSel);
+    const x = dias[i];
     el.quadro.className = 'quadro-dia';
     el.quadro.innerHTML = `<div class="faixa-dias" role="tablist" aria-label="Dias da semana">${faixa}</div>
-      <article class="${classesDia('dia dia-unico', x.iso, hoje, x.marcos, x.c)}">
+      <article class="dia dia-unico${x.iso === hoje ? ' hoje' : ''}">
         <header class="dia-cab">
           <h2 class="dia-titulo">${DIAS_LONGO[x.d.getDay()]}, ${x.d.getDate()} de ${MESES[x.d.getMonth()]}</h2>
-          ${x.c.total ? `<span class="dia-cont">${htmlContDia(x.c)}</span>` : ''}
         </header>
         ${htmlMarcos(x.marcos)}
-        ${x.c.total ? medidor(x.c) : ''}
-        <div class="dia-corpo">${htmlDia(x.d)}</div>
+        <div class="cartoes-turno-pilha">${infos[i].map((info) => htmlCartaoTurno(x.iso, info)).join('')}</div>
+        <button type="button" class="btn-primario btn-lancar" data-abrir="${x.iso}">Lançar escala deste dia</button>
       </article>`;
   } else {
-    renderPainelSemana(dias, hoje, tot);
+    el.quadro.className = 'quadro-semana-cartoes';
+    const cabecalho = `<div class="cs-linha cs-cab">
+      <span class="cs-rotulo" aria-hidden="true"></span>
+      ${dias.map(({ d, iso }) => `<button type="button" class="cs-dia-cab${iso === hoje ? ' hoje' : ''}" data-abrir="${iso}">
+        <span class="cs-dia-sem">${DIAS_CURTO[d.getDay()]}</span><span class="cs-dia-num">${d.getDate()}</span>
+      </button>`).join('')}
+    </div>`;
+    const linhas = turnos.map((t, ti) => `<div class="cs-linha">
+      <span class="cs-rotulo">
+        <span class="cs-rotulo-nome">${escapeHtml(t.nome)}</span>
+        <span class="cs-rotulo-hora">${t.inicio}–${t.fim}</span>
+      </span>
+      ${dias.map(({ iso }, di) => htmlCartaoTurno(iso, infos[di][ti])).join('')}
+    </div>`).join('');
+    el.quadro.innerHTML = turnos.length ? cabecalho + linhas : '<p class="dia-vazio">Sem turnos cadastrados neste hub</p>';
   }
   el.titulo.textContent = tituloSemana(ini, fim);
-  el.resumo.innerHTML = TELA_COMPACTA.matches ? htmlResumo(tot, hoje >= isoDate(ini) && hoje <= isoDate(fim)) : '';
+  el.resumo.innerHTML = `<span class="progresso"><span class="prog-barra" aria-hidden="true"><span style="width:${resumoPct}%"></span></span>
+    <span><strong>${resumoPct}%</strong> da escala da semana preenchida</span></span>
+    <span class="resumo-vagas">${lancadas} de ${necessarias} vagas necessárias cobertas</span>${pilPendentes}`;
 }
 
-
-// Semana no computador: barra de preenchimento no topo, grade turno × dia (cada card abre o dia para lançar)
-// e, na lateral, o saldo de furos. Só muda o layout: os dados e as regras são os mesmos.
-function celulaTurnoDia(d, t) {
-  const iso = isoDate(d), dow = d.getDay();
-  const n = vagasNoDia(t, dow);
-  const ap = situacaoVagas(iso, t, dow).filter((v) => !v.dispensada);
-  if (!n && !ap.length) return { vazio: true };
-  const total = ap.length, cob = ap.filter((v) => v.coberta).length;
-  return { total, cob, falta: total - cob, pct: total ? Math.round((cob / total) * 100) : 100, dispensado: !total };
-}
-
-function renderPainelSemana(dias, hoje, tot) {
-  const turnos = ordenaTurnos(turnosDoHub());
-  const hub = estado.cfg.hubs.find((h) => h.id === estado.hubId)?.nome || '';
-  const pct = tot.total ? Math.round((tot.cobertas / tot.total) * 100) : 0;
-  const buracos = [];
-  const colunas = dias.map(({ d, iso, c, marcos }) => {
-    const marca = marcos.length ? `<span class="ps-marco" title="${escapeHtml(marcos[0].nome)}"></span>` : '';
-    return `<button type="button" class="${classesDia('ps-dia', iso, hoje, marcos, c)}" data-abrir="${iso}"
-      aria-label="Abrir ${DIAS_LONGO[d.getDay()]} ${d.getDate()}">${DIAS_CURTO[d.getDay()]}<b>${d.getDate()}</b>${marca}</button>`;
-  }).join('');
-  const linhas = turnos.map((t) => {
-    const cels = dias.map(({ d, iso }) => {
-      const x = celulaTurnoDia(d, t);
-      if (x.vazio) return '<span class="ps-cel vazio" aria-hidden="true">–</span>';
-      const nivel = x.dispensado || !x.falta ? 'ok' : (x.pct >= 60 ? 'meio' : 'ruim');
-      if (x.falta && iso >= hoje) buracos.push({ iso, d, t, falta: x.falta });
-      const rot = `${DIAS_LONGO[d.getDay()]} ${d.getDate()}, ${t.nome}: ${x.cob} de ${x.total}`;
-      return `<button type="button" class="ps-cel ${nivel}${iso < hoje ? ' passado' : ''}${iso === hoje ? ' hoje' : ''}" data-abrir="${iso}" aria-label="${escapeHtml(rot)}">
-        <strong>${x.dispensado ? '—' : `${x.cob}/${x.total}`}</strong>
-        <small>${x.dispensado ? 'dispensado' : x.falta ? `faltam ${x.falta}` : 'completo'}</small>
-        <i><u style="width:${x.pct}%"></u></i></button>`;
-    }).join('');
-    return `<div class="ps-turno"><b>${escapeHtml(t.nome)}</b><small>${t.inicio}–${t.fim}</small></div>${cels}`;
-  }).join('');
-  el.quadro.className = 'quadro-painel';
-  el.quadro.innerHTML = !estado.escalasProntas ? '<p class="ps-ok">Carregando escala…</p>' : `
-    ${htmlTopoPainel(tot, pct, hub, 'semana')}
-    <div class="ps-corpo">
-      <div class="ps-grade" style="--cols:7">
-        <span></span>${colunas}
-        ${linhas}
-      </div>
-      ${htmlLateralPainel(tot, buracos)}
-    </div>`;
-}
-
-function htmlTopoPainel(tot, pct, hub, periodo) {
-  const pilulas = [
-    tot.faltas ? `<span class="pilula pilula-falta">${plural(tot.faltas, 'falta', 'faltas')}</span>` : '',
-    tot.pendentes ? `<span class="pilula pilula-pendente">${tot.pendentes} sem tipo confirmado</span>` : '',
-    ...['freelancer', 'intermitente'].filter((k) => tot[k]).map((k) => `<span class="pilula">${plural(tot[k], ...TIPOS[k].plural)}</span>`)
-  ].join('');
-  return `<div class="ps-topo">
-      <div class="ps-pct"><strong>${pct}%</strong><span>da escala ${periodo === 'mes' ? 'do mês' : 'da semana'} preenchida${hub ? ` · ${escapeHtml(hub)}` : ''}</span></div>
-      <div class="ps-barra ${pct >= 100 ? 'completo' : ''}" aria-hidden="true"><span style="width:${pct}%"></span></div>
-      <div class="ps-sub"><span>${tot.cobertas} de ${tot.total} vagas cobertas</span>${pilulas}</div>
-    </div>`;
-}
-
-function htmlLateralPainel(tot, buracos) {
-  buracos.sort((a, b) => a.iso.localeCompare(b.iso) || a.t.inicio.localeCompare(b.t.inicio));
-  const lista = buracos.length ? buracos.map((b) => `<button type="button" class="ps-furo" data-abrir="${b.iso}">
-      <span><b>${DIAS_CURTO[b.d.getDay()].toUpperCase()} ${b.d.getDate()} · ${escapeHtml(b.t.nome)}</b> — ${b.falta === 1 ? 'falta 1 pessoa' : `faltam ${b.falta} pessoas`}</span>
-      <small>${b.t.inicio}–${b.t.fim}</small></button>`).join('')
-    : '<p class="ps-ok">Nenhum furo daqui para frente.</p>';
-  return `<aside class="ps-lateral">
-        <small>SALDO DE FUROS</small>
-        <div class="ps-saldo ${tot.descobertas ? 'furo' : 'ok'}"><strong>${tot.descobertas}</strong><span>${tot.descobertas === 1 ? 'vaga descoberta' : 'vagas descobertas'}${tot.descobertas ? ' a partir de hoje' : ''}</span></div>
-        <h3>Falta cobrir</h3>
-        <div class="ps-lista">${lista}</div>
-      </aside>`;
-}
-
-// Quem está escalado em cada turno, para a visão mensal.
-// Vaga descoberta aparece em vermelho, na posição em que está.
-function htmlEscalados(d) {
-  const iso = isoDate(d);
-  const dow = d.getDay();
-  const turnos = ordenaTurnos(turnosDoHub().filter((t) => vagasNoDia(t, dow) > 0));
-  if (!turnos.length) return '';
-  const soUmTurno = turnos.length === 1;
-  return `<span class="nomes">${turnos.map((t) => {
-    const todas = situacaoVagas(iso, t, dow);
-    const vagas = todas.filter((v) => !v.dispensada);
-    const nomes = vagas.flatMap((v) => v.partes.filter((p) => p.nome && !p.faltou).map((p) => {
-      const tag = p.tipo && p.tipo !== 'fixo' ? `<span class="n-tag">${TIPOS[p.tipo].curto}</span>` : '';
-      const hora = v.dividida
-        ? `<span class="n-hora">${faixaCurta(p.inicio || t.inicio, p.fim || t.fim)}</span>` : '';
-      return `<span class="n-ok${tag ? ' avulso' : ''}">${hora}${escapeHtml(p.nome)}${tag}</span>`;
-    })).join('');
-    const dispensas = todas.filter((v) => v.dispensada)
-      .map((v) => `<span class="n-dispensa">Folga ${escapeHtml(v.dispensada)}</span>`).join('');
-    const furos = vagas.filter((v) => !v.coberta).length;
-    const buracos = vagas.filter((v) => !v.coberta).flatMap((v) => v.buracos);
-    const cobertas = vagas.length - furos;
-    const fracao = vagas.length ? `${cobertas}/${vagas.length}` : 'Dispensado';
-    return `<span class="nomes-turno faixa-${faixaDoDia(t.inicio)}">
-      ${soUmTurno ? '' : `<span class="nt-rot"><span class="nt-nome">${escapeHtml(t.nome)}</span>
-        <span class="nt-cont ${furos ? 'incompleto' : 'completo'}">${fracao}</span></span>`}
-      <span class="nt-lista">${nomes}${dispensas}${furos ? `<span class="n-furo">${
-        buracos.length && buracos.length <= 2 && vagas.some((v) => v.dividida)
-          ? `Falta ${buracos.map(([a, b]) => faixaCurta(hhmm(a), hhmm(b))).join(' e ')}`
-          : plural(furos, 'descoberta', 'descobertas')}</span>` : ''}</span>
-    </span>`;
-  }).join('')}</span>`;
-}
-
-// Versão compacta para o celular: um quadradinho por vaga, agrupado por turno
+// Resumo visual por vaga, agrupado por turno: um quadradinho por vaga.
+// Os nomes e detalhes ficam só ao abrir o dia — o quadradinho do mês é só o resumo.
 function htmlPontos(d) {
   const iso = isoDate(d);
   const dow = d.getDay();
@@ -702,7 +717,6 @@ function renderMes() {
   const { ini, fim, primeiro } = faixaPeriodo();
   const hoje = hojeIso();
   const tot = totalZerado();
-  if (!TELA_COMPACTA.matches) return renderPainelMes(ini, fim, primeiro, hoje, tot);
   let celulas = '';
   for (let d = ini; d <= fim; d = addDays(d, 1)) {
     if (d.getMonth() !== primeiro.getMonth()) { celulas += '<div class="cel fora" aria-hidden="true"></div>'; continue; }
@@ -722,7 +736,6 @@ function renderMes() {
           : c.total ? '<span class="cel-ok" aria-hidden="true">Completo</span>' : ''}
       </span>
       ${marcos.length ? `<span class="cel-marco">${escapeHtml(marcos[0].nome)}</span>` : ''}
-      ${htmlEscalados(d)}
       ${htmlPontos(d)}
     </button>`;
   }
@@ -730,7 +743,7 @@ function renderMes() {
   el.quadro.innerHTML = `<div class="mes-sem" aria-hidden="true">${DIAS_CURTO.map((x) => `<span>${x}</span>`).join('')}</div>
     <div class="mes-grade">${celulas}</div>
     <p class="mes-legenda">
-      <span class="leg-nomes">Freelancers e intermitentes aparecem com etiqueta ao lado do nome. Toque num dia para lançar a escala.</span>
+      <span>Toque num dia para ver quem está escalado.</span>
       <span class="leg-pontos"><i class="p-ok"></i> Vaga coberta <i class="p-furo"></i> Vaga descoberta</span>
     </p>`;
   el.titulo.textContent = `${capitalizar(MESES[primeiro.getMonth()])} de ${primeiro.getFullYear()}`;
@@ -738,58 +751,15 @@ function renderMes() {
   el.resumo.innerHTML = htmlResumo(tot, mesAtual);
 }
 
-
-// Mês no computador: mesmo painel da semana (barra, calendário de cards e saldo de furos na lateral)
-function renderPainelMes(ini, fim, primeiro, hoje, tot) {
-  const turnos = ordenaTurnos(turnosDoHub());
-  const hub = estado.cfg.hubs.find((h) => h.id === estado.hubId)?.nome || '';
-  const buracos = [];
-  let celulas = '';
-  for (let d = ini; d <= fim; d = addDays(d, 1)) {
-    if (d.getMonth() !== primeiro.getMonth()) { celulas += '<span class="pm-cel fora" aria-hidden="true"></span>'; continue; }
-    const iso = isoDate(d);
-    const c = contagemDia(d);
-    somar(tot, c, iso >= hoje);
-    const marcos = marcosDoDia(iso, estado.cfg.datasEspeciais);
-    const linhas = [];
-    for (const t of turnos) {
-      const x = celulaTurnoDia(d, t);
-      if (x.vazio || x.dispensado) continue;
-      if (x.falta && iso >= hoje) buracos.push({ iso, d, t, falta: x.falta });
-      linhas.push(`<span class="pm-t${x.falta ? ' falta' : ''}"><em>${escapeHtml(t.nome)}</em><b>${x.cob}/${x.total}</b></span>`);
-    }
-    const pct = c.total ? Math.round((c.cobertas / c.total) * 100) : 0;
-    const nivel = !c.total ? 'vazio' : !c.descobertas ? 'ok' : (pct >= 60 ? 'meio' : 'ruim');
-    const rot = [`${DIAS_LONGO[d.getDay()]}, ${d.getDate()}`, ...marcos.map((m) => `${ROTULO_TIPO[m.tipo]}: ${m.nome}`),
-      c.total ? `${c.cobertas} de ${c.total} vagas cobertas` : 'sem turnos',
-      c.descobertas ? plural(c.descobertas, 'vaga descoberta', 'vagas descobertas') : '',
-      c.faltas ? plural(c.faltas, 'falta', 'faltas') : ''].filter(Boolean).join('. ');
-    celulas += `<button type="button" class="pm-cel ${nivel}${iso < hoje ? ' passado' : ''}${iso === hoje ? ' hoje' : ''}" data-abrir="${iso}" aria-label="${escapeHtml(rot)}">
-      <span class="pm-topo"><b>${d.getDate()}</b>${c.total ? `<strong>${c.cobertas}/${c.total}</strong>` : ''}</span>
-      ${marcos.length ? `<span class="pm-marco">${escapeHtml(marcos[0].nome)}</span>` : ''}
-      ${c.total ? `<span class="pm-linhas">${linhas.join('')}</span><i><u style="width:${pct}%"></u></i>` : ''}
-    </button>`;
-  }
-  const pct = tot.total ? Math.round((tot.cobertas / tot.total) * 100) : 0;
-  el.quadro.className = 'quadro-painel';
-  el.quadro.innerHTML = !estado.escalasProntas ? '<p class="ps-ok">Carregando escala…</p>' : `
-    ${htmlTopoPainel(tot, pct, hub, 'mes')}
-    <div class="ps-corpo">
-      <div class="pm-grade-wrap">
-        <div class="pm-sem" aria-hidden="true">${DIAS_CURTO.map((x) => `<span>${x}</span>`).join('')}</div>
-        <div class="pm-grade">${celulas}</div>
-      </div>
-      ${htmlLateralPainel(tot, buracos)}
-    </div>`;
-  el.titulo.textContent = `${capitalizar(MESES[primeiro.getMonth()])} de ${primeiro.getFullYear()}`;
-  el.resumo.innerHTML = '';
-}
-
 // ================= dia aberto (visão mensal) =================
 function abrirDia(iso) {
   estado.diaAberto = iso;
   renderDialogo();
   if (!el.dlg.open) el.dlg.showModal();
+  // <dialog> em modo modal fica numa camada acima de tudo que não está
+  // dentro dele — o aviso de "Salvando…"/erro ficava escondido atrás da
+  // janela. Movendo o próprio elemento pra dentro do diálogo, ele aparece.
+  el.dlg.appendChild(el.status);
 }
 
 function renderDialogo() {
@@ -843,6 +813,11 @@ function alterarParte(iso, turnoId, idx, pi, mudanca, msgOk) {
   while (partes.length <= pi) partes.push({ nome: '', tipo: '', inicio: '', fim: '' });
   partes[pi] = { ...partes[pi], ...mudanca };
   return gravarPartes(iso, turnoId, idx, partes, msgOk);
+}
+
+// Esvazia a vaga (tira a pessoa daquele card, libera o horário de novo)
+function excluirVaga(iso, turnoId, idx, pi) {
+  alterarParte(iso, turnoId, idx, pi, { nome: '', tipo: '', inicio: '', fim: '' }, 'Vaga removida');
 }
 
 // ---- cadastro de colaboradores: só quem está cadastrado e com telefone (✅) pode ser lançado ----
@@ -963,9 +938,8 @@ async function salvarNome(input) {
       return;
     }
   }
-  // Pessoa nova no horário: o tipo precisa ser confirmado de novo
   alterarParte(iso, turnoId, Number(idx), Number(pi), { nome, tipo: '' },
-    nome ? 'Salvo. Confirme o tipo de contrato.' : 'Horário liberado');
+    nome ? 'Salvo' : 'Horário liberado');
 }
 
 function salvarHora(input) {
@@ -988,44 +962,6 @@ function salvarHora(input) {
     if (ant && (ant.fim || turno.fim) === antes) ant.fim = novo;
   }
   gravarPartes(iso, turnoId, Number(idx), partes, 'Horário salvo');
-}
-
-// Divide a vaga em dois trechos. Quem já estava fica no primeiro.
-function dividirVaga(iso, turnoId, idx) {
-  const turno = turnoPorId(turnoId);
-  const partes = partesAtuais(iso, turnoId, idx);
-  const [a, b] = pedacos(turno, 2);
-  const novas = [
-    { ...(partes[0] || { nome: '', tipo: '' }), inicio: a[0], fim: a[1] },
-    { nome: '', tipo: '', inicio: b[0], fim: b[1] }
-  ];
-  for (const extra of partes.slice(1)) novas.push({ ...extra, inicio: extra.inicio || b[0], fim: extra.fim || b[1] });
-  gravarPartes(iso, turnoId, idx, novas, 'Vaga dividida. Ajuste os horários e preencha os nomes.');
-}
-
-// Acrescenta uma pessoa começando no primeiro buraco que existir
-function adicionarParte(iso, turnoId, idx) {
-  const turno = turnoPorId(turnoId);
-  const partes = partesAtuais(iso, turnoId, idx);
-  const faltas = new Set(listaDoTurno(iso, 'faltas', turnoId).map(normalizaNome));
-  const { buracos } = cobertura(turno, partes, (n) => faltas.has(normalizaNome(n)));
-  const [ini, fim] = buracos[0] || [toMin(turno.inicio), toMin(turno.fim)];
-  partes.push({ nome: '', tipo: '', inicio: hhmm(ini), fim: hhmm(fim) });
-  gravarPartes(iso, turnoId, idx, partes, 'Horário adicionado');
-}
-
-function tirarParte(iso, turnoId, idx, pi) {
-  const partes = partesAtuais(iso, turnoId, idx);
-  partes.splice(pi, 1);
-  // Sobrando uma pessoa no turno inteiro, a vaga volta ao formato simples
-  if (partes.length === 1) {
-    const turno = turnoPorId(turnoId);
-    const p = partes[0];
-    if ((p.inicio || turno.inicio) === turno.inicio && (p.fim || turno.fim) === turno.fim) {
-      partes[0] = { nome: p.nome, tipo: p.tipo, inicio: '', fim: '' };
-    }
-  }
-  gravarPartes(iso, turnoId, idx, partes, 'Horário removido');
 }
 
 // Nome como já está gravado na lista (para retirar exatamente o mesmo texto)
@@ -1085,7 +1021,53 @@ $('#btnHoje').addEventListener('click', () => {
 TELA_COMPACTA.addEventListener('change', () => render());
 
 $('#dlgFechar').addEventListener('click', () => el.dlg.close());
-el.dlg.addEventListener('close', () => { estado.diaAberto = null; });
+el.dlg.addEventListener('close', () => { estado.diaAberto = null; document.body.appendChild(el.status); });
+
+// ================= login da administradora (pra aprovar lançamentos aqui mesmo) =================
+function mensagemLoginAdmin(codigo) {
+  switch (codigo) {
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/invalid-login-credentials': return 'Senha incorreta.';
+    case 'auth/too-many-requests': return 'Muitas tentativas seguidas. Aguarde alguns minutos e tente de novo.';
+    case 'auth/network-request-failed': return 'Sem conexão com a internet.';
+    default: return `Não foi possível entrar (${codigo || 'erro desconhecido'}).`;
+  }
+}
+
+if (configuracaoPronta()) {
+  aoMudarLogin((usuario) => {
+    estado.souAdmin = Boolean(usuario);
+    estado.emailAdmin = usuario?.email || '';
+    el.btnAdmin.textContent = estado.souAdmin ? 'Sair (admin)' : 'Entrar como admin';
+    render();
+  });
+}
+
+el.btnAdmin.addEventListener('click', () => {
+  if (estado.souAdmin) { sair(); return; }
+  el.erroAdmin.textContent = '';
+  el.senhaAdmin.value = '';
+  el.dlgAdmin.showModal();
+  el.senhaAdmin.focus();
+});
+$('#dlgAdminFechar').addEventListener('click', () => el.dlgAdmin.close());
+el.dlgAdmin.addEventListener('click', (e) => { if (e.target === el.dlgAdmin) el.dlgAdmin.close(); });
+el.formAdmin.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  el.erroAdmin.textContent = '';
+  const btn = el.formAdmin.querySelector('button');
+  btn.disabled = true;
+  try {
+    await entrar(el.senhaAdmin.value);
+    el.senhaAdmin.value = '';
+    el.dlgAdmin.close();
+  } catch (err) {
+    el.erroAdmin.textContent = mensagemLoginAdmin(err?.code);
+  } finally {
+    btn.disabled = false;
+  }
+});
 el.dlg.addEventListener('click', (e) => { if (e.target === el.dlg) el.dlg.close(); });
 
 document.addEventListener('change', (e) => {
@@ -1114,41 +1096,25 @@ document.addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
   const ds = b.dataset;
-  if (ds.tipoVaga) {
-    const [iso, turnoId, idx, pi] = ds.tipoVaga.split('|');
-    alterarParte(iso, turnoId, Number(idx), Number(pi), { tipo: ds.valor }, `Marcado como ${TIPOS[ds.valor].plural[0]}`);
-  } else if (ds.dividir) {
-    const [iso, turnoId, idx] = ds.dividir.split('|');
-    dividirVaga(iso, turnoId, Number(idx));
-  } else if (ds.addParte) {
-    const [iso, turnoId, idx] = ds.addParte.split('|');
-    adicionarParte(iso, turnoId, Number(idx));
-  } else if (ds.tirarParte) {
-    const [iso, turnoId, idx, pi] = ds.tirarParte.split('|');
-    tirarParte(iso, turnoId, Number(idx), Number(pi));
-  } else if (ds.confirmou) {
-    const [iso, turnoId] = ds.confirmou.split('|');
-    const jaConfirmado = b.getAttribute('aria-pressed') === 'true';
-    gravar(() => alternarConfirmacao(estado.hubId, iso, turnoId, ds.nome, !jaConfirmado, nomeSupervisor()),
-      jaConfirmado ? 'Confirmação retirada' : `Horário confirmado com ${ds.nome}`);
-  } else if (ds.compareceu) {
-    const [iso, turnoId, valor] = ds.compareceu.split('|');
-    const jaMarcado = b.getAttribute('aria-pressed') === 'true';
-    if (jaMarcado) {
-      gravar(() => removerComparecimento(estado.hubId, iso, turnoId, ds.nome, nomeSupervisor()), 'Marcação retirada');
-    } else {
-      gravar(() => marcarComparecimento(estado.hubId, iso, turnoId, ds.nome, valor, nomeSupervisor()),
-        valor === 'sim' ? `${ds.nome} marcado como presente` : `${ds.nome} marcado como ausente`);
-    }
+  if (ds.editar) {
+    estado.editandoParte = ds.editar;
+    render();
+    document.querySelector(`[data-foco="v|${CSS.escape(ds.editar)}"]`)?.focus();
+  } else if (ds.concluir) {
+    estado.editandoParte = null;
+    render();
+  } else if (ds.excluir) {
+    const [iso, turnoId, idx, pi] = ds.excluir.split('|');
+    excluirVaga(iso, turnoId, Number(idx), Number(pi));
+  } else if (ds.aprovar) {
+    const [iso, turnoId] = ds.aprovar.split('|');
+    gravar(() => aprovarLancamento(estado.hubId, iso, turnoId, estado.emailAdmin || 'admin'), 'Lançamento aprovado');
   } else if (ds.lancar) {
     lancar(b.closest('.aus-add').querySelector('[data-aus]'), ds.lancar);
   } else if (ds.removerAus) {
     const [campo, iso, turnoId] = ds.removerAus.split('|');
     gravar(() => removerAusencia(estado.hubId, iso, turnoId, ds.nome, campo, nomeSupervisor()),
       campo === 'folgas' ? 'Folga retirada' : 'Falta retirada');
-  } else if (ds.liberar) {
-    const [iso, turnoId, idx] = ds.liberar.split('|');
-    gravarPartes(iso, turnoId, Number(idx), [], 'Removido');
   } else if (ds.dia) {
     estado.diaSel = ds.dia;
     render();

@@ -255,20 +255,54 @@ select:focus-visible {
 .pilula-furo { background: var(--furo); border-color: var(--furo); color: var(--texto-contraste); font-weight: 700; }
 .pilula-falta { background: var(--furo-fundo); border-color: var(--furo); color: var(--furo-texto); font-weight: 650; }
 .pilula-pendente { border-style: dashed; border-color: var(--grafite); }
+.pilula-aprovada { background: var(--acento); border-color: var(--acento); color: var(--texto-contraste); font-weight: 700; }
 
 .alternador { display: inline-flex; border: 1px solid var(--linha-forte); border-radius: var(--raio-p); overflow: hidden; }
 .alternador button { border: 0; background: var(--superficie); padding: 8px 16px; min-height: 38px; }
 .alternador button + button { border-left: 1px solid var(--linha-forte); }
 .alternador button[aria-pressed="true"] { background: var(--acento); color: var(--texto-contraste); }
 
-/* ---------- semana (computador): 7 colunas que cabem na largura da tela ---------- */
-.quadro-semana {
+/* ---------- semana (computador): grade de cartões, clique abre o dia ---------- */
+.quadro-semana-cartoes {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: 108px repeat(7, minmax(0, 1fr));
+  gap: 6px;
   background: var(--superficie);
   border: 1px solid var(--linha);
   border-radius: var(--raio-m);
+  padding: 10px;
 }
+.cs-linha { display: contents; }
+.cs-rotulo { display: flex; flex-direction: column; justify-content: center; padding: 6px 4px; min-width: 0; }
+.cs-rotulo-nome { font-weight: 700; font-size: 13px; }
+.cs-rotulo-hora { color: var(--grafite); font-size: 11px; }
+.cs-dia-cab {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px;
+  border: 0; background: transparent; border-radius: var(--raio-p); cursor: pointer;
+}
+.cs-dia-cab.hoje { background: rgba(186, 242, 106, .12); }
+.cs-dia-sem { color: var(--grafite); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+.cs-dia-num { font-weight: 800; font-size: 18px; }
+
+.cartao-turno {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  border: 1px solid var(--linha); border-radius: var(--raio-p); background: var(--papel);
+  padding: 10px 4px 9px; min-height: 64px; position: relative; overflow: hidden; cursor: pointer;
+}
+.ct-num { font-weight: 800; font-size: 20px; line-height: 1; }
+.ct-texto { font-size: 10.5px; color: var(--grafite); text-align: center; }
+.ct-barra { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: var(--grafite); opacity: .25; }
+.cartao-turno.completo .ct-num { color: var(--ok); }
+.cartao-turno.completo .ct-barra { background: var(--ok); opacity: 1; }
+.cartao-turno.pendente { border-color: var(--furo); }
+.cartao-turno.pendente .ct-num, .cartao-turno.pendente .ct-texto { color: var(--furo-texto); }
+.cartao-turno.pendente .ct-barra { background: var(--furo); opacity: 1; }
+.cartao-turno.neutro .ct-num { color: var(--grafite); font-size: 15px; }
+
+/* ---------- semana (celular): pilha de cartões do dia selecionado ---------- */
+.cartoes-turno-pilha { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.cartoes-turno-pilha .cartao-turno { flex: 1 1 100px; min-width: 100px; }
+.btn-lancar { width: 100%; margin-top: 4px; }
 .dia { border-right: 1px solid var(--linha); min-width: 0; display: flex; flex-direction: column; }
 .dia:last-child { border-right: 0; }
 
@@ -319,7 +353,22 @@ select:focus-visible {
 .turno-hora { color: var(--grafite); font-size: 12px; }
 .turno-cont { margin-left: auto; font-size: 12.5px; font-weight: 750; }
 .turno-cont.completo { color: var(--ok); }
-.turno-cont.incompleto { color: var(--furo); }
+.turno-cont.pendente { color: var(--furo); }
+
+/* Aviso de quantidade (sem travar nada, só um alerta até Ví aprovar) */
+.turno-aviso { margin: -2px 0 4px; font-size: 12px; font-weight: 600; color: var(--furo-texto); }
+.btn-aprovar {
+  display: inline-flex; align-items: center; margin-left: 4px; padding: 3px 13px; min-height: 25px;
+  border-radius: 999px; border: 1px solid rgba(186, 242, 106, .45);
+  background: rgba(186, 242, 106, .14);
+  backdrop-filter: blur(10px) saturate(160%); -webkit-backdrop-filter: blur(10px) saturate(160%);
+  color: var(--acento); font-size: 12px; font-weight: 700;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06);
+  transition: background .15s, border-color .15s, transform .08s;
+}
+.btn-aprovar:hover { background: rgba(186, 242, 106, .26); border-color: var(--acento); }
+.btn-aprovar:active { transform: scale(.95); }
+.turno.turno-pendente { border-color: var(--furo); }
 
 /* ---------- vagas ----------
    Cada vaga vira um cartão com borda e fundo próprios — assim, numa coluna
@@ -333,99 +382,36 @@ select:focus-visible {
 }
 .vaga.descoberta { border-color: var(--furo); background: var(--furo-fundo); }
 .passado .vaga.descoberta { border-style: dashed; }
-.vaga.dividida {
-  padding: 6px; border-radius: var(--raio-m);
-  background: var(--papel); border: 1px solid var(--linha);
-}
-.vaga.dividida.descoberta { border-color: var(--furo); background: var(--furo-fundo); }
 
-.parte { display: flex; flex-direction: column; gap: 4px; position: relative; }
-.vaga.dividida .parte + .parte { padding-top: 7px; border-top: 1px dashed var(--linha-forte); }
-/* Tudo certo com a pessoa (confirmou horário e compareceu): friso verde discreto */
-.parte.ok { box-shadow: inset 3px 0 0 var(--ok); padding-left: 6px; }
-.parte.faltou { box-shadow: inset 3px 0 0 var(--furo); padding-left: 6px; }
+/* Linha enxuta: "Nome 08:00 às 17:00" + lápis pra editar. */
+.linha-vaga { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.linha-vaga + .linha-vaga { margin-top: 5px; padding-top: 5px; border-top: 1px dashed var(--linha-forte); }
+.lv-texto { flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 600; }
+.lv-hora { margin-left: 4px; font-size: 12.5px; font-weight: 500; color: var(--grafite); font-variant-numeric: tabular-nums; }
+.linha-vaga .btn-icone { width: 30px; height: 30px; font-size: 15px; flex: none; }
+.linha-vaga .btn-icone.perigo { color: var(--alerta); }
+.linha-vaga .btn-icone.perigo:hover { border-color: var(--alerta); background: var(--furo-fundo); }
+.vaga.descoberta .lv-texto { color: var(--furo-texto); }
+.linha-vaga.vazia .lv-texto { color: var(--grafite); font-weight: 500; font-style: italic; }
+.linha-vaga.faltou .lv-texto { text-decoration: line-through; color: var(--furo-texto); }
+
+.linha-vaga.editando { flex-direction: column; align-items: stretch; gap: 6px; }
 .parte-nome { display: flex; align-items: center; gap: 3px; }
 .parte-nome input[type=text] {
   flex: 1 1 auto; min-width: 0; min-height: 36px; padding: 6px 8px; font-size: 13.5px;
   border-radius: var(--raio-p); border: 1px solid var(--linha-forte);
 }
-.btn-tirar {
-  flex: none; width: 28px; height: 28px; border: 0; border-radius: 50%;
-  background: none; color: var(--grafite); font-size: 16px; line-height: 1;
-}
-.btn-tirar:hover { background: var(--linha); color: var(--tinta); }
-
-/* Horário descoberto: vermelho forte, é o que o supervisor precisa ver primeiro */
-.vaga.descoberta .parte-nome input[type=text] {
-  background-color: var(--furo-fundo); border: 2px solid var(--furo); color: var(--furo-texto); font-weight: 700;
-}
-.passado .vaga.descoberta .parte-nome input[type=text] { border-width: 1px; border-style: dashed; font-weight: 500; }
-.vaga.ocupada .parte-nome input[type=text] { border: 1px solid var(--linha-forte); background-color: var(--superficie); font-weight: 600; }
-/* Dentro de uma vaga dividida, cada pessoa tem o seu próprio estado */
-.vaga.dividida .parte-nome input[type=text] { border: 1px solid var(--linha-forte); background-color: var(--superficie); font-weight: 600; }
-.vaga.dividida .parte-nome input[type=text].vazio {
-  background-color: var(--furo-fundo); border: 2px solid var(--furo); color: var(--furo-texto); font-weight: 500;
-}
-
-/* Quem faltou: nome riscado e horário de volta para a fila */
-.parte.faltou .parte-nome input[type=text] {
-  background-color: var(--furo-fundo); border: 2px solid var(--furo);
-  color: var(--furo-texto); text-decoration: line-through; font-weight: 600;
-}
 .vaga-furo { margin: 0; font-size: 12px; font-weight: 700; color: var(--furo-texto); }
-.vaga-buraco {
-  margin: 0; padding: 3px 7px; border-radius: var(--raio-p);
-  background: var(--furo); color: var(--texto-contraste); font-size: 12px; font-weight: 700;
-}
-.passado .vaga-buraco { background: var(--furo-fundo); color: var(--furo-texto); }
 
-.horas { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.horas { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .hora { display: flex; align-items: center; gap: 4px; flex: 1 1 120px; min-width: 0; }
 .hora > span { flex: none; color: var(--grafite); font-size: 11.5px; }
 .hora input[type=time], .hora input.campo-hora {
   flex: 1 1 auto; min-width: 0; min-height: 32px; padding: 4px 2px 4px 5px; font-size: 12.5px;
   text-align: center; font-variant-numeric: tabular-nums; letter-spacing: .5px;
 }
-/* Nas colunas da semana o espaço é curto: entra e sai ficam um sobre o outro */
-.quadro-semana .horas { flex-direction: column; gap: 4px; }
-.quadro-semana .hora { flex: none; }
-.quadro-semana .hora > span { width: 32px; }
 
-.btn-dividir {
-  align-self: flex-start; padding: 3px 9px; min-height: 28px;
-  background: none; border: 1px dashed var(--linha-forte); border-radius: var(--raio-p);
-  color: var(--grafite); font-size: 12px; font-weight: 600;
-}
-.btn-dividir:hover { border-color: var(--tinta); border-style: solid; color: var(--tinta); }
-.vaga.ocupada:not(.dividida) .btn-dividir, .passado .btn-dividir { opacity: .55; }
-.vaga.ocupada:not(.dividida) .btn-dividir:hover { opacity: 1; }
-
-.vaga.conflito .parte-nome input[type=text] { box-shadow: inset 4px 0 0 var(--conflito); border-color: var(--conflito); }
 .vaga-alerta { margin: 0; font-size: 12px; line-height: 1.3; color: var(--conflito); font-weight: 600; }
-
-.tipo { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; }
-.tipo-pergunta { flex-basis: 100%; font-size: 10.5px; font-weight: 700; color: var(--grafite); text-transform: uppercase; letter-spacing: .03em; }
-.tipo button {
-  flex: 1 1 0; min-width: 0; min-height: 24px; padding: 2px 3px; font-size: 11.5px;
-  border: 1px solid var(--linha-forte); background: var(--superficie); border-radius: var(--raio-p);
-}
-.tipo button:hover { border-color: var(--tinta); }
-.tipo button[aria-pressed="true"] { background: var(--acento); border-color: var(--acento); color: var(--texto-contraste); font-weight: 650; }
-
-/* Confirmou numa linha, Compareceu/Faltou na linha debaixo — menos altura
-   que antes (texto mais curto), mas sem espremer as palavras a ponto de
-   cortar o texto */
-.presenca { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
-.presenca button {
-  flex: 1 1 0; min-width: 0; min-height: 25px; padding: 2px 4px; font-size: 11.5px; font-weight: 650;
-  border: 1px solid var(--linha-forte); background: var(--superficie); border-radius: var(--raio-p);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.presenca button:hover { border-color: var(--tinta); }
-.presenca button.btn-confirmou { flex-basis: 100%; }
-.btn-confirmou[aria-pressed="true"] { background: var(--ok); border-color: var(--ok); color: var(--texto-contraste); }
-.btn-compareceu.sim[aria-pressed="true"] { background: var(--ok); border-color: var(--ok); color: var(--texto-contraste); }
-.btn-compareceu.nao[aria-pressed="true"] { background: var(--furo); border-color: var(--furo); color: var(--texto-contraste); }
 
 .vaga.dispensada { gap: 4px; }
 .vaga-dispensa {
@@ -441,9 +427,13 @@ select:focus-visible {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.extras { margin-top: 6px; font-size: 13px; }
-.extras p { margin: 0 0 2px; color: var(--conflito); font-size: 12px; }
-.extra { display: flex; justify-content: space-between; gap: 6px; align-items: center; }
+/* Vaga extra (além da quantidade configurada): mesmo cartão, só com um
+   contorno pontilhado pra avisar que é gente lançada por cima do combinado. */
+.vaga.extra-nova { border-style: dashed; }
+.vaga.extra-nova.descoberta { border-color: var(--linha-forte); background: var(--superficie); }
+.vaga.extra-nova.descoberta .parte-nome input[type=text] {
+  background-color: var(--superficie); border: 1px dashed var(--linha-forte); color: inherit; font-weight: 500;
+}
 
 /* ---------- folgas e faltas ---------- */
 .ausencias { margin-top: 8px; padding-top: 8px; border-top: 1px dotted var(--linha-forte); }
@@ -518,38 +508,8 @@ button.cel:hover { background: rgba(255, 255, 255, .05); }
 .cel-cont { font-size: 11.5px; color: var(--grafite); }
 .cel.com-furo:not(.passado) .cel-cont { color: var(--furo-texto); font-weight: 700; }
 
-/* Nomes de quem está escalado (visão mensal) */
-.nomes { display: flex; flex-direction: column; gap: 7px; margin-top: 2px; min-width: 0; }
-.nomes-turno {
-  display: flex; flex-direction: column; gap: 1px; min-width: 0;
-  padding-left: 6px; border-left: 3px solid var(--faixa-forte);
-}
-.nt-rot { display: flex; align-items: baseline; gap: 4px; min-width: 0; font-size: 10.5px; line-height: 1.2; }
-.nt-nome { font-weight: 800; color: var(--grafite); text-transform: uppercase; letter-spacing: .03em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nt-cont { flex: none; font-weight: 800; }
-.nt-cont.completo { color: var(--ok); }
-.nt-cont.incompleto { color: var(--furo); }
-.nt-lista { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.nt-lista > span {
-  font-size: 12px; line-height: 1.3;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.n-ok { font-weight: 600; }
-.n-ok.avulso { color: var(--grafite); font-weight: 500; }
-.n-hora { margin-right: 4px; color: var(--grafite); font-size: 10.5px; font-weight: 700; }
-.n-tag {
-  margin-left: 4px; padding: 0 4px; border-radius: 3px;
-  background: var(--papel); border: 1px solid var(--linha);
-  font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em;
-}
-.n-furo { color: var(--furo); font-weight: 700; }
-.cel.passado .n-ok { color: var(--grafite); font-weight: 500; }
-.cel.passado .n-hora { margin-right: 4px; color: var(--grafite); font-size: 10.5px; font-weight: 700; }
-.n-tag { opacity: .7; }
-.cel.passado .n-furo { color: var(--furo-texto); font-weight: 600; }
-
-/* Um quadradinho por vaga (usado no celular) */
-.pontos { display: none; flex-wrap: wrap; gap: 4px 6px; margin-top: auto; }
+/* Um quadradinho por vaga: resumo visual do dia, sem nomes (abra o dia pra ver quem está escalado) */
+.pontos { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: auto; }
 .pontos-turno { display: flex; flex-wrap: wrap; gap: 2px; }
 .pontos i, .mes-legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
 .p-ok { background: var(--ok); }
@@ -561,11 +521,6 @@ button.cel:hover { background: rgba(255, 255, 255, .05); }
   font-size: 12.5px; color: var(--grafite); border-top: 1px solid var(--linha);
 }
 .mes-legenda i { margin-left: 8px; }
-.leg-pontos { display: none; }
-@media (max-width: 760px) {
-  .leg-nomes { display: none; }
-  .leg-pontos { display: inline; }
-}
 
 /* ---------- dia aberto (janela) ---------- */
 .dlg-dia {
@@ -575,6 +530,14 @@ button.cel:hover { background: rgba(255, 255, 255, .05); }
   box-shadow: 0 20px 50px rgba(0, 0, 0, .5);
 }
 .dlg-dia::backdrop { background: rgba(5, 8, 18, .7); }
+.dlg-admin {
+  border: 0; padding: 0; border-radius: var(--raio-m);
+  width: min(360px, calc(100vw - 20px));
+  background: var(--superficie2); color: var(--tinta);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .5);
+}
+.dlg-admin::backdrop { background: rgba(5, 8, 18, .7); }
+.dlg-admin .dlg-corpo p { margin: 0; font-size: 13px; color: var(--grafite); }
 .dlg-cab {
   position: sticky; top: 0; z-index: 1;
   display: flex; justify-content: space-between; align-items: center; gap: 12px;
@@ -677,8 +640,7 @@ button.cel:hover { background: rgba(255, 255, 255, .05); }
   .cel-furo { min-width: 18px; height: 18px; padding: 0 4px; font-size: 11px; }
   .cel-ok { width: 18px; height: 18px; padding: 0; font-size: 0; background: var(--ok-fundo); }
   .cel-ok::after { content: "✓"; font-size: 12px; font-weight: 800; }
-  .cel-marco, .nomes { display: none; }
-  .pontos { display: flex; }
+  .cel-marco { display: none; }
   .cel.tem-feriado .cel-num, .cel.tem-facultativo .cel-num { color: var(--feriado); }
   .pontos { gap: 2px 3px; }
   .pontos i { width: 6px; height: 6px; border-radius: 1px; }
@@ -907,6 +869,24 @@ button.cel:hover { background: rgba(255, 255, 255, .05); }
 .barra-periodo .barra-dir { display: flex; align-items: center; gap: 12px; }
 .barra-periodo .alternador button { padding: 6px 14px; min-height: 34px; font-size: 13.5px; }
 
+.validacao-semana {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  margin-bottom: 16px; padding: 10px 14px; border-radius: var(--raio-m);
+  background: var(--papel); border: 1px solid var(--linha-forte);
+}
+.validacao-semana p { margin: 0; font-size: 13px; color: var(--grafite); max-width: 54ch; }
+.validacao-semana.aprovada { border-color: var(--acento); background: rgba(186, 242, 106, .08); }
+.validacao-semana.aprovada p { color: var(--tinta); }
+
+.pendencias { margin-bottom: 16px; border: 1px solid var(--furo); border-radius: var(--raio-m); overflow: hidden; }
+.pendencias-titulo { margin: 0; padding: 10px 14px; background: var(--furo-fundo); color: var(--furo-texto); font-weight: 700; font-size: 13.5px; }
+.pendencia {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  padding: 10px 14px; border-top: 1px solid var(--linha);
+}
+.pendencia-info { font-size: 13.5px; color: var(--tinta); }
+.pendencia-conta { font-weight: 750; color: var(--furo); }
+
 /* ---------- telefone do colaborador: caixa de vidro, número em verde ---------- */
 input[type=tel] {
   width: 190px; flex: 0 0 190px; min-height: 40px; padding: 8px 12px;
@@ -935,78 +915,3 @@ input[type=tel]:disabled { color: var(--nevoa); opacity: .55; }
   border: 0; border-radius: var(--raio-p); background: transparent; color: inherit; font: inherit; font-weight: 600;
 }
 #sugColabs button:hover, #sugColabs button:active { background: var(--ok-fundo); color: var(--acento2); }
-
-/* ---------- semana (computador): painel de cobertura ---------- */
-.quadro-painel { display: flex; flex-direction: column; gap: 16px; }
-.ps-topo { background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--raio-m); padding: 18px 22px; }
-.ps-pct { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.ps-pct strong { font-size: 40px; line-height: 1; font-weight: 700; letter-spacing: -.03em; }
-.ps-pct span { color: var(--grafite); }
-.ps-barra { height: 8px; border-radius: 99px; background: rgba(255,255,255,.08); margin: 14px 0 10px; overflow: hidden; }
-.ps-barra span { display: block; height: 100%; border-radius: inherit; background: var(--grafite); transition: width .5s; }
-.ps-barra.completo span { background: var(--acento); box-shadow: 0 0 14px rgba(184,244,0,.5); }
-.ps-barra:not(.completo) span { background: linear-gradient(90deg, #6f7a6a, var(--acento)); }
-.ps-sub { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--grafite); font-size: 13px; }
-.ps-corpo { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 16px; align-items: start; }
-.ps-grade { display: grid; grid-template-columns: 96px repeat(7, minmax(0, 1fr)); gap: 8px; background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--raio-m); padding: 16px; }
-.ps-dia { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0 8px; font: 500 11px var(--mono, monospace); letter-spacing: .14em; text-transform: uppercase; color: var(--nevoa); background: none; border: 0; position: relative; }
-.ps-dia b { font: 700 18px var(--fonte); letter-spacing: 0; color: var(--tinta); }
-.ps-dia.hoje { color: var(--acento); }
-.ps-dia.hoje b { color: var(--acento); }
-.ps-dia.hoje::after { content: ""; position: absolute; left: 22%; right: 22%; bottom: 0; height: 2px; border-radius: 2px; background: var(--acento); }
-.ps-marco { position: absolute; top: 2px; right: 22%; width: 6px; height: 6px; border-radius: 50%; background: var(--grafite); }
-.ps-turno { display: flex; flex-direction: column; justify-content: center; gap: 2px; }
-.ps-turno b { font-size: 14px; }
-.ps-turno small { color: var(--nevoa); font: 500 11px var(--mono, monospace); }
-.ps-cel { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 12px 4px 10px; min-height: 84px; border-radius: 14px; border: 1px solid var(--linha-forte); background: rgba(255,255,255,.04); color: var(--tinta); transition: transform .15s, border-color .15s, box-shadow .15s; }
-.ps-cel strong { font: 700 19px var(--mono, monospace); }
-.ps-cel small { font: 500 11px var(--mono, monospace); color: var(--grafite); letter-spacing: .04em; }
-.ps-cel i { display: block; width: 74%; height: 5px; margin-top: 6px; border-radius: 99px; background: rgba(255,255,255,.10); overflow: hidden; }
-.ps-cel u { display: block; height: 100%; background: currentColor; border-radius: inherit; }
-.ps-cel.ok { background: rgba(184,244,0,.10); border-color: rgba(184,244,0,.40); color: var(--acento); }
-.ps-cel.meio { color: var(--tinta); border-color: rgba(255,255,255,.30); }
-.ps-cel.ruim { background: rgba(255,107,107,.10); border-color: rgba(255,107,107,.45); color: var(--furo-texto); }
-.ps-cel.vazio { border-style: dashed; border-color: var(--linha); background: none; color: var(--nevoa); cursor: default; }
-.ps-cel.passado { opacity: .55; }
-.ps-cel.hoje { box-shadow: 0 0 0 1px var(--acento), 0 0 18px -4px rgba(184,244,0,.45); }
-.ps-cel:not(.vazio):hover { transform: translateY(-2px); border-color: var(--acento); }
-.ps-lateral { background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--raio-m); padding: 18px; }
-.ps-lateral small { font: 500 10px var(--mono, monospace); letter-spacing: .2em; color: var(--acento); }
-.ps-lateral h3 { margin: 14px 0 10px; font-size: 16px; }
-.ps-saldo { display: flex; align-items: baseline; gap: 10px; margin-top: 8px; }
-.ps-saldo strong { font: 700 38px/1 var(--mono, monospace); }
-.ps-saldo.furo strong { color: var(--furo-texto); }
-.ps-saldo.ok strong { color: var(--acento); }
-.ps-saldo span { color: var(--grafite); font-size: 13px; }
-.ps-lista { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow: auto; }
-.ps-furo { display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 11px 13px; border-radius: 14px; border: 1px solid var(--linha); background: rgba(255,255,255,.03); color: var(--tinta); font-size: 13.5px; }
-.ps-furo:hover { border-color: var(--acento); }
-.ps-furo small { color: var(--nevoa); font: 500 11px var(--mono, monospace); letter-spacing: .04em; }
-.ps-ok { color: var(--grafite); font-size: 13.5px; margin: 4px 0; }
-@media (max-width: 1280px) { .ps-corpo { grid-template-columns: 1fr; } }
-
-/* ---------- mês (computador) ---------- */
-.pm-grade-wrap { background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--raio-m); padding: 16px; }
-.pm-sem, .pm-grade { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
-.pm-sem { margin-bottom: 8px; text-align: center; font: 500 11px var(--mono, monospace); letter-spacing: .14em; text-transform: uppercase; color: var(--nevoa); }
-.pm-cel { display: flex; flex-direction: column; gap: 6px; min-height: 108px; padding: 9px 9px 10px; text-align: left; border-radius: 14px; border: 1px solid var(--linha-forte); background: rgba(255,255,255,.04); color: var(--tinta); transition: transform .15s, border-color .15s; }
-.pm-cel.fora { border: 0; background: none; }
-.pm-topo { display: flex; justify-content: space-between; align-items: baseline; }
-.pm-topo b { font: 700 16px var(--fonte); }
-.pm-topo strong { font: 700 13px var(--mono, monospace); }
-.pm-marco { font-size: 10.5px; color: var(--grafite); line-height: 1.2; }
-.pm-linhas { display: flex; flex-direction: column; gap: 2px; }
-.pm-t { display: flex; justify-content: space-between; gap: 6px; font: 500 10.5px var(--mono, monospace); color: var(--grafite); }
-.pm-t em { font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pm-t.falta { color: var(--furo-texto); }
-.pm-cel i { display: block; height: 4px; margin-top: auto; border-radius: 99px; background: rgba(255,255,255,.10); overflow: hidden; }
-.pm-cel u { display: block; height: 100%; background: currentColor; border-radius: inherit; }
-.pm-cel.ok { background: rgba(184,244,0,.10); border-color: rgba(184,244,0,.40); color: var(--acento); }
-.pm-cel.ok .pm-t { color: var(--grafite); }
-.pm-cel.ruim { background: rgba(255,107,107,.10); border-color: rgba(255,107,107,.45); }
-.pm-cel.ruim .pm-topo strong { color: var(--furo-texto); }
-.pm-cel.vazio { border-style: dashed; border-color: var(--linha); background: none; color: var(--nevoa); }
-.pm-cel.passado { opacity: .55; }
-.pm-cel.hoje { box-shadow: 0 0 0 1px var(--acento), 0 0 18px -4px rgba(184,244,0,.45); opacity: 1; }
-.pm-cel:not(.fora):hover { transform: translateY(-2px); border-color: var(--acento); }
-.pm-cel.ok .pm-topo b { color: var(--tinta); }

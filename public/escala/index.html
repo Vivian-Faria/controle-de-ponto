@@ -21,6 +21,7 @@
       <span class="marca-sub">Lançamento de turnos</span>
     </div>
     <nav class="topo-acoes">
+      <button type="button" class="topo-link" id="btnAdmin">Entrar como admin</button>
       <a class="topo-link" href="cadastros.html">Cadastros</a>
     </nav>
   </header>
@@ -61,6 +62,22 @@
       <div id="quadro"></div>
     </div>
   </main>
+
+  <dialog id="dlgAdmin" class="dlg-admin" aria-labelledby="dlgAdminTitulo">
+    <div class="dlg-cab">
+      <h2 id="dlgAdminTitulo">Entrar como administradora</h2>
+      <button type="button" class="btn-icone" id="dlgAdminFechar" aria-label="Fechar">×</button>
+    </div>
+    <form id="formAdmin" class="dlg-corpo">
+      <p>Pra aprovar os lançamentos direto por aqui.</p>
+      <label class="campo">
+        <span>Senha</span>
+        <input type="password" id="senhaAdmin" autocomplete="current-password" required>
+      </label>
+      <p class="erro" id="erroAdmin" role="alert"></p>
+      <button class="btn-primario" type="submit">Entrar</button>
+    </form>
+  </dialog>
 
   <dialog id="dlgDia" class="dlg-dia" aria-labelledby="dlgTitulo">
     <div class="dlg-cab">

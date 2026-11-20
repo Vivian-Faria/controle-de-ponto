@@ -1,13 +1,16 @@
 import { docFor } from '/orion/mod/docproxy.js';
 const document = docFor('escala-cad');
 // Página 1 — Cadastros: hubs, turnos com vagas por dia, supervisores, colaboradores, datas especiais e buracos na escala.
-import { configuracaoPronta, lerConfig, salvarConfig, ouvirEscalas, lerEscalas, salvarVagasEmLote } from './db.js';
+import {
+  configuracaoPronta, lerConfig, salvarConfig, ouvirEscalas, lerEscalas, salvarVagasEmLote,
+  ouvirAprovacoes, aprovarLancamento, reabrirLancamento
+} from './db.js';
 import { entrar, sair, aoMudarLogin, tokenAdmin } from './auth.js';
 import { datasDoAno, ROTULO_TIPO } from './feriados.js';
 import {
   DIAS_CURTO, DIAS_LONGO, MESES, uid, escapeHtml, porNome, limparNome, normalizaNome,
   ordenaTurnos, faixaDoDia, vagasSemana, plural, parseIso, isoDate, addDays, startOfWeek,
-  capitalizar, vagasDe, horas, criarStatus, vagasDoTurno, agregarBuracos, hhmm, nomeParecido
+  capitalizar, vagasDe, horas, criarStatus, vagasDoTurno, contagemTurno, agregarBuracos, hhmm, nomeParecido
 } from './utils.js';
 
 const $ = (s) => document.querySelector(s);
@@ -20,6 +23,7 @@ const mostrarStatus = criarStatus($('#status'));
 
 let cfg = null;        // cópia de trabalho
 let original = '';     // último estado salvo (para saber se há alterações)
+let usuarioAtual = null;
 let aba = 'hubs';
 // ---------- telefones dos colaboradores (a central de alertas lê daqui os números para os avisos) ----------
 const CENTRAL = 'https://controle-de-ponto-solides.netlify.app';
@@ -42,7 +46,8 @@ const geracaoEstado = { hubId: '', inicio: '', fim: '', gerando: false };
 // ---------- estado da aba "Buracos na escala" (vale para todos os hubs) ----------
 const buracosEstado = {
   hubId: '', modo: 'semana', ref: new Date(),
-  escalas: {}, prontas: false, cancelar: null, chaveFaixa: ''
+  escalas: {}, prontas: false, cancelar: null, chaveFaixa: '',
+  aprovacoes: {}, cancelarAprovacoes: null, hubAprovacoes: ''
 };
 
 // ---------- estado da aba "Indicadores de confiabilidade" ----------
@@ -56,6 +61,7 @@ if (!configuracaoPronta()) {
   el.aviso.hidden = false;
 } else {
   aoMudarLogin(async (usuario) => {
+    usuarioAtual = usuario;
     if (!usuario) {
       cfg = null;
       el.app.hidden = true;
@@ -170,17 +176,10 @@ function limparCadastros() {
 }
 
 function validar() {
-  const hora = /^\d{2}:\d{2}$/;
   for (const h of cfg.hubs) if (!h.nome) return { aba: 'hubs', msg: 'Há um hub sem nome.' };
   for (const t of cfg.turnos) {
     const hub = hubNome(t.hubId);
     if (!t.nome) return { aba: 'turnos', hub: t.hubId, msg: `Há um turno sem nome no hub ${hub}.` };
-    if (!hora.test(t.inicio) || !hora.test(t.fim)) {
-      return { aba: 'turnos', hub: t.hubId, msg: `Preencha início e fim do turno ${t.nome} (${hub}).` };
-    }
-    if (t.inicio === t.fim) {
-      return { aba: 'turnos', hub: t.hubId, msg: `O turno ${t.nome} (${hub}) começa e termina no mesmo horário.` };
-    }
   }
   for (const s of cfg.supervisores) if (!s.nome) return { aba: 'supervisores', msg: 'Há um supervisor sem nome.' };
   // telefone: obrigatório para colaborador novo; quem já existia sem telefone continua salvando, mas fica com ⚠️ e não entra na escala
@@ -279,12 +278,8 @@ function renderHubs() {
 function linhaTurno(t) {
   const vagas = t.vagas || [0, 0, 0, 0, 0, 0, 0];
   const base = `data-tipo="turno" data-id="${t.id}"`;
-  return `<tr class="faixa-${faixaDoDia(t.inicio)}" data-linha="${t.id}">
+  return `<tr data-linha="${t.id}">
     <td class="col-nome"><input type="text" class="in-nome" placeholder="Nome, ex: Almoço" aria-label="Nome do turno" ${base} data-campo="nome" value="${escapeHtml(t.nome)}"></td>
-    <td><input type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="00:00"
-      class="campo-hora" aria-label="Início" ${base} data-campo="inicio" value="${t.inicio}"></td>
-    <td><input type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="00:00"
-      class="campo-hora" aria-label="Fim" ${base} data-campo="fim" value="${t.fim}"></td>
     <td class="col-todos"><input type="number" min="0" max="99" inputmode="numeric" placeholder="–" aria-label="Mesmo número de vagas em todos os dias" ${base} data-campo="todos"></td>
     ${vagas.map((v, i) => `<td><input type="number" min="0" max="99" inputmode="numeric" aria-label="Vagas ${DIAS_LONGO[i]}" ${base} data-campo="vaga" data-dia="${i}" value="${v}"></td>`).join('')}
     <td class="col-total" data-total="${t.id}">${vagasSemana(t)}</td>
@@ -310,7 +305,7 @@ function renderTurnos() {
     </div>
     ${turnos.length ? `<div class="tabela-rolagem"><table class="tabela-turnos">
       <thead><tr>
-        <th>Turno</th><th>Início</th><th>Fim</th><th class="col-todos">Todos</th>
+        <th>Turno</th><th class="col-todos">Todos</th>
         ${DIAS_CURTO.map((d) => `<th>${d}</th>`).join('')}
         <th>Semana</th><th><span class="sr">Ações</span></th>
       </tr></thead>
@@ -320,7 +315,7 @@ function renderTurnos() {
       <button type="button" class="btn-secundario" data-acao="adicionar-turno">Adicionar turno</button>
       <p class="item-meta" data-total-hub>${turnos.length ? `${totalHub(hubTurnos)} vagas por semana neste hub` : ''}</p>
     </div>
-    <p class="dica">Turnos que terminam depois da meia-noite (ex: 18:00 às 01:20) funcionam normalmente. Na coluna Todos, digite um número para repetir nos 7 dias.</p>`;
+    <p class="dica">Na coluna Todos, digite um número para repetir nos 7 dias.</p>`;
 }
 
 function atualizarTotais(t) {
@@ -599,6 +594,20 @@ function tituloPeriodoBuracos() {
     : `${a} de ${MESES[ini.getMonth()]} a ${b} de ${MESES[fim.getMonth()]}`;
 }
 
+// Aprovações de lançamento (por dia+turno): só fazem sentido com um hub
+// específico escolhido. Troca a escuta sempre que o hub filtrado muda.
+function assinarAprovacoes() {
+  if (buracosEstado.hubId === buracosEstado.hubAprovacoes) return;
+  buracosEstado.hubAprovacoes = buracosEstado.hubId;
+  buracosEstado.cancelarAprovacoes?.();
+  buracosEstado.aprovacoes = {};
+  if (!buracosEstado.hubId) { buracosEstado.cancelarAprovacoes = null; return; }
+  buracosEstado.cancelarAprovacoes = ouvirAprovacoes(buracosEstado.hubId, (aprovacoes) => {
+    buracosEstado.aprovacoes = aprovacoes;
+    renderBuracos();
+  }, () => mostrarStatus('Não foi possível carregar as aprovações de lançamento.', 'erro', true));
+}
+
 function assinarBuracos() {
   const { ini, fim } = faixaBuracos();
   const chave = `${isoDate(ini)}|${isoDate(fim)}`;
@@ -689,6 +698,48 @@ function htmlListaBuracos() {
   return `<p class="resumo-buracos">${plural(totalTrechos, 'trecho aberto', 'trechos abertos')} no período, somando ${horas(totalMinutos)} de vagas descobertas.</p>${corpo}`;
 }
 
+// Pendências de aprovação: turnos onde a quantidade lançada não bateu com
+// a configurada, no período/hub filtrado, ainda sem aprovação. Só existe
+// com um hub específico escolhido (a aprovação é por hub).
+function pendencias() {
+  if (!buracosEstado.hubId) return [];
+  const { ini, fim } = faixaBuracos();
+  const turnos = ordenaTurnos(cfg.turnos.filter((t) => t.hubId === buracosEstado.hubId));
+  const linhas = [];
+  for (let d = new Date(ini); d <= fim; d = addDays(d, 1)) {
+    const iso = isoDate(d);
+    const dow = d.getDay();
+    for (const t of turnos) {
+      if (!Number(t.vagas?.[dow])) continue;
+      const { necessarias, lancadas } = contagemTurno(cfg, buracosEstado.escalas, buracosEstado.hubId, t, iso, dow);
+      if (!necessarias || lancadas === necessarias) continue;
+      if (buracosEstado.aprovacoes[`${iso}_${t.id}`]) continue;
+      linhas.push({ d: new Date(d), iso, t, necessarias, lancadas });
+    }
+  }
+  return linhas;
+}
+
+function htmlPendencias() {
+  if (!buracosEstado.hubId) return '';
+  const linhas = pendencias();
+  if (!linhas.length) return `<div class="validacao-semana aprovada"><p>✓ Nenhuma pendência de aprovação no período.</p></div>`;
+  return `<div class="pendencias">
+    <p class="pendencias-titulo">${plural(linhas.length, 'turno aguardando aprovação', 'turnos aguardando aprovação')} no período</p>
+    ${linhas.map(({ d, iso, t, necessarias, lancadas }) => {
+      const diff = lancadas - necessarias;
+      const texto = diff > 0 ? `sobram ${plural(diff, 'pessoa', 'pessoas')}` : `faltam ${plural(-diff, 'pessoa', 'pessoas')}`;
+      return `<div class="pendencia">
+        <span class="pendencia-info">
+          <strong>${capitalizar(DIAS_LONGO[d.getDay()])}, ${d.getDate()} de ${MESES[d.getMonth()]}</strong>
+          · ${escapeHtml(t.nome)} · <span class="pendencia-conta">${lancadas}/${necessarias}</span> (${texto})
+        </span>
+        <button type="button" class="btn-secundario" data-acao="aprovar-lancamento" data-iso="${iso}" data-turno="${t.id}">Aprovar</button>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
 function renderBuracos() {
   const hubs = hubsOrdenados();
   if (!hubs.length) {
@@ -696,6 +747,7 @@ function renderBuracos() {
     return;
   }
   assinarBuracos();
+  assinarAprovacoes();
   el.conteudo.innerHTML = `
     ${cabecalho('Buracos na escala', 'Para cada operação, mostra os trechos de horário que ainda não têm gente suficiente escalada, somando furos de vagas vazias e de vagas parcialmente cobertas.')}
     <div class="chips chips-hub" role="group" aria-label="Hub">
@@ -716,6 +768,7 @@ function renderBuracos() {
         </div>
       </div>
     </div>
+    ${htmlPendencias()}
     <div id="buracosLista">${htmlListaBuracos()}</div>`;
 }
 
@@ -1160,6 +1213,12 @@ el.conteudo.addEventListener('click', (e) => {
       copiarTexto(texto)
         .then(() => mostrarStatus('Lista copiada — já pode colar no grupo.'))
         .catch(() => mostrarStatus('Não foi possível copiar. Tente selecionar e copiar manualmente.', 'erro', true));
+      return;
+    }
+    case 'aprovar-lancamento': {
+      aprovarLancamento(buracosEstado.hubId, b.dataset.iso, b.dataset.turno, usuarioAtual?.email || 'admin')
+        .then(() => mostrarStatus('Lançamento aprovado.'))
+        .catch(() => mostrarStatus('Não foi possível aprovar.', 'erro', true));
       return;
     }
     default:
