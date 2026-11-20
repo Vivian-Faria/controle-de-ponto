@@ -475,7 +475,7 @@ export async function relatorioDiario({ agora, cfgA }) {
 const MSG_COLAB = { colab_c0: "Pedimos a confirmação de presença", colab_m1: "Perguntamos se já está a caminho", colab_m2: "Pedimos a localização", colab_m3: "Última cobrança: está chegando?" };
 export async function montarAcompanhamento({ dia, hubId, esc, agora }) {
   const cfgA = (await lerConfig()) || { hubs: {} };
-  const sit = situacoes(esc, dia, cfgA, agora).filter(s => s.hubId === hubId && !s.extra);
+  const sit = situacoes(esc, dia, cfgA, agora).filter(s => s.hubId === hubId && !(s.extra && s.vazia));
   for (const s of sit) s.id = idDe(dia, s.hubId, s.turnoId, s.vaga, s.pidx || 0);
   const [euL, furoL, outL, resumo, telsRaw] = await Promise.all([listar(`eu/${dia}/`), listar(`furo/${dia}/`), listar(`out/${dia}/`), getJ(`dia/${dia}`), getJ(`tel/${hubId}`)]);
   const semLocHub = !(await getJ(`hubloc/${hubId}`));      // sem o ponto de referência do hub não dá para calcular a distância
@@ -526,7 +526,7 @@ export async function montarAcompanhamento({ dia, hubId, esc, agora }) {
     else if (msgs.some(m => m.estado === "enviado")) { st = "sem_resposta"; rot = "Sem resposta"; }
     else { st = "aguardando"; rot = agora < s.inicio ? "Turno não iniciado" : "Sem contato ainda"; }
     contagem[st === "substituido" ? "coberto" : st]++;
-    return { id: s.id, nome: s.vazia ? "Vaga sem ninguém lançado" : (trocaPor || s.nome), ...(trocaPor ? { noLugar: s.nome } : {}), st, rot, dist, ev: ev.map(e => ({ hm: hm(e.t), k: e.k, txt: e.txt, ...(e.envio ? { envio: e.envio } : {}), ...(e.res ? { res: e.res } : {}) })) };
+    return { id: s.id, nome: s.vazia ? "Vaga sem ninguém lançado" : (trocaPor || s.nome), ...(trocaPor ? { noLugar: s.nome } : {}), ...(s.extra ? { extra: true } : {}), st, rot, dist, ev: ev.map(e => ({ hm: hm(e.t), k: e.k, txt: e.txt, ...(e.envio ? { envio: e.envio } : {}), ...(e.res ? { res: e.res } : {}) })) };
   };
   const turnos = new Map();
   for (const s of sit) {
