@@ -490,7 +490,7 @@ export async function montarAcompanhamento({ dia, hubId, esc, agora }) {
     : h.a === "caminho" ? (h.dist != null ? `Está a caminho · 📍 a ${fmtDist(h.dist)} do hub` : "Marcou que está a caminho")
     : (h.dist != null ? `📍 Localização: a ${fmtDist(h.dist)} do hub` : `📍 Compartilhou a localização${semLocHub ? " (distância indisponível: o local deste hub ainda não foi marcado)" : ""}`);
   const montar = (s, p) => {
-    const r = eus[s.id], f = furos[s.id], ev = [], msgs = s.vazia ? [] : msgsHub.filter(o => mesmoNome(o.nome, s.nome) && (o.sid ? o.sid === s.id : (o.t >= s.inicio - 90 * MIN && o.t <= s.inicio + 30 * MIN)))      // cada mensagem pertence a UM turno (quem trabalha em dois turnos no dia tem as mensagens separadas), sb = f?.substituto;
+    const r = eus[s.id], f = furos[s.id], ev = [], msgs = s.vazia ? [] : msgsHub.filter(o => mesmoNome(o.nome, s.nome) && (o.sid ? o.sid === s.id : (o.t >= s.inicio - 90 * MIN && o.t <= s.inicio + 30 * MIN))), sb = f?.substituto;
     // vaga com substituto: o cartão é do substituto, "no lugar de" quem faltou
     const trocaPor = s.vazia ? null : p?.noLugar ? p.nome : (!p?.chegou && sb && !sb.via && !mesmoNome(sb.nome, s.nome) ? sb.nome : null), pre = trocaPor ? `${s.nome}: ` : "";
     // ponto: o resumo do vigia (até 5 min de atraso) ou a marcação na escala
