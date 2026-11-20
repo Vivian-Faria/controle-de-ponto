@@ -206,7 +206,7 @@ export function cadenciaTurnos({ dia, agora, sit, furos, cad, cfgA, sign, tels =
           : n === "m1" ? `${pn}, seu turno em *${g.hubNome}* começa às ${hm(s.inicio)}.\n\nJá está a caminho? Confirme aqui:\n👉 ${lk}`
           : n === "m2" ? `${pn}, seu ponto em *${g.hubNome}* ainda não foi batido.\n\nToque no link e compartilhe sua localização, só para estimarmos quanto falta para você chegar. Usamos apenas a distância até o hub; o local exato não é mostrado a ninguém.\n👉 ${lk}`
           : `${pn}, você está chegando em *${g.hubNome}*?\n\nResponda pelo link. Se não houver resposta, seu líder vai providenciar outra pessoa para a vaga.\n👉 ${lk}`;
-        colabs.push({ tel, texto: t2, eu: { sid: s.id, nome: s.nome, hubId: g.hubId, hubNome: g.hubNome, turnoId: s.turnoId, turno: s.turno, vaga: s.vaga, inicio: s.inicio, fim: s.fim, tIni: s.tIni ?? s.inicio }, meta: { tipo: "colab_" + n, hub: g.hubNome, dia, para_quem: "colab", nome: s.nome } });
+        colabs.push({ tel, texto: t2, eu: { sid: s.id, nome: s.nome, hubId: g.hubId, hubNome: g.hubNome, turnoId: s.turnoId, turno: s.turno, vaga: s.vaga, inicio: s.inicio, fim: s.fim, tIni: s.tIni ?? s.inicio }, meta: { tipo: "colab_" + n, hub: g.hubNome, dia, para_quem: "colab", nome: s.nome, sid: s.id } });
       }
     }
     if (!texto) { st[n] = 0; continue; }      // ninguém pendente: nada a cobrar neste passo
@@ -490,7 +490,7 @@ export async function montarAcompanhamento({ dia, hubId, esc, agora }) {
     : h.a === "caminho" ? (h.dist != null ? `Está a caminho · 📍 a ${fmtDist(h.dist)} do hub` : "Marcou que está a caminho")
     : (h.dist != null ? `📍 Localização: a ${fmtDist(h.dist)} do hub` : `📍 Compartilhou a localização${semLocHub ? " (distância indisponível: o local deste hub ainda não foi marcado)" : ""}`);
   const montar = (s, p) => {
-    const r = eus[s.id], f = furos[s.id], ev = [], msgs = s.vazia ? [] : msgsHub.filter(o => mesmoNome(o.nome, s.nome)), sb = f?.substituto;
+    const r = eus[s.id], f = furos[s.id], ev = [], msgs = s.vazia ? [] : msgsHub.filter(o => mesmoNome(o.nome, s.nome) && (o.sid ? o.sid === s.id : (o.t >= s.inicio - 90 * MIN && o.t <= s.inicio + 30 * MIN)))      // cada mensagem pertence a UM turno (quem trabalha em dois turnos no dia tem as mensagens separadas), sb = f?.substituto;
     // vaga com substituto: o cartão é do substituto, "no lugar de" quem faltou
     const trocaPor = s.vazia ? null : p?.noLugar ? p.nome : (!p?.chegou && sb && !sb.via && !mesmoNome(sb.nome, s.nome) ? sb.nome : null), pre = trocaPor ? `${s.nome}: ` : "";
     // ponto: o resumo do vigia (até 5 min de atraso) ou a marcação na escala
