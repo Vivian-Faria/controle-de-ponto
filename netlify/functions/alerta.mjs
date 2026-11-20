@@ -411,7 +411,7 @@ async function vigiarInterno({ agora, sign, presencas, escala, reler }) {      /
     for (const m of msgs) { await notificar(dia, m.tel, m.texto, m.meta); resultado.enviadas++; }
     const resumo = { dia, geradoEm: agora, hubs: escala.cfg.hubs.map(h => ({ id: h.id, nome: h.nome, lider: liderDe(h.id).nome || "", turnos: Object.values(completos).filter(c => c.hubId === h.id).map(c => ({ id: c.tid, nome: c.turno, inicio: hm(c.inicio), esperados: c.n, presentes: c.ok, status: c.status, furos: c.furos,
       pessoas: sit.filter(s => s.hubId === h.id && s.turnoId === c.tid).map(s => { const f = furos[s.id], tr = s.trocaPor, ok = !!(tr && s.coberto);      // vaga com substituto: o nome do substituto ocupa o lugar de quem faltou
-        return { nome: tr || s.nome || "(vaga sem ninguém)", ...(tr ? { noLugar: s.nome } : {}), previsto: hm(s.inicio), chegou: s.cheg ? hm(s.cheg.t) : s.compareceu ? "marcado na escala" : ok ? (f?.resolvidoVia === "marca" ? "marcado na escala" : hm(f?.resolvidoEm ?? s.subAuto?.t ?? agora)) : null, sem: !!s.semEscala, por: !tr && s.coberto ? (f?.substituto?.nome || null) : null, ...(tr && !ok && f?.subAcaminho ? { aCaminho: true } : {}),
+        return { nome: tr || s.nome || "(vaga sem ninguém)", ...(tr ? { noLugar: s.nome } : {}), previsto: hm(s.inicio), chegou: s.cheg ? hm(s.cheg.t) : s.compareceu ? "marcado na escala" : ok ? (f?.resolvidoVia === "marca" ? "marcado na escala" : f?.resolvidoVia === "lider" ? "confirmado pelo líder" : hm(f?.resolvidoEm ?? s.subAuto?.t ?? agora)) : null, sem: !!s.semEscala, por: !tr && s.coberto ? (f?.substituto?.nome || null) : null, ...(tr && !ok && f?.subAcaminho ? { aCaminho: true } : {}),
           estado: s.cheg || s.compareceu || ok ? "presente" : s.coberto ? "coberto" : s.vazia ? "vaga vazia" : agora < s.inicio + tol * 60000 ? "aguardando" : "ausente" }; }) })) })), completoAvisado: estadoDia.completoAvisado };
     await putJ(`dia/${dia}`, resumo); resultado.dias[dia] = { situacoes: sit.length, furos: Object.keys(furos).length };
   }
@@ -496,7 +496,7 @@ export async function montarAcompanhamento({ dia, hubId, esc, agora }) {
     // ponto: o resumo do vigia (até 5 min de atraso) ou a marcação na escala
     let tPonto = null, pontoTxt = null;
     if (p?.chegou && /^\d\d:\d\d$/.test(p.chegou)) { tPonto = toMs(dia, p.chegou); if (tPonto < s.inicio - 6 * HOUR) tPonto += DAY; pontoTxt = "Bateu o ponto no hub"; }
-    else if (p?.chegou || s.compareceu) { tPonto = s.inicio; pontoTxt = "Presença marcada na escala"; }
+    else if (p?.chegou || s.compareceu) { tPonto = s.inicio; pontoTxt = p?.chegou === "confirmado pelo líder" ? "Cobertura confirmada pelo líder (sem ponto no hub)" : "Presença marcada na escala"; }
     // respostas do colaborador (registros antigos não têm histórico: usa a última resposta e as localizações)
     let resp = [];
     if (r?.hist?.length) resp = r.hist.map(h => ({ ...h }));
@@ -516,7 +516,7 @@ export async function montarAcompanhamento({ dia, hubId, esc, agora }) {
     const tel = !s.vazia && telDe(tels, hubId, s.nome), sub = sb?.nome, ultDist = [...base].reverse().find(h => h.dist != null)?.dist ?? null; let st, rot, dist = null;
     if (s.vazia) { st = "vaga"; rot = "Vaga sem ninguém lançado"; }
     else if (trocaPor && !tPonto) { if (f?.subAcaminho) { st = "caminho"; rot = "A caminho (confirmado pelo líder)"; } else { st = "substituido"; rot = "Aguardando chegada"; } }
-    else if (tPonto) { st = "presente"; rot = /^\d\d:\d\d$/.test(p?.chegou || "") ? `No hub desde ${p.chegou}` : "Presente (marcado na escala)"; }
+    else if (tPonto) { st = "presente"; rot = /^\d\d:\d\d$/.test(p?.chegou || "") ? `No hub desde ${p.chegou}` : p?.chegou === "confirmado pelo líder" ? "Coberto (confirmado pelo líder)" : "Presente (marcado na escala)"; }
     else if (f && f.estado === "resolvido" && !f.encerrado) { st = "coberto"; rot = sub ? `Coberto por ${sub}` : "Vaga coberta"; }
     else if (sub) { st = "substituido"; rot = `Substituto: ${sub}`; }
     else if (r?.resp === "nao_vou" || f?.naoVai) { st = "nao_vai"; rot = "Não vai"; }
@@ -578,12 +578,15 @@ export async function rotaAlerta(req, path, ctx) {
     if (b.acao === "trocou") {
       const nome = String(b.substituto || "").replace(/\s+/g, " ").trim(); if (nome.length < 2) return erro("Informe quem vai cobrir.");
       const esc = await lerEscala([dia]).catch(() => null), cad = esc ? esc.cfg.colaboradores.map(c => c.nome).find(n => mesmoNome(n, nome)) : nome; if (!cad) return erro("Esse nome não está cadastrado na escala. Cadastre a pessoa lá primeiro.");
+      // quem já bateu o ponto neste hub (na própria vaga ou no lugar de outra pessoa) não pode ser lançada como substituta de outra vaga
+      { const rs = await getJ(`dia/${dia}`), ja = rs?.hubs?.find(h => h.id === f.hubId)?.turnos?.flatMap(t => t.pessoas || []).find(p => p.estado === "presente" && /^\d\d:\d\d$/.test(p.chegou || "") && mesmoNome(p.nome, cad) && !(p.noLugar && f.nome && mesmoNome(p.noLugar, f.nome)));
+        if (ja) return erro(`${cad} já bateu o ponto às ${ja.chegou} neste hub${ja.noLugar ? " e já está no lugar de " + ja.noLugar : ""}. Escolha outra pessoa para esta vaga (ou use "Já está coberta" se for o caso).`, 409); }
       // quem faltou deixa de contar como "a caminho" e o substituto começa do zero
       f.estado = "trocado"; f.substituto = { nome: cad, informadoEm: agora }; f.trocaEm = agora; f.aCaminho = false; delete f.aCaminhoPor; f.loc = null; f.subAcaminho = false; delete f.resolvidoVia; evento(f, "troca", `${lider} informou que ${cad} cobre a vaga${f.nome ? " de " + f.nome : ""}.`, lider); await putJ(`furo/${dia}/${id}`, f);
       await notificar(dia, cfgA?.hubs?.[f.hubId]?.lider?.tel, `🔁 Troca registrada em *${f.hubNome}* (${f.turno}): *${cad}* cobre ${f.nome ? "a vaga de " + f.nome : "a vaga"}. Você será avisado quando bater o ponto. Lembre de ajustar a escala.`, { tipo: "troca", hub: f.hubNome, furo: id, dia, para_quem: "lider" }); return json({ ok: true, estado: f.estado });
     }
     if (b.acao === "confirmou") {      // o líder garante que a vaga está coberta, mesmo sem ponto no hub (ex.: já bateu em outro lugar ou é o próprio líder)
-      f.estado = "resolvido"; f.resolvidoEm = agora; f.confirmadoPor = lider; f.confirmadoEm = agora;
+      f.estado = "resolvido"; f.resolvidoEm = agora; f.resolvidoVia = "lider"; f.confirmadoPor = lider; f.confirmadoEm = agora;
       evento(f, "confirmou", `${lider} confirmou que a vaga está coberta${f.substituto?.nome ? " por " + f.substituto.nome : ""} (confirmação manual, sem batida no hub).`, lider); await putJ(`furo/${dia}/${id}`, f);
       await notificar(dia, cfgA?.hubs?.[f.hubId]?.lider?.tel, `✅ Cobertura confirmada em *${f.hubNome}* (${f.turno}). Furo encerrado.`, { tipo: "confirmou", hub: f.hubNome, furo: id, dia, para_quem: "lider" }); return json({ ok: true, estado: f.estado });
     }
