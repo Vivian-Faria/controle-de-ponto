@@ -125,13 +125,13 @@ async function load(manual){
   }
 }
 function gauge(j){
-  const box=$('comp'),ts=j.turnos.filter(t=>t.pessoas.length);
+  const box=$('comp'),ts=j.turnos.filter(t=>t.pessoas.some(p=>!p.extra));
   if(!ts.length){box.hidden=true;return}
   box.hidden=false;
   const antes={};box.querySelectorAll('.tc').forEach(e=>antes[e.dataset.k]=parseFloat(e.querySelector('.arc').style.strokeDashoffset));
   const mi=h=>{const[a,b]=String(h||'0:0').split(':');return +a*60+ +b},ag=mi(j.agora);
   box.innerHTML=ts.map((t,i)=>{
-    const tot=t.pessoas.length,ok=t.pessoas.filter(p=>p.st==='presente'||p.st==='coberto').length,pct=ok/tot,ini=mi(t.inicio),fim=mi(t.fim),k=String(i);
+    const ps=t.pessoas.filter(p=>!p.extra),tot=ps.length,ok=ps.filter(p=>p.st==='presente'||p.st==='coberto').length,pct=ok/tot,ini=mi(t.inicio),fim=mi(t.fim),k=String(i);
     const hoje=j.dia===j.hoje,fut=j.dia>j.hoje||(hoje&&ag<ini),acab=j.dia<j.hoje||(hoje&&ag>fim&&fim>ini);
     const est=ok>=tot?['completo','Completo']:fut?['nao','Turno não iniciado']:acab?['fim','Encerrado com falta']:['', `Faltam ${tot-ok}`];
     return `<button type="button" class="tc ${est[0]}" data-k="${k}" data-i="${i}" aria-label="${esc(t.nome)}: ${ok} de ${tot}, ${est[1]}"><div class="gg"><svg viewBox="0 0 200 200" fill="none"><circle class="trk" cx="100" cy="100" r="88" stroke-width="12"/><circle class="arc" cx="100" cy="100" r="88" stroke-width="12" stroke-linecap="round" stroke-dasharray="552.9" stroke-dashoffset="${isNaN(antes[k])?552.9:antes[k]}" data-to="${552.9*(1-pct)}"/></svg><div class="num">${ok}/${tot}<small>${Math.round(pct*100)}%</small></div></div><h3>${esc(t.nome)}</h3><span class="hr">${esc(t.inicio)}–${esc(t.fim)}</span><span class="st">${esc(est[1])}</span></button>`}).join('');
@@ -142,7 +142,7 @@ function draw(j){
   gauge(j);
   if(!j.turnos.length){$('corpo').innerHTML=`<div class="card"><h2>Sem escala neste dia</h2>Não há turnos com vagas para ${esc(j.hubNome)} nesta data.</div>`;return}
   $('corpo').innerHTML=j.turnos.map(t=>`<section class="turno"><h2>${esc(t.nome)} <small>${esc(t.inicio)}–${esc(t.fim)}</small></h2><div class="lista">`+t.pessoas.map(p=>
-    `<article class="p st-${p.st}" data-pid="${esc(p.id)}"><div class="top"><b>${esc(p.nome)}${p.noLugar?`<small class="nl">no lugar de ${esc(p.noLugar)}</small>`:''}</b><span class="tag"><i></i>${esc(p.rot)}</span></div>`+
+    `<article class="p st-${p.st}" data-pid="${esc(p.id)}"><div class="top"><b>${esc(p.nome)}${p.noLugar?`<small class="nl">no lugar de ${esc(p.noLugar)}</small>`:p.extra?`<small class="nl">além do previsto na escala</small>`:''}</b><span class="tag"><i></i>${esc(p.rot)}</span></div>`+
     (p.ev.length?`<ol class="tl">`+p.ev.map(e=>`<li class="k-${e.k}"><time>${esc(e.hm)}</time><span>${esc(e.txt)}${e.envio&&e.envio!=='enviado'?`<em class="nenv">${esc(NENV[e.envio]||e.envio)}</em>`:''}${e.res==='sem'?'<em class="sem">sem resposta</em>':e.res==='aguarda'?'<em class="aguarda">aguardando</em>':''}</span></li>`).join('')+`</ol>`:`<div class="vazio">${p.st==='vaga'?'Lance o nome desta vaga na escala.':'Nenhuma comunicação ainda.'}</div>`)+`</article>`).join('')+`</div></section>`).join('');
 }
 $('d').onchange=()=>{$('corpo').innerHTML='';load()};
