@@ -535,8 +535,8 @@ export async function montarAcompanhamento({ dia, hubId, esc, agora }) {
     turnos.get(s.turnoId).pessoas.push(montar(s, p));
   }
   for (const t of turnos.values()) {      // quem bateu o ponto sem estar na escala
-    for (const p of pontoDe(t.id).filter(x => x.sem && !sit.some(s => s.turnoId === t.id && !s.vazia && mesmoNome(s.nome, x.nome)))) {
-      contagem.presente++; t.pessoas.push({ id: "x" + nrm(p.nome), nome: p.nome, st: "presente", rot: `No hub desde ${p.chegou}`, dist: null, ev: [{ hm: p.chegou, k: "ponto", txt: "Bateu o ponto no hub (fora da escala: não estava lançado)" }] });
+    for (const p of pontoDe(t.id).filter(x => /^\d\d:\d\d$/.test(x.chegou || "") && !t.pessoas.some(c => mesmoNome(c.nome, x.nome)) && !sit.some(s => s.turnoId === t.id && !s.vazia && mesmoNome(s.nome, x.nome) && !x.noLugar))) {      // quem bateu o ponto e não tem cartão (fora da escala, ou a mais que o previsto) também aparece
+      contagem.presente++; t.pessoas.push({ id: "x" + nrm(p.nome), nome: p.nome, st: "presente", extra: true, rot: `No hub desde ${p.chegou}`, dist: null, ev: [{ hm: p.chegou, k: "ponto", txt: "Bateu o ponto no hub (fora da escala ou além do previsto)" }] });
     }
     t.pessoas.sort((a, b) => ORDEM[a.st] - ORDEM[b.st] || a.nome.localeCompare(b.nome, "pt-BR"));
   }
