@@ -21,10 +21,10 @@ let ready = Promise.resolve();
 async function mount(key){
   if(loaded[key]) return loaded[key];
   return loaded[key] = (async () => {
-    if(key === 'acomp'){ await ready; if(!M.acomp_search) throw new Error('Não foi possível gerar o link de acompanhamento. Entre novamente pela tela de acesso.'); }
+    if(key === 'acomp'){ await ready; if(!M.acomp_search){ gate(); await ready; } if(!M.acomp_search) throw new Error('Não foi possível gerar o link de acompanhamento. Entre novamente pela tela de acesso.'); }
     if(key === 'escala-lanc' || key === 'escala-cad'){ if(!window.CentralEscala) await loadScript('mod/escala.js?v=' + (window.__V || 1)); return key === 'escala-lanc' ? window.CentralEscala.mountLancamento() : window.CentralEscala.mountCadastros(); }
     await loadScript('mod/' + key + '.js?v=' + (window.__V || 1));
-  })();
+  })().catch(e => { delete loaded[key]; throw e; });      // falha não fica guardada: ao reabrir a aba, tenta de novo
 }
 async function open(view, i){
   const v = $('#v-' + view), tabs = v.querySelector('.fv-tabs'), ld = v.querySelector('.fv-load'), list = VIEWS[view], key = list[i][1];
