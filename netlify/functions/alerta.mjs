@@ -274,7 +274,7 @@ async function vigiarInterno({ agora, sign, presencas, escala, reler }) {      /
           if (!s) return true; s.cheg = { t: p.t }; s.nomeNoPonto = p.nome; return false;
         });
         // quem bateu o ponto fora da escala entra no lugar de quem faltou (passados 5 min do início); a marca "compareceu" sem ponto só é desfeita se houver alguém para entrar
-        const ausentes = g.filter(s => !s.vazia && !s.semEscala && !s.cheg && !furos[s.id]?.substituto && agora >= s.inicio + (cfgA.cadencia?.m2 ?? 5) * MIN).sort((a, b) => (a.compareceu ? 1 : 0) - (b.compareceu ? 1 : 0) || a.vaga - b.vaga);
+        const ausentes = g.filter(s => !s.vazia && !s.semEscala && !s.cheg && !furos[s.id]?.substituto && agora >= s.inicio + (cfgA.cadencia?.m2 ?? 5) * MIN && !furos[s.id]?.semSubAuto).sort((a, b) => (a.compareceu ? 1 : 0) - (b.compareceu ? 1 : 0) || a.vaga - b.vaga);
         let iv = 0;
         resto.sort((a, b) => a.t - b.t).forEach((p, i) => {
           const base = vazias[iv];
@@ -323,7 +323,7 @@ async function vigiarInterno({ agora, sign, presencas, escala, reler }) {      /
     // 2) atualiza registros existentes
     for (const f of Object.values(furos)) {
       const s0 = porId.get(f.id);
-      if (s0?.subAuto && !f.substituto && !f.encerrado) {      // alguém bateu o ponto fora da escala e entra no lugar de quem faltou
+      if (s0?.subAuto && !f.substituto && !f.encerrado && !f.semSubAuto) {      // alguém bateu o ponto fora da escala e entra no lugar de quem faltou
         f.substituto = { nome: s0.subAuto.nome, auto: true, ponto: true, informadoEm: agora }; f.aCaminho = false; f.loc = null;
         evento(f, "entrou", `${s0.subAuto.nome} bateu o ponto às ${hm(s0.subAuto.t)} fora da escala e entra no lugar de ${f.nome || "quem faltou"}.`);
         aoLider(f, `🔁 *${s0.subAuto.nome}* bateu o ponto às ${hm(s0.subAuto.t)} e entra no lugar de *${f.nome || "quem faltou"}* em *${f.hubNome}* (${f.turno}). Ajuste o nome na escala.`, "troca");
@@ -410,7 +410,7 @@ async function vigiarInterno({ agora, sign, presencas, escala, reler }) {      /
     for (const f of Object.values(furos)) await putJ(`furo/${dia}/${f.id}`, f);
     for (const m of msgs) { await notificar(dia, m.tel, m.texto, m.meta); resultado.enviadas++; }
     const resumo = { dia, geradoEm: agora, hubs: escala.cfg.hubs.map(h => ({ id: h.id, nome: h.nome, lider: liderDe(h.id).nome || "", turnos: Object.values(completos).filter(c => c.hubId === h.id).map(c => ({ id: c.tid, nome: c.turno, inicio: hm(c.inicio), esperados: c.n, presentes: c.ok, status: c.status, furos: c.furos,
-      pessoas: sit.filter(s => s.hubId === h.id && s.turnoId === c.tid).map(s => { const f = furos[s.id], tr = s.trocaPor, ok = !!(tr && s.coberto);      // vaga com substituto: o nome do substituto ocupa o lugar de quem faltou
+      pessoas: sit.filter(s => s.hubId === h.id && s.turnoId === c.tid).map(s => { const f = furos[s.id], tr = s.trocaPor, ok = !!((tr || (f?.resolvidoVia === "lider" && !f.substituto)) && s.coberto);      // vaga com substituto: o nome do substituto ocupa o lugar de quem faltou
         return { nome: tr || s.nome || "(vaga sem ninguém)", ...(tr ? { noLugar: s.nome } : {}), previsto: hm(s.inicio), chegou: s.cheg ? hm(s.cheg.t) : s.compareceu ? "marcado na escala" : ok ? (f?.resolvidoVia === "marca" ? "marcado na escala" : f?.resolvidoVia === "lider" ? "confirmado pelo líder" : hm(f?.resolvidoEm ?? s.subAuto?.t ?? agora)) : null, sem: !!s.semEscala, por: !tr && s.coberto ? (f?.substituto?.nome || null) : null, ...(tr && !ok && f?.subAcaminho ? { aCaminho: true } : {}),
           estado: s.cheg || s.compareceu || ok ? "presente" : s.coberto ? "coberto" : s.vazia ? "vaga vazia" : agora < s.inicio + tol * 60000 ? "aguardando" : "ausente" }; }) })) })), completoAvisado: estadoDia.completoAvisado };
     await putJ(`dia/${dia}`, resumo); resultado.dias[dia] = { situacoes: sit.length, furos: Object.keys(furos).length };
@@ -693,6 +693,16 @@ export async function rotaAlerta(req, path, ctx) {
   if (path === "/api/alerta/equipe-links" && req.method === "GET") {      // links do cadastro de equipe, um por hub, para a gestão repassar aos líderes
     const esc = await lerEscala([isoOf(Date.now())]);
     return json({ acompanhar: `${BASE_URL}/acompanhar.html?t=${sign("acompanhar")}`, hubs: await Promise.all(esc.cfg.hubs.map(async h => ({ id: h.id, nome: h.nome, link: linkEquipe(sign, h.id), cadastrados: Object.keys((await getJ(`tel/${h.id}`)) || {}).length, local: !!(await getJ(`hubloc/${h.id}`)) }))) });
+  }
+  // correção da gestão: o ponto que o sistema atribuiu a quem faltou (substituto automático) era de outra cobertura; a pessoa da vaga trabalhou
+  if (path === "/api/alerta/furo-corrigir" && req.method === "POST") {
+    const b = await req.json().catch(() => ({})), dia = String(b.d || ""), id = String(b.f || "");
+    if (!/^\d{4}-\d\d-\d\d$/.test(dia) || !id) return erro("Dados inválidos.");
+    const f = await getJ(`furo/${dia}/${id}`); if (!f) return erro("Furo não encontrado.", 404);
+    const antes = f.substituto?.nome || null, agora = Date.now(), por = String(b.por || "Gestão").slice(0, 40);
+    delete f.substituto; f.semSubAuto = true; f.aCaminho = false; f.estado = "resolvido"; f.resolvidoEm = agora; f.resolvidoVia = "lider"; f.confirmadoPor = por; f.confirmadoEm = agora;
+    evento(f, "confirmou", `${por} corrigiu: ${f.nome || "a pessoa da vaga"} trabalhou neste turno${antes ? ` (o ponto de ${antes} não era a cobertura desta vaga)` : ""}.`, por); await putJ(`furo/${dia}/${id}`, f);
+    return json({ ok: true, antes, estado: f.estado });
   }
   if (path === "/api/alerta/painel" && req.method === "GET") {
     const dia = /^\d{4}-\d\d-\d\d$/.test(q.get("d") || "") ? q.get("d") : isoOf(Date.now());
