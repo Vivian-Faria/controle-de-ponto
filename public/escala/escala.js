@@ -899,12 +899,17 @@ window.addEventListener('scroll', (e) => { if (e.target !== sugBox && !sugBox.co
 async function atualizarAvisoTelefones() {
   const box = $('#cadTel'); if (!box) return;
   if (!estado.hubId) { box.hidden = true; return; }
-  const hoje = hojeIso(), nomes = new Set();
+  const hoje = hojeIso(), diasPorNome = new Map();
   for (const [k, d] of Object.entries(estado.escalas)) {
     if (!k.startsWith(`${estado.hubId}_`) || k.slice(estado.hubId.length + 1) < hoje) continue;
-    for (const tid of Object.keys(d.slots || {})) for (const partes of vagasDe(d.slots[tid])) for (const p of partes) if (p?.nome) nomes.add(p.nome);
+    const iso = k.slice(estado.hubId.length + 1);
+    for (const tid of Object.keys(d.slots || {})) for (const partes of vagasDe(d.slots[tid])) for (const p of partes) {
+      if (!p?.nome) continue;
+      if (!diasPorNome.has(p.nome)) diasPorNome.set(p.nome, new Set());
+      diasPorNome.get(p.nome).add(iso);
+    }
   }
-  const locais = [...nomes].filter((n) => !telOkLocal(colabDe(n))).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const locais = [...diasPorNome.keys()].filter((n) => !telOkLocal(colabDe(n))).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   const chave = `${estado.hubId}|${locais.join('|')}`;
   if (chave !== cadCache.chave) {
     cadCache.chave = chave; cadCache.faltam = locais.length ? (await checarTelefones(locais)) || locais : [];
@@ -913,9 +918,13 @@ async function atualizarAvisoTelefones() {
   const f = cadCache.faltam;
   if (!f.length) { box.hidden = true; return; }
   const semCad = f.filter((n) => !colabDe(n)), semTel = f.filter((n) => colabDe(n));
+  // "Nome (20/11, 21/11)" — pra achar rápido onde corrigir, sem precisar vasculhar a escala.
+  const diasCurtos = (nome) => [...(diasPorNome.get(nome) || [])].sort()
+    .map((iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`).join(', ');
+  const comDias = (lista) => lista.map((n) => `${escapeHtml(n)} (${diasCurtos(n)})`).join(', ');
   box.innerHTML = `<strong>📱 ${f.length === 1 ? '1 colaborador escalado precisa' : `${f.length} colaboradores escalados precisam`} de cadastro</strong>`
-    + (semTel.length ? `<br>Sem telefone: ${semTel.map(escapeHtml).join(', ')}.` : '')
-    + (semCad.length ? `<br>Fora da lista de colaboradores: ${semCad.map(escapeHtml).join(', ')}.` : '')
+    + (semTel.length ? `<br>Sem telefone: ${comDias(semTel)}.` : '')
+    + (semCad.length ? `<br>Fora da lista de colaboradores: ${comDias(semCad)}.` : '')
     + '<br>Informe em <a href="cadastros.html">Cadastros → Colaboradores</a> (telefone obrigatório, ou marque "Sem celular").';
   box.hidden = false;
 }
