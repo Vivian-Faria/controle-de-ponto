@@ -29,6 +29,15 @@ export function hubDe(...campos) {
   return null;
 }
 
+// ---------------------------------------------------------------- horário de funcionamento (minutos do dia, hora local)
+// Sion: 09:30 às 00:30. Demais hubs: 11h às 23h. Pedidos fora da janela não entram nos indicadores.
+const JANELA = { sion: { ini: 570, fim: 30, h: 15 } }, JANELA_PADRAO = { ini: 660, fim: 1380, h: 12 };
+const janela = id => JANELA[id] || JANELA_PADRAO;
+const dentro = (id, ms) => { const w = janela(id), t = ((Math.floor((ms + TZ * HOUR) / 60000) % 1440) + 1440) % 1440; return w.ini < w.fim ? t >= w.ini && t < w.fim : t >= w.ini || t < w.fim; };
+const horasJanela = id => { const w = janela(id), o = []; for (let m = w.ini, n = 0; n < w.h * 2; n++, m = (m + 30) % 1440) { const h = Math.floor(m / 60); if (!o.includes(h)) o.push(h); } return o; };
+const horasDecorridas = (id, agora) => { const w = janela(id), t = (((Math.floor((agora + TZ * HOUR) / 60000)) % 1440) + 1440) % 1440;
+  const m = w.ini < w.fim ? Math.min(Math.max(t - w.ini, 0), w.fim - w.ini) : Math.min(t, w.fim) + Math.max(t - w.ini, 0); return Math.max(0.25, m / 60); };
+
 // ---------------------------------------------------------------- tempo
 const tms = s => { if (!s) return null; s = String(s); if (/(z|[+-]\d\d:?\d\d)$/i.test(s)) { const v = Date.parse(s); return Number.isFinite(v) ? v : null; }
   const m = /^(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d)(?::(\d\d))?/.exec(s); if (!m) return null; return Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) - TZ * HOUR; };
@@ -68,8 +77,9 @@ function somaPedido(e, o) {
   const k = o.hub, ctx = e.vistos; const rot = [o.hub, o.unit_name, o.business_name];
   for (const [bag, v] of [["hubs", o.hub], ["unidades", o.unit_name], ["negocios", o.business_name]]) { const n = String(v ?? "(vazio)"); if (Object.keys(ctx[bag]).length < 40 || n in ctx[bag]) ctx[bag][n] = (ctx[bag][n] || 0) + 1; }
   const id = hubDe(...rot); if (!id) { e.semHub++; return; }
+  const c = tms(o.created_at); if (c != null && !dentro(id, c)) { e.fora = (e.fora || 0) + 1; return; }      // fora do horário de funcionamento do hub
   const h = e.hubs[id]; h.pedidos++;
-  const c = tms(o.created_at); if (c != null) h.horas[horaDe(c)]++;
+  if (c != null) h.horas[horaDe(c)]++;
   if (o.status === "canceled" || o.canceled_at) { h.cancel++; return; }
   const p = tms(o.ready_to_collect_at); if (c != null && p != null) { const m = (p - c) / 60000; if (m >= 0 && m <= 240) { h.tSoma += m; h.tN++; } }
 }
@@ -117,7 +127,7 @@ async function pessoasDoDia(dias) {
 }
 
 // ---------------------------------------------------------------- orquestração
-const chaveDia = d => `dia/${d}`;
+const chaveDia = d => `v2/dia/${d}`;
 const fechado = (d, agora) => agora >= Date.parse(d + "T00:00:00Z") - TZ * HOUR + DAY + 2 * HOUR;       // 2 h depois da meia-noite local
 
 export async function atualizar({ ate = DIAS, max = ORCAMENTO_REQ } = {}) {
@@ -126,7 +136,7 @@ export async function atualizar({ ate = DIAS, max = ORCAMENTO_REQ } = {}) {
   let erro = null, escalaErro = null;
   const alvo = [];                                                                       // ordem: hoje, depois do mais novo para o mais antigo
   for (const d of [...dias].reverse()) {
-    const reg = await getJ(chaveDia(d)), parc = await getJ(`parc/${d}`);
+    const reg = await getJ(chaveDia(d)), parc = await getJ(`v2/parc/${d}`);
     const precisa = parc || !reg || (d === hoje ? agora - (reg.em || 0) > AO_VIVO_MS : !reg.final && fechado(d, agora));
     if (precisa) alvo.push({ d, parc });
   }
@@ -136,9 +146,9 @@ export async function atualizar({ ate = DIAS, max = ORCAMENTO_REQ } = {}) {
       e = await avancaDia(e, ctx);
       e.em = Date.now(); e.final = fechado(d, agora);
       const p = await pessoasDoDia([d]); if (p.__erro) escalaErro = p.__erro; e.pessoas = p[d] || null;
-      await putJ(chaveDia(d), e); try { await st().delete(`parc/${d}`); } catch { /* sem parcial */ }
+      await putJ(chaveDia(d), e); try { await st().delete(`v2/parc/${d}`); } catch { /* sem parcial */ }
     } catch (err) {
-      await putJ(`parc/${d}`, e);                                                        // guarda o progresso; a dia anterior continua visível
+      await putJ(`v2/parc/${d}`, e);                                                        // guarda o progresso; a dia anterior continua visível
       if (!(err instanceof ApiErro && err.status === 0)) erro = err;
       break;
     }
@@ -156,12 +166,11 @@ export async function montar() {
   for (const id of HUBS) {
     out.byHub[id] = faixa.map(d => {
       const r = R[d], h = r.hubs[id] || novoHub(), p = r.pessoas?.[id];
-      const horasAb = h.horas.filter(x => x > 0).length, ab = h.horas.map((x, i) => x > 0 ? i : -1).filter(i => i >= 0);
-      const horas = ab.length ? ab[ab.length - 1] - ab[0] + 1 : 0;
+      const hj = horasJanela(id), horas = d === hoje ? Math.min(janela(id).h, horasDecorridas(id, agora)) : janela(id).h;
       let pessoas = 0;
-      if (p && p.tem) { const hs = ab.map(i => p.h[i]).filter(x => x > 0); pessoas = hs.length ? hs.reduce((a, b) => a + b, 0) / hs.length : p.total; }
+      if (p && p.tem) { const hs = hj.map(i => p.h[i]).filter(x => x > 0); pessoas = hs.length ? hs.reduce((a, b) => a + b, 0) / hs.length : p.total; }
       else if (h.pedidos) semEscala++;
-      return { date: d, pedidos: h.pedidos, pessoas: h.pedidos ? Math.max(1, +pessoas.toFixed(1)) : 0, horas: horas || 0, cancel: h.cancel, erros: h.erros, errTipos: h.errTipos, tempo: h.tN ? +(h.tSoma / h.tN).toFixed(1) : 0 };
+      return { date: d, pedidos: h.pedidos, pessoas: h.pedidos ? Math.max(1, +pessoas.toFixed(1)) : 0, horas: +horas.toFixed(2), cancel: h.cancel, erros: h.erros, errTipos: h.errTipos, tempo: h.tN ? +(h.tSoma / h.tN).toFixed(1) : 0 };
     });
     const rec = faixa.slice(-14); const n = Math.max(1, rec.length);
     out.hourly[id] = Array.from({ length: 24 }, (_, hh) => ({ h: hh, pedidos: Math.round(rec.reduce((a, d) => a + (R[d].hubs[id]?.horas[hh] || 0), 0) / n),

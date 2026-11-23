@@ -172,7 +172,7 @@ function drawDashboard(first){
     return `<div class="card hub s-${b} ${S.sel.has(x.h.id)?'':'off'}" style="--c:${x.h.color}" data-h="${x.h.id}" title="Clique para incluir/excluir da comparação">
       <div class="t"><b><i></i>${x.h.short}</b><span class="rk">#${order.indexOf(x)+1}</span></div>
       <div class="ring"><svg viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="40"/><circle class="fg" cx="50" cy="50" r="40" style="--len:${len}"/></svg><div><strong>${x.sc}</strong><span>SAÚDE</span></div></div>
-      <div class="ml">${KEYS.map(k => `<div class="s-${status(k,x.m[k])}">${D.targets[k].label.replace('Taxa de c','C').replace(' de processamento',' proc.').replace(' por dia','/dia')}<b><span class="dot"></span>${fmtM(k,x.m[k])}${k==='cancel'||k==='assert'?'%':k==='tempo'?'′':''}</b></div>`).join('')}</div></div>`; }).join('');
+      <div class="ml"><div>Pedidos totais<b>${nf(x.m.ped,0)}</b></div>${KEYS.map(k => `<div class="s-${status(k,x.m[k])}">${D.targets[k].label.replace('Taxa de c','C').replace(' de processamento',' proc.').replace(' por dia','/dia')}<b><span class="dot"></span>${fmtM(k,x.m[k])}${k==='cancel'||k==='assert'?'%':k==='tempo'?'′':''}</b></div>`).join('')}</div></div>`; }).join('');
   $$('#hubCards .hub').forEach(c => c.onclick = () => toggleHub(c.dataset.h));
   // comparativo (abas + barras + linhas)
   $('#mTabs').innerHTML = KEYS.map(k => `<button class="${S.metric===k?'on':''}" data-k="${k}">${D.targets[k].label}</button>`).join('');
