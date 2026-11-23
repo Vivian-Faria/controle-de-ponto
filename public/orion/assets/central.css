@@ -300,3 +300,9 @@ body.locked .main,body.locked .top{visibility:hidden}
 .mn-row.u-alta::before{background:var(--red) !important}.mn-row.u-media::before{background:#d9ddcf !important}.mn-row.u-baixa::before{background:var(--dim) !important}
 .mn-row.ok{opacity:.7}.mn-row.ok::before{background:var(--lime) !important}
 .mn-st{white-space:nowrap}
+
+.ctl{flex-wrap:wrap}
+.perbox{display:flex;align-items:center;gap:8px;margin-left:10px}
+.perbox label{display:flex;align-items:center;gap:6px;font:500 11px var(--mono);letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+.perbox input[type=date]{background:rgba(255,255,255,.05);border:1px solid var(--line2);border-radius:10px;color:#e8ece0;font:500 12px var(--mono);padding:7px 9px;color-scheme:dark}
+.perbox.on input{border-color:rgba(184,244,0,.55);box-shadow:0 0 0 3px rgba(184,244,0,.08)}

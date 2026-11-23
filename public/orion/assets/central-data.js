@@ -19,7 +19,7 @@
   ];
   // metas (editáveis depois)
   const TARGETS = {
-    prod:   {label:'Produtividade',        unit:'ped/h/pessoa', dir:'up',   goal:3.2, dec:2, short:'PRODUTIVIDADE', def:'Pedidos totais por hora de funcionamento ÷ pessoas na escala'},
+    prod:   {label:'Produtividade',        unit:'ped/h/pessoa', dir:'up',   goal:30, dec:1, short:'PRODUTIVIDADE', def:'Pedidos totais por hora de funcionamento ÷ pessoas na escala'},
     cancel: {label:'Taxa de cancelamento', unit:'%',            dir:'down', goal:3.0, dec:1, short:'CANCELAMENTO',  def:'Cancelamentos ÷ pedidos totais'},
     assert: {label:'Assertividade',        unit:'%',            dir:'up',   goal:98.0,dec:1, short:'ASSERTIVIDADE', def:'Pedidos sem erro reportado ÷ pedidos totais'},
     tempo:  {label:'Tempo de processamento',unit:'min',         dir:'down', goal:12,  dec:1, short:'TEMPO DE PROC.',def:'Pedido pronto − pedido recebido (média)'},

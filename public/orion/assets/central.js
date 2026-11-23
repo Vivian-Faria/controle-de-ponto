@@ -44,7 +44,7 @@ function initShell(){
 
 /* ---------- cálculo dos indicadores ---------- */
 let D = null;
-const S = {period:14, sel:new Set(), metric:'prod'};
+const S = {period:14, end:0, custom:null, sel:new Set(), metric:'prod'};
 const KEYS = ['prod','cancel','assert','tempo','erros'];
 function agg(slices){           // slices: lista de arrays de linhas (um array por hub)
   let ped=0, canc=0, err=0, tp=0, pph=0, ppl=0, errDia=0;
@@ -55,9 +55,13 @@ function agg(slices){           // slices: lista de arrays de linhas (um array p
   });
   return {ped, prod: pph/(ppl||1), cancel: canc/(ped||1)*100, assert: (1-err/(ped||1))*100, tempo: tp/(ped||1), erros: errDia};
 }
-const hubRows = (id, from, to) => D.byHub[id].slice(from, to);
-const lastN = (id, n) => D.byHub[id].slice(-n);
-const prevN = (id, n) => { const p = D.byHub[id].slice(-2*n, -n); return p.length >= n ? p : lastN(id, n); };     // sem histórico completo do período anterior, não inventa variação
+const wEnd = () => D.days.length - (S.end || 0);                    // fim da janela (0 = até hoje; >0 quando o período escolhido termina antes)
+const lastN = (id, n) => D.byHub[id].slice(Math.max(0, wEnd()-n), wEnd());
+const winDays = n => D.days.slice(Math.max(0, wEnd()-n), wEnd());
+const hubRows = (id, n) => lastN(id, n);
+const brD = iso => iso.slice(8,10) + '/' + iso.slice(5,7);
+const perTxt = n => S.custom ? 'período de <b>' + brD(S.custom.from) + ' a ' + brD(S.custom.to) + '</b> (' + n + ' dia' + (n>1?'s':'') + ')' : 'últimos <b>' + n + ' dias</b>';
+const prevN = (id, n) => { const p = D.byHub[id].slice(Math.max(0, wEnd()-2*n), wEnd()-n); return p.length >= n ? p : lastN(id, n); };     // sem histórico completo do período anterior, não inventa variação
 function gap(k, v, mult){
   const T = D.targets[k]; const G = T.goal*(mult||1);
   if(k === 'assert') return ((100-v) - (100-T.goal)) / (100-T.goal);
@@ -157,11 +161,12 @@ function drawDashboard(first){
   // chips
   $('#hubChips').innerHTML = D.hubs.map(h => `<button class="hchip ${S.sel.has(h.id)?'on':''}" style="--c:${h.color}" data-h="${h.id}"><i></i>${h.short}</button>`).join('');
   $$('#hubChips .hchip').forEach(b => b.onclick = () => toggleHub(b.dataset.h));
-  $$('#periodSeg button').forEach(b => b.classList.toggle('on', +b.dataset.p === n));
+  $$('#periodSeg button').forEach(b => b.classList.toggle('on', !S.custom && +b.dataset.p === n));
+  { const f = $('#dFrom'), t = $('#dTo'); if(f && D.days.length){ f.min = t.min = D.days[0]; f.max = t.max = D.days[D.days.length-1]; if(S.custom){ f.value = S.custom.from; t.value = S.custom.to; } else { f.value = winDays(n)[0] || ''; t.value = winDays(n).slice(-1)[0] || ''; } $('#perBox').classList.toggle('on', !!S.custom); } }
   // KPIs da rede (hubs selecionados)
   const cur = agg(sh.map(h => lastN(h.id,n))), prev = agg(sh.map(h => prevN(h.id,n)));
   const daily = KEYS.reduce((o,k) => (o[k] = [], o), {});
-  for(let i=Math.min(n,D.days.length);i>=1;i--){ const m = agg(sh.map(h => [D.byHub[h.id][D.days.length-i]])); KEYS.forEach(k => daily[k].push(m[k])); }
+  for(let i=Math.min(n,wEnd());i>=1;i--){ const m = agg(sh.map(h => [D.byHub[h.id][wEnd()-i]])); KEYS.forEach(k => daily[k].push(m[k])); }
   $('#kpis').innerHTML = KEYS.map(k => { const T = D.targets[k], mu = k==='erros' ? sh.length : 1, GL = T.goal*mu, st = status(k,cur[k],mu), col = `var(--${st==='ok'?'lime':st==='wa'?'amber':'red'})`;
     const w = Math.max(8, Math.min(100, T.dir==='up' ? cur[k]/GL*100 : GL/cur[k]*100));
     return `<div class="card kpi" style="--k:${col};--w:${w}%"><small>${T.short}</small><strong>${fmtM(k,cur[k])}<u>${T.unit}</u></strong>${deltaHTML(k,cur[k],prev[k])}${spark(daily[k],col)}<div class="meta">META ${T.dir==='up'?'≥':'≤'} ${fmtM(k,GL)} ${T.unit}${mu>1?' (rede)':''}</div></div>`; }).join('');
@@ -182,19 +187,19 @@ function drawDashboard(first){
   $('#mDef').textContent = T.def + ' · ' + (T.dir==='up' ? 'quanto maior, melhor' : 'quanto menor, melhor');
   const items = sh.map(h => { const v = agg([lastN(h.id,n)])[k]; return {name:h.short, color:h.color, val:v, st:status(k,v)}; }).sort((a,b) => T.dir==='up' ? b.val-a.val : a.val-b.val);
   barH($('#cBar'), {items, goal:T.goal, fmt:v => fmtM(k,v), aria:'Comparativo de '+T.label+' entre hubs'});
-  const labels = D.days.slice(-n);
+  const labels = winDays(n);
   lineChart($('#cLine'), {labels, goal:T.goal, fmt:v => nf(v, T.dec), unit:T.unit, dirUp:T.dir==='up', aria:'Evolução diária de '+T.label,
     series: sh.map(h => ({id:h.id, name:h.short, color:h.color, vals: lastN(h.id,n).map((_,i,arr) => agg([[arr[i]]])[k])}))});
   $('#cLegend').innerHTML = sh.map(h => `<span><i style="background:${h.color}"></i>${h.short}</span>`).join('');
   // erros
-  const nn = Math.min(n, 30), lbl = D.days.slice(-nn);
+  const nn = Math.min(n, 30), lbl = winDays(nn);
   stacked($('#cErr'), lbl, D.errTypes.map(t => ({name:t.name, color:t.color, vals: lbl.map((_,i) => sh.reduce((a,h) => a + lastN(h.id,nn)[i].errTipos[t.id], 0))})));
   $('#errLegend').innerHTML = D.errTypes.map(t => `<span><i style="background:${t.color}"></i>${t.name}</span>`).join('');
   const totT = D.errTypes.map(t => ({t, v: sh.reduce((a,h) => a + lastN(h.id,n).reduce((b,r) => b + r.errTipos[t.id], 0), 0)})), mx = Math.max(...totT.map(x => x.v), 1);
   $('#errRank').innerHTML = totT.sort((a,b) => b.v-a.v).map(x => `<div style="--c:${x.t.color}"><span>${x.t.name}</span><b>${x.v}</b><div class="bg"><i style="width:${x.v/mx*100}%"></i></div></div>`).join('');
-  const hd = D.days.slice(-14), hmMax = Math.max(...sh.flatMap(h => hubRows(h.id,-14,undefined).map(r => r.erros)), 1);
+  const hd = winDays(14), hmMax = Math.max(...sh.flatMap(h => hubRows(h.id,14).map(r => r.erros)), 1);
   $('#errHeat').innerHTML = `<table class="hm"><thead><tr><th></th>${hd.map(d => `<th>${d.slice(8)}</th>`).join('')}</tr></thead><tbody>` +
-    sh.map(h => `<tr><td>${h.short}</td>${hubRows(h.id,-14,undefined).map((r,i) => { const a = r.erros/hmMax; return `<td style="background:rgba(${Math.round(184+a*71)},${Math.round(244+a*11)},${Math.round(a*255)},${.1+a*.75});color:${a>.55?'#0a0d00':'#fff'};animation-delay:${i*.03}s" title="${shortDate(r.date)} · ${r.erros} erros">${r.erros}</td>`; }).join('')}</tr>`).join('') + '</tbody></table>';
+    sh.map(h => `<tr><td>${h.short}</td>${hubRows(h.id,14).map((r,i) => { const a = r.erros/hmMax; return `<td style="background:rgba(${Math.round(184+a*71)},${Math.round(244+a*11)},${Math.round(a*255)},${.1+a*.75});color:${a>.55?'#0a0d00':'#fff'};animation-delay:${i*.03}s" title="${shortDate(r.date)} · ${r.erros} erros">${r.erros}</td>`; }).join('')}</tr>`).join('') + '</tbody></table>';
   drawMaint(sh, n);
   // fluxo por hora
   hourly(sh);
@@ -273,7 +278,7 @@ function manLine(sh, n){
 function briefing(){
   const sh = selHubs(), n = S.period, a = analyze(sh, n), nm = sh.length > 1 ? 'dos hubs selecionados' : 'do ' + sh[0].short;
   const L = []; const dN = (a.net.prod - a.netP.prod)/(a.netP.prod||1)*100;
-  L.push(`<p>Panorama dos últimos <b>${n} dias</b> ${nm}: saúde operacional <b class="${cls(band(a.netScore))}">${a.netScore}/100</b>. A produtividade está em <b>${nf(a.net.prod,2)}</b> pedidos/h por pessoa (${dN>=0?'+':''}${nf(dN,1)}% vs. período anterior) e o tempo médio de processamento é <b>${nf(a.net.tempo,1)} min</b>.</p>`);
+  L.push(`<p>Panorama do ${perTxt(n)} ${nm}: saúde operacional <b class="${cls(band(a.netScore))}">${a.netScore}/100</b>. A produtividade está em <b>${nf(a.net.prod,2)}</b> pedidos/h por pessoa (${dN>=0?'+':''}${nf(dN,1)}% vs. período anterior) e o tempo médio de processamento é <b>${nf(a.net.tempo,1)} min</b>.</p>`);
   const items = [];
   if(sh.length > 1){
     items.push(`<b>${a.best.h.short}</b> lidera com índice ${a.best.sc}. <b class="${cls(band(a.worst.sc))}">${a.worst.h.short}</b> é o ponto mais frágil (${a.worst.sc}).`);
@@ -347,6 +352,7 @@ function initJarvis(){
 }
 
 
+function toastDash(t){ const p = $('#dataPill'); if(!p) return; const o = p.textContent; p.textContent = t; setTimeout(() => setPill(D && D.meta), 2600); }
 /* ---------- tempo real: pílula de status + atualização automática ---------- */
 function setPill(m){
   const p = $('#dataPill'), nt = $('#v-dashboard .note'); if(!p) return; m = m || {};
@@ -377,7 +383,12 @@ document.addEventListener('DOMContentLoaded', () => {
   initShell();
   Dd.load().then(data => {
     D = data; D.hubs.forEach(h => S.sel.add(h.id)); initJarvis();
-    $$('#periodSeg button').forEach(b => b.onclick = () => { S.period = +b.dataset.p; $('#jvText').dataset.plain = ''; drawDashboard(false); });
+    $$('#periodSeg button').forEach(b => b.onclick = () => { S.period = +b.dataset.p; S.end = 0; S.custom = null; $('#jvText').dataset.plain = ''; drawDashboard(false); });
+    const aplica = () => { const f = $('#dFrom').value, t = $('#dTo').value; if(!f || !t) return; let a = D.days.indexOf(f), b = D.days.indexOf(t);
+      if(a < 0 || b < 0){ toastDash('Escolha datas dentro dos últimos ' + D.days.length + ' dias carregados.'); return; }
+      if(a > b){ [a,b] = [b,a]; }
+      S.period = b - a + 1; S.end = D.days.length - 1 - b; S.custom = {from:D.days[a], to:D.days[b]}; $('#jvText').dataset.plain = ''; drawDashboard(false); };
+    $('#dFrom').onchange = aplica; $('#dTo').onchange = aplica;
     if(window.ComprasStore) ComprasStore.onChange(() => { if(window.CentralApp && D && !$('#v-dashboard').hidden) drawMaint(selHubs(), S.period); });
 window.CentralApp = {go, get data(){return D},  agg, lastN, status, score, band, fmtM, nf, KEYS};
     setPill(D.meta); agendaRefresh();
