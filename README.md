@@ -30,3 +30,16 @@ Sem iframes: cada sistema roda dentro da própria página da Central (Shadow DOM
 - `public/escala/` — código da escala (Firebase `escalas-operacional-orion`).
 - `tools/build_modulos.py` e `tools/build_escala.py` — regeram `public/orion/mod/*.js` quando `painel.html`, `central.html`, `acompanhar.html`, `equipe-links.html` ou `public/escala/*` mudarem. Rode os dois depois de editar essas páginas.
 - `public/orion/financeiro.html` — interface do Financeiro (sem senha).
+
+## Dashboard em tempo real (API admin da Órion)
+
+A Central lê os números pela função `netlify/functions/dash.mjs` (`/api/dash`, só com a sessão de admin).
+O token da API **nunca** vai para o navegador: defina no Netlify (Site settings → Environment variables):
+
+- `ORION_ADMIN_TOKEN` (obrigatória): token da API admin.
+- `ORION_ADMIN_URL` (opcional): padrão `https://admin.orioncloudkitchens.com.br/api/admin/v1`.
+- `ORION_HUB_MAP` (opcional): JSON `{"trecho do nome":"sion|cn|bur|cas|exp"}` para ajustar o reconhecimento dos hubs.
+
+Cada dia fechado é calculado uma vez e guardado (Netlify Blobs, loja `dash`); hoje é recalculado a cada ~60 s. O histórico (60 dias) é preenchido
+aos poucos, do mais recente para o mais antigo, respeitando o limite de 60 req/min da API; a função agendada `vigia` também ajuda a manter tudo aquecido.
+Diagnóstico dos nomes de hub/unidade que a API devolve: `/api/dash/probe` (logada como admin).

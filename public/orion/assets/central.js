@@ -17,7 +17,7 @@ function go(name, push){
   if(push !== false) history.replaceState(null,'','#/' + name);
   if(!rendered[name]){ rendered[name] = true; (window.CentralModules && CentralModules.render) && CentralModules.render(name); }
   if(name === 'dashboard') drawDashboard(false);
-  const dm = $('.pill.demo'); if(dm) dm.style.visibility = name === 'dashboard' ? 'visible' : 'hidden';
+  const dm = $('#dataPill'); if(dm) dm.style.visibility = name === 'dashboard' ? 'visible' : 'hidden';
   window.scrollTo({top:0});
   if(!document.body.classList.contains('pinned')) setSb(false);
 }
@@ -57,7 +57,7 @@ function agg(slices){           // slices: lista de arrays de linhas (um array p
 }
 const hubRows = (id, from, to) => D.byHub[id].slice(from, to);
 const lastN = (id, n) => D.byHub[id].slice(-n);
-const prevN = (id, n) => D.byHub[id].slice(-2*n, -n);
+const prevN = (id, n) => { const p = D.byHub[id].slice(-2*n, -n); return p.length >= n ? p : lastN(id, n); };     // sem histórico completo do período anterior, não inventa variação
 function gap(k, v, mult){
   const T = D.targets[k]; const G = T.goal*(mult||1);
   if(k === 'assert') return ((100-v) - (100-T.goal)) / (100-T.goal);
@@ -161,7 +161,7 @@ function drawDashboard(first){
   // KPIs da rede (hubs selecionados)
   const cur = agg(sh.map(h => lastN(h.id,n))), prev = agg(sh.map(h => prevN(h.id,n)));
   const daily = KEYS.reduce((o,k) => (o[k] = [], o), {});
-  for(let i=n;i>=1;i--){ const m = agg(sh.map(h => [D.byHub[h.id][D.days.length-i]])); KEYS.forEach(k => daily[k].push(m[k])); }
+  for(let i=Math.min(n,D.days.length);i>=1;i--){ const m = agg(sh.map(h => [D.byHub[h.id][D.days.length-i]])); KEYS.forEach(k => daily[k].push(m[k])); }
   $('#kpis').innerHTML = KEYS.map(k => { const T = D.targets[k], mu = k==='erros' ? sh.length : 1, GL = T.goal*mu, st = status(k,cur[k],mu), col = `var(--${st==='ok'?'lime':st==='wa'?'amber':'red'})`;
     const w = Math.max(8, Math.min(100, T.dir==='up' ? cur[k]/GL*100 : GL/cur[k]*100));
     return `<div class="card kpi" style="--k:${col};--w:${w}%"><small>${T.short}</small><strong>${fmtM(k,cur[k])}<u>${T.unit}</u></strong>${deltaHTML(k,cur[k],prev[k])}${spark(daily[k],col)}<div class="meta">META ${T.dir==='up'?'≥':'≤'} ${fmtM(k,GL)} ${T.unit}${mu>1?' (rede)':''}</div></div>`; }).join('');
@@ -346,6 +346,31 @@ function initJarvis(){
   $('#jvAgain').onclick = () => say(briefing());
 }
 
+
+/* ---------- tempo real: pílula de status + atualização automática ---------- */
+function setPill(m){
+  const p = $('#dataPill'), nt = $('#v-dashboard .note'); if(!p) return; m = m || {};
+  if(m.live){
+    p.classList.remove('demo'); p.classList.add('live');
+    p.textContent = 'AO VIVO · ' + Dd.hm(m.atualizado || Date.now()) + (m.pendente ? ' · carregando histórico ' + m.carregados + '/' + m.total + ' dias' : '');
+    if(nt) nt.innerHTML = '<b>Dados reais</b> da API Órion, atualizados automaticamente' + (m.aviso ? ' · <span style="color:var(--amber)">' + m.aviso + '</span>' : '') + (m.semHub ? ' · ' + m.semHub + ' registros sem hub reconhecido (veja o diagnóstico em /api/dash/probe)' : '') + (m.semEscala ? ' · ' + m.semEscala + ' dia(s) de hub sem escala lançada: pessoas estimadas em 1.' : '') + '.';
+  } else {
+    p.classList.add('demo'); p.classList.remove('live');
+    const t = {'sem-token':'API NÃO CONFIGURADA', 'carregando':'CARREGANDO API…', 'sessão':'FAÇA LOGIN PARA DADOS REAIS'}[m.reason] || 'API INDISPONÍVEL';
+    p.textContent = 'DADOS FICTÍCIOS · ' + t;
+    if(nt) nt.innerHTML = '<b>Dados fictícios</b> (exceto manutenções). ' + (m.msg ? 'Motivo: ' + m.msg : '') + ' O painel tenta de novo sozinho.';
+  }
+}
+let refT = null;
+function agendaRefresh(){
+  clearTimeout(refT);
+  const m = (D && D.meta) || {}, rapido = m.pendente || (m.live === false && m.reason === 'carregando');
+  refT = setTimeout(() => {
+    if(document.hidden || $('#v-dashboard').hidden){ agendaRefresh(); return; }
+    Dd.load().then(nd => { D = nd; if(!S.sel.size) D.hubs.forEach(h => S.sel.add(h.id)); setPill(nd.meta); drawDashboard(false); agendaRefresh(); });
+  }, rapido ? 12000 : 45000);
+}
+
 /* ---------- init ---------- */
 document.addEventListener('DOMContentLoaded', () => {
   initShell();
@@ -353,7 +378,8 @@ document.addEventListener('DOMContentLoaded', () => {
     D = data; D.hubs.forEach(h => S.sel.add(h.id)); initJarvis();
     $$('#periodSeg button').forEach(b => b.onclick = () => { S.period = +b.dataset.p; $('#jvText').dataset.plain = ''; drawDashboard(false); });
     if(window.ComprasStore) ComprasStore.onChange(() => { if(window.CentralApp && D && !$('#v-dashboard').hidden) drawMaint(selHubs(), S.period); });
-window.CentralApp = {go, data: D, agg, lastN, status, score, band, fmtM, nf, KEYS};
+window.CentralApp = {go, get data(){return D},  agg, lastN, status, score, band, fmtM, nf, KEYS};
+    setPill(D.meta); agendaRefresh();
     const start = (location.hash.match(/#\/(\w+)/) || [])[1] || 'dashboard';
     go(start, false); if(start !== 'dashboard') drawDashboard(true);
   });

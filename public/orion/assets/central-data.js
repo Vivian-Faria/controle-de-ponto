@@ -1,8 +1,7 @@
 /* ============================================================
    DADOS FICTÍCIOS DA CENTRAL
    Tudo que os painéis mostram passa por CentralData.load().
-   Quando a API chegar, basta trocar esta função por um fetch
-   que devolva o mesmo formato (ver "formato" abaixo).
+   Agora busca os dados reais em /api/dash; sem API, usa exemplos.
    ============================================================ */
 (function(){
   const HUBS = [
@@ -57,10 +56,28 @@
     });
     return out;
   }
-  let cache = null;
+  let mock = null, ultimo = null;
+  const hm = ms => new Date(ms).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  /* Dados reais: /api/dash (função do servidor que fala com a API admin; o token nunca chega ao navegador).
+     Se a API não estiver configurada/acessível, cai nos dados de exemplo e diz o motivo. */
+  async function real(){
+    const r = await fetch('/api/dash', {credentials:'same-origin', cache:'no-store'});
+    const j = await r.json().catch(() => ({}));
+    if(r.status === 200 && j.days && j.days.length){
+      j.hubs = HUBS; j.errTypes = ERR_TYPES; j.targets = TARGETS; j.meta = j.meta || {}; j.meta.live = true; return j;
+    }
+    const m = {live:false, reason: r.status === 401 ? 'sessão' : r.status === 503 ? 'sem-token' : r.status === 202 ? 'carregando' : 'erro', msg: j.error || ('HTTP ' + r.status)};
+    if(j.meta) m.progresso = j.meta;
+    throw m;
+  }
+  function demo(m){ if(!mock) mock = build(); return Object.assign({}, mock, {meta: Object.assign({live:false}, m || {})}); }
   window.CentralData = {
-    HUBS, ERR_TYPES, TARGETS,
-    /* TROCAR PELA API: return fetch('/api/...').then(r => r.json()) com o mesmo formato de build() */
-    load(){ return Promise.resolve(cache || (cache = build())); },
+    HUBS, ERR_TYPES, TARGETS, hm,
+    load(){
+      return real().then(d => (ultimo = d)).catch(m => {
+        if(m && m.live === false){ if(ultimo && m.reason !== 'sem-token') return Object.assign({}, ultimo, {meta: Object.assign({}, ultimo.meta, {aviso: m.msg})}); return demo(m); }
+        return demo({reason:'erro', msg: String(m && m.message || m)});
+      });
+    },
   };
 })();

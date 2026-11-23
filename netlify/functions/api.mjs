@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import HIST from "./historico.json";
 import { rotaFreela, entradasFreela } from "./freela.mjs";
 import { rotaAlerta } from "./alerta.mjs";
+import { rotaDash } from "./dash.mjs";
 
 // ------------------------------------------------------------ configuração (variáveis de ambiente do Netlify)
 const env = (k, d = "") => (process.env[k] ?? d).toString().trim();
@@ -336,6 +337,7 @@ export default async (req) => {
     if (path.startsWith("/api/freela")) return await rotaFreela(req, path, { json, secret: SECRET, isAdmin: validSession, isFreela: validFreela,
       freelaCookie: () => `freela_session=${makeFreela()}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${14 * 3600}` });
     if (path.startsWith("/api/alerta")) return await rotaAlerta(req, path, { json, isAdmin: validSession, sign, presencas: presencasDoDia });
+    if (path.startsWith("/api/dash")) return await rotaDash(req, path, { json, isAdmin: validSession });
     if (!validSession(req)) return json({ error: "Não autorizado" }, 401);
 
     if (path === "/api/report" && req.method === "GET") {

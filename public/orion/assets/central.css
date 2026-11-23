@@ -21,6 +21,8 @@ body.shell{--sbw:272px;--amber:#d9ddcf;--amber-d:rgba(217,221,207,.10)}
 .top .sp{flex:1}
 .pill{display:inline-flex;align-items:center;gap:8px;font:500 11px var(--mono);letter-spacing:.12em;padding:7px 12px;border-radius:30px;border:1px solid var(--line2);color:var(--muted)}
 .pill.demo{color:#d9ddcf;border-color:var(--line2);background:rgba(255,255,255,.05)}
+.pill.live{color:var(--lime);border-color:rgba(184,244,0,.4);background:rgba(184,244,0,.07)}
+.pill.live::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--lime);box-shadow:0 0 8px var(--lime);animation:blink 1.6s infinite}
 .pill.demo::before{content:"";width:6px;height:6px;border-radius:50%;background:#d9ddcf;animation:blink 1.6s infinite}
 .clock{font:500 13px var(--mono);color:var(--muted)}
 
