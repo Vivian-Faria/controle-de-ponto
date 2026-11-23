@@ -119,8 +119,18 @@ function notBuy(o, reason){
   o.thread.push({ id:uid(), from:'sys', kind:'note', text:'Marcado como NÃO COMPRADO — ' + reason, at:nowISO() });
   o.alert = null; touch(o); save(o); toast('Marcado como não comprado');
 }
+function arrive(o){
+  o.arrived = true; o.arrivedAt = nowISO();
+  o.thread.push({ id:uid(), from:'sys', kind:'note', text:'Equipamento CHEGOU', at:nowISO() });
+  touch(o); save(o); toast('Chegada registrada');
+}
+function unarrive(o){
+  o.arrived = false; o.arrivedAt = null;
+  o.thread.push({ id:uid(), from:'sys', kind:'note', text:'Chegada desfeita (voltou para "a caminho")', at:nowISO() });
+  touch(o); save(o);
+}
 function undo(o){
-  o.status = 'pendente'; o.reason = ''; o.decidedAt = null;
+  o.status = 'pendente'; o.reason = ''; o.decidedAt = null; o.arrived = false; o.arrivedAt = null;
   o.thread.push({ id:uid(), from:'sys', kind:'note', text:'Decisão desfeita, volta a pendente', at:nowISO() });
   touch(o); save(o);
 }
@@ -146,7 +156,9 @@ function filtered(){
     const k = dayKey(o.createdAt);
     if(F.from && k < F.from) return false;
     if(F.to && k > F.to) return false;
-    if(F.status !== 'todos' && statusOf(o) !== F.status) return false;
+    if(F.status === 'acaminho'){ if(!(o.status === 'comprado' && !o.arrived)) return false; }
+    else if(F.status === 'chegou'){ if(!(o.status === 'comprado' && o.arrived)) return false; }
+    else if(F.status !== 'todos' && statusOf(o) !== F.status) return false;
     if(q){
       const hay = [o.id,o.name,o.hub,o.link,o.specs,o.qty,o.reason].join(' ').toLowerCase();
       if(!hay.includes(q)) return false;
@@ -192,7 +204,7 @@ function render(){
 
 
   // chips
-  const defs = [['todos','Todos',n.total],['pendente','Pendentes',n.pendente],['aguardando','Aguardando resposta',n.aguardando],['comprado','Comprados',n.comprado],['nao_comprado','Não comprados',n.nao_comprado]];
+  const defs = [['todos','Todos',n.total],['pendente','Pendentes',n.pendente],['aguardando','Aguardando resposta',n.aguardando],['comprado','Comprados',n.comprado],['acaminho','A caminho',all.filter(o => o.status==='comprado' && !o.arrived).length],['chegou','Chegaram',all.filter(o => o.status==='comprado' && o.arrived).length],['nao_comprado','Não comprados',n.nao_comprado]];
   $('#chips').innerHTML = defs.map(([k,l,c]) => `<button class="chip ${F.status===k?'on':''}" data-s="${k}">${l}<em>${c}</em></button>`).join('')
     + '<span class="sep"></span>'
     + [['hoje','Hoje'],['7','7 dias'],['30','30 dias'],['','Limpar datas']].map(([k,l]) => `<button class="chip" data-r="${k}">${l}</button>`).join('');
@@ -219,7 +231,8 @@ function rowHTML(o){
     </div>
     <div class="hub-tag">${esc(o.hub)}</div>
     <div class="dt">${fmtDate(o.createdAt)}</div>
-    <div><span class="badge b-${s}">${labels[s]}</span></div>
+    <div><span class="badge b-${s}${s==='comprado' && o.arrived ? ' b-chegou' : ''}">${s==='comprado' ? (o.arrived ? 'Chegou' : 'Comprado · a caminho') : labels[s]}</span>
+      ${s==='comprado' && role==='gestao' ? (o.arrived ? `<div class="arr-at">chegou em ${fmtDate(o.arrivedAt)}</div>` : `<button type="button" class="btn lime sm arr-btn" data-arrive="${o.id}">📦 Chegou</button>`) : ''}</div>
   </article>`;
 }
 
@@ -292,6 +305,10 @@ function drawDrawer(force){
         <div class="r"><button class="btn lime" data-act="reply">Enviar resposta</button></div>` + ed;
     } else if(o.status === 'pendente'){
       foot = ed + `<div class="r"><button class="btn red" data-act="del">Remover pedido</button></div>`;
+    } else if(o.status === 'comprado'){
+      foot = (o.arrived
+        ? `<div class="r"><div class="ok-box">📦 Chegou em ${fmtDT(o.arrivedAt)}</div><button class="btn ghost" data-act="unarrive">Desfazer chegada</button></div>`
+        : `<div class="r"><button class="btn lime" data-act="arrive">📦 Chegou</button></div>`) + ed;
     } else {
       foot = ed;
     }
@@ -376,8 +393,8 @@ function applyEdit(id, f){
 }
 
 function toCsv(){
-  const rows = [['Código','Produto','Hub','Quantidade','Link','Especificações','Solicitado em','Status','Motivo (não comprado)']];
-  filtered().forEach(o => rows.push([o.id,o.name,o.hub,o.qty,o.link,o.specs,fmtDT(o.createdAt),statusOf(o),o.reason]));
+  const rows = [['Código','Produto','Hub','Quantidade','Link','Especificações','Solicitado em','Status','Chegou em','Motivo (não comprado)']];
+  filtered().forEach(o => rows.push([o.id,o.name,o.hub,o.qty,o.link,o.specs,fmtDT(o.createdAt),statusOf(o),o.arrivedAt ? fmtDT(o.arrivedAt) : '',o.reason]));
   const csv = '﻿' + rows.map(r => r.map(c => '"' + String(c??'').replace(/"/g,'""') + '"').join(';')).join('\r\n');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
   a.download = 'compras-orion-' + dayKey(nowISO()) + '.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
@@ -426,7 +443,11 @@ function init(){
     render();
   });
 
-  $('#list').addEventListener('click', e => { const r = e.target.closest('.row'); if(r) openDrawer(r.dataset.id); });
+  $('#list').addEventListener('click', e => {
+    const ab = e.target.closest('[data-arrive]');
+    if(ab){ e.stopPropagation(); const o = state.orders.find(x => x.id === ab.dataset.arrive); if(o && o.status === 'comprado' && !o.arrived) arrive(o); return; }
+    const r = e.target.closest('.row'); if(r) openDrawer(r.dataset.id);
+  });
   $('#scrim').addEventListener('click', closeDrawer);
   document.addEventListener('keydown', e => { if(e.key === 'Escape' && openId) closeDrawer(); });
 
@@ -478,6 +499,8 @@ function init(){
     if(a === 'ask'){ const r = await askText({eyebrow:'PEDIR INFORMAÇÃO',title:'O que você precisa saber?',label:'SUA PERGUNTA',hint:'A Gestão recebe uma notificação e a compra fica travada até ela responder.',ok:'Enviar notificação'}); if(r && cur()) ask(cur(), r); }
     if(a === 'reply'){ const v = $('#dReply').value.trim(); if(!v){ $('#dReply').classList.add('err'); toast('Escreva a resposta', true); return; } answer(o, v); }
     if(a === 'undo') undo(o);
+    if(a === 'arrive') arrive(o);
+    if(a === 'unarrive') unarrive(o);
     if(a === 'edit'){ openEdit(o); return; }
     if(a === 'del'){ if(confirm('Remover o pedido ' + o.id + '?')){ removeOrder(o); closeDrawer(); } }
   });

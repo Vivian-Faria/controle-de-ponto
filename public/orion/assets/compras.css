@@ -201,3 +201,6 @@ select.inp option{background:#0d0e0c}
 .sw{padding:9px 15px;border:1px solid var(--line2);border-radius:13px;font-size:13px;color:var(--muted);text-decoration:none;transition:.15s;white-space:nowrap}
 .sw:hover{color:var(--lime);border-color:var(--lime)}
 @media(max-width:1000px){.flow{justify-self:start;max-width:260px}.hero{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
+.b-chegou{background:var(--lime);color:#0a0d00}
+.arr-btn{margin-top:8px}.arr-at{font:500 11px var(--mono);color:var(--lime);margin-top:6px;letter-spacing:.04em}
+.ok-box{flex:1;padding:12px 14px;border-radius:14px;border:1px solid rgba(184,244,0,.4);background:var(--lime-d);color:var(--lime);font-size:14px}
