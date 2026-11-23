@@ -176,7 +176,7 @@ export async function montar() {
 export async function sonda() {
   const r = { token: !!TOKEN(), base: BASE, hoje: isoOf(Date.now()) };
   if (!r.token) return { ...r, erro: "Falta definir ORION_ADMIN_TOKEN nas variáveis de ambiente do Netlify." };
-  const ctx = { req: 0, max: 6 };
+  const ctx = { req: 0, max: 9 };
   try {
     const e = novoEstado(r.hoje);
     for (const dia of [r.hoje, addDays(r.hoje, -1), addDays(r.hoje, -2)]) {
@@ -188,6 +188,11 @@ export async function sonda() {
     r.valores = e.vistos; r.semHub = e.semHub; r.pedidosAmostra = HUBS.map(h => [h, e.hubs[h].pedidos]);
     const er = await api("/reports/order-errors", { from: addDays(r.hoje, -7), to: r.hoje, page: 1, per_page: 5 }, ctx);
     r.errosSemana = er.meta?.total ?? (er.data || []).length;
+    const e30 = await api("/reports/order-errors", { from: addDays(r.hoje, -30), to: r.hoje, page: 1, per_page: 5 }, ctx);
+    r.erros30dias = e30.meta?.total ?? (e30.data || []).length; r.resumoErros30 = e30.summary ?? null; r.metaErros = e30.meta ?? null;
+    if ((e30.data || []).length) r.exemploErro = Object.fromEntries(Object.entries(e30.data[0]).map(([k, v]) => [k, typeof v === "string" ? v.slice(0, 80) : v]));
+    try { const c = await api("/reports/cancellations", { from: addDays(r.hoje, -7), to: r.hoje, page: 1, per_page: 3 }, ctx); r.cancelamentos7dias = c.meta?.total ?? (c.data || []).length; r.resumoCancel = c.summary ?? null;
+      if ((c.data || []).length) r.exemploCancel = Object.fromEntries(Object.entries(c.data[0]).filter(([k]) => /reason|hub|unit|business|status|canceled_at/.test(k))); } catch (x) { r.cancelErro = x.message; }
     r.ok = true;
   } catch (err) { r.ok = false; r.erro = err.message; r.status = err.status; }
   return r;
