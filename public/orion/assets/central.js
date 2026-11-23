@@ -357,6 +357,7 @@ function setPill(m){
   } else {
     p.classList.add('demo'); p.classList.remove('live');
     const t = {'sem-token':'API NÃO CONFIGURADA', 'carregando':'CARREGANDO API…', 'sessão':'FAÇA LOGIN PARA DADOS REAIS'}[m.reason] || 'API INDISPONÍVEL';
+    if(m.reason === 'carregando'){ p.textContent = 'ATUALIZANDO…'; if(nt) nt.innerHTML = '<b>Atualizando</b> os dados da operação. Os números aparecem assim que a API responder.'; return; }
     p.textContent = 'DADOS FICTÍCIOS · ' + t;
     if(nt) nt.innerHTML = '<b>Dados fictícios</b> (exceto manutenções). ' + (m.msg ? 'Motivo: ' + m.msg : '') + ' O painel tenta de novo sozinho.';
   }
