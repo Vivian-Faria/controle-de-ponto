@@ -161,6 +161,7 @@ function deltaHTML(k, cur, prev){
 }
 function drawDashboard(first, quiet){
   if(!D) return;
+  setTimeout(() => drawErros(false), 0);
   { const v = $('#v-dashboard'); if(v) v.classList.toggle('quiet', !!quiet); }
   const wx = $('#v-dashboard .wrapx'), vz = !D.days.length; if(wx) wx.classList.toggle('vazio', vz);
   if(vz){ const m = D.meta || {}; $('#dashVazio').innerHTML = m.reason === 'carregando' ? '<b>Atualizando os dados da operação…</b><span>Estamos buscando os números reais na API. Eles aparecem aqui assim que chegarem.</span>' : '<b>Sem dados reais para mostrar agora.</b><span>' + (m.msg || 'A API não respondeu.') + ' Nenhum número de exemplo é exibido; o painel tenta de novo sozinho.</span>'; return; }
@@ -438,4 +439,63 @@ window.CentralApp = {go, get data(){return D},  agg, lastN, status, score, band,
     box.addEventListener('mouseout', e => { const r = e.target.closest('.ml > div[data-k]'); if(r && tip && !(e.relatedTarget && r.contains(e.relatedTarget))) tip.classList.remove('on'); });
   });
 })();
+
+/* ---------- registro de erros (diário permanente) ---------- */
+const ER = {key:'', data:null, f:{tipo:'', loja:'', q:''}, t:null};
+const escH = v => String(v ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const hubNome = id => id ? ((D.hubs.find(h => h.id === id) || {}).short || id) : 'Hub não mapeado';
+const dtBR = iso => iso ? iso.slice(8,10) + '/' + iso.slice(5,7) + ' ' + iso.slice(11,16) : '—';
+function errosFiltrados(){
+  const d = ER.data; if(!d) return [];
+  const q = ER.f.q.trim().toLowerCase();
+  return d.registros.filter(r => (!r.hub || S.sel.has(r.hub)) && (!ER.f.tipo || r.tipo === ER.f.tipo) && (!ER.f.loja || r.reportadoPor === ER.f.loja)
+    && (!q || [r.reportadoPor, r.produto, r.troca, r.comentario, r.pedidoRef, r.unidade].join(' ').toLowerCase().includes(q)));
+}
+function drawErros(force){
+  if(!D || !D.days || !D.days.length || !$('#elBody')) return;
+  const dias = winDays(S.period); if(!dias.length) return;
+  const de = dias[0], ate = dias[dias.length-1], key = de + '|' + ate + '|' + ((D.meta && D.meta.atualizado) || '');
+  if(!force && key === ER.key){ renderErros(); return; }
+  ER.key = key; clearTimeout(ER.t);
+  fetch('/api/dash/erros?conferir=1&de=' + de + '&ate=' + ate, {credentials:'same-origin'}).then(r => r.ok ? r.json() : Promise.reject()).then(j => {
+    ER.data = j; renderErros();
+    if(j.diasSemRegistro && j.diasSemRegistro.length) ER.t = setTimeout(() => drawErros(true), 25000);       // diário ainda sendo completado
+  }).catch(() => { $('#elInfo').textContent = 'Não foi possível carregar o registro de erros agora.'; });
+}
+function renderErros(){
+  const d = ER.data; if(!d) return; const all = d.registros.filter(r => !r.hub || S.sel.has(r.hub)), rows = errosFiltrados();
+  const por = (f, src) => src.reduce((o, r) => { const k = f(r) || '(vazio)'; o[k] = (o[k] || 0) + 1; return o; }, {});
+  const hubs = Object.entries(por(r => hubNome(r.hub), all)).sort((a,b) => b[1]-a[1]);
+  const cf = d.conferencia, pend = (d.diasSemRegistro || []).length;
+  $('#elInfo').innerHTML = `<b>${all.length}</b> erro${all.length===1?'':'s'} reportado${all.length===1?'':'s'} entre <b>${brD(d.de)}</b> e <b>${brD(d.ate)}</b>`
+    + (hubs.length ? ' · origem: ' + hubs.map(([h,n]) => `<b>${escH(h)}</b> ${n}`).join(', ') : '')
+    + '. Cada erro é aberto pela <b>loja parceira</b> no portal da Órion e vem ligado a um pedido.<br>'
+    + (pend ? `<span class="wac">Completando o diário: ${pend} dia(s) ainda sem registro.</span>` : cf ? (cf.confere ? `<span class="okc">✔ Diário conferido com a API: ${cf.totalDiario} de ${cf.totalApi} erros do período.</span>` : `<span class="wac">Diário com ${cf.totalDiario} de ${cf.totalApi} erros da API no período — atualizando.</span>`) : '');
+  const lj = Object.entries(por(r => r.reportadoPor, all)).sort((a,b) => b[1]-a[1]), mx = lj.length ? lj[0][1] : 1;
+  $('#elRank').innerHTML = lj.slice(0, 8).map(([n,v]) => `<div class="r" data-l="${escH(n)}" title="Filtrar esta loja"><span>${escH(n)}</span><b>${v}</b><i style="width:${Math.max(6, v/mx*100)}%"></i></div>`).join('');
+  $$('#elRank .r').forEach(e => e.onclick = () => { ER.f.loja = e.dataset.l; $('#elLoja').value = ER.f.loja; renderErros(); });
+  const optT = '<option value="">Todos os tipos</option>' + D.errTypes.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  const optL = '<option value="">Todas as lojas</option>' + lj.map(([n]) => `<option>${escH(n)}</option>`).join('');
+  const sT = $('#elTipo'), sL = $('#elLoja'); if(sT.options.length !== D.errTypes.length + 1) sT.innerHTML = optT; if(sL.dataset.n !== String(lj.length)){ sL.innerHTML = optL; sL.dataset.n = lj.length; }
+  sT.value = ER.f.tipo; sL.value = ER.f.loja;
+  const tn = Object.fromEntries(D.errTypes.map(t => [t.id, t]));
+  $('#elBody').innerHTML = rows.slice(0, 300).map(r => { const t = tn[r.tipo] || {name:r.tipo, color:'#888'};
+    return `<tr><td>${dtBR(r.reportadoEm)}</td><td>${escH(r.reportadoPor)}<small>${escH(r.negocio || '')}${r.hubApi ? ' · ' + escH(r.hubApi) : ''}</small></td><td>${escH(hubNome(r.hub))}</td>
+      <td><span class="tg" style="color:${t.color};border-color:${t.color}55">${escH(t.name)}</span></td>
+      <td>${r.produto ? '<b>' + escH(r.produto) + '</b>' : ''}${r.troca ? '<small>enviado no lugar / reposição: <span class="pr">' + escH(r.troca) + '</span></small>' : ''}<small style="white-space:normal;color:var(--text)">${escH(r.comentario || 'Sem descrição')}</small>${r.conclusao ? '<small>Conclusão: ' + escH(r.conclusao) + '</small>' : ''}</td>
+      <td>${r.pedidoRef ? '#' + escH(r.pedidoRef) : '—'}<small>${r.pedidoTotal != null ? 'R$ ' + nf(r.pedidoTotal, 2) : ''}${r.pedidoCriadoEm ? ' · pedido de ' + dtBR(r.pedidoCriadoEm).slice(0,5) : ''}</small></td></tr>`; }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:22px">Nenhum erro com esses filtros.</td></tr>';
+  $('#elFoot').textContent = rows.length > 300 ? `Mostrando 300 de ${rows.length}. Use os filtros ou baixe o CSV para ver todos.` : `${rows.length} registro${rows.length===1?'':'s'} listado${rows.length===1?'':'s'}.`;
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const on = (id, ev, fn) => { const e = $(id); if(e) e.addEventListener(ev, fn); };
+  on('#elTipo', 'change', e => { ER.f.tipo = e.target.value; renderErros(); });
+  on('#elLoja', 'change', e => { ER.f.loja = e.target.value; renderErros(); });
+  on('#elQ', 'input', e => { ER.f.q = e.target.value; renderErros(); });
+  on('#elCsv', 'click', () => {
+    const rows = errosFiltrados(), cols = ['dia','reportadoEm','reportadoPor','negocio','unidade','hubApi','hub','tipo','produto','troca','trocaAutorizada','perdaFinanceira','comentario','conclusao','finalizadoEm','pedidoRef','pedidoId','pedidoTotal','pedidoCriadoEm','pedidoCanceladoEm','id'];
+    const q = v => '"' + String(v ?? '').replace(/"/g, '""').replace(/\r?\n/g, ' ') + '"';
+    const csv = '﻿' + cols.join(';') + '\n' + rows.map(r => cols.map(c => q(r[c])).join(';')).join('\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'})); a.download = 'erros-orion-' + (ER.data ? ER.data.de + '_a_' + ER.data.ate : 'periodo') + '.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  });
+});
 })();

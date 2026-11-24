@@ -16,6 +16,7 @@
     {id:'troc', name:'Item trocado',    color:'#ffffff'},
     {id:'emb',  name:'Embalagem',       color:'#8a8e84'},
     {id:'atr',  name:'Atraso na coleta',color:'#3d6b00'},
+    {id:'out',  name:'Outros / sem descrição', color:'#5b5f55'},
   ];
   // metas (editáveis depois)
   const TARGETS = {

@@ -9,8 +9,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/compras.css?v=20261124h">
-<link rel="stylesheet" href="assets/central.css?v=20261124h">
+<link rel="stylesheet" href="assets/compras.css?v=20261124i">
+<link rel="stylesheet" href="assets/central.css?v=20261124i">
 </head>
 <body class="shell locked" data-role="gestao">
 <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -59,7 +59,12 @@
 <section class="sec"><div class="eyebrow">ERROS POR OPERAÇÃO</div>
   <div class="grid g-21"><div class="card"><div class="ch"><div><small>POR DIA</small><h3>Erros reportados por tipo</h3></div></div><div class="chart" id="cErr"></div><div class="lg" id="errLegend"></div></div>
   <div class="card"><div class="ch"><div><small>NO PERÍODO</small><h3>Tipos mais frequentes</h3></div></div><div class="rank" id="errRank"></div></div></div>
-  <div class="card" style="margin-top:16px"><div class="ch"><div><small>MAPA DE CALOR · 14 DIAS</small><h3>Erros por hub e por dia</h3></div><div class="hint">Quanto mais claro, mais erros no dia.</div></div><div id="errHeat"></div></div></section>
+  <div class="card" style="margin-top:16px"><div class="ch"><div><small>MAPA DE CALOR · 14 DIAS</small><h3>Erros por hub e por dia</h3></div><div class="hint">Quanto mais claro, mais erros no dia.</div></div><div id="errHeat"></div></div>
+  <div class="card" id="erroLog" style="margin-top:16px"><div class="ch"><div><small>DIÁRIO PERMANENTE · CADA ERRO REPORTADO</small><h3>Registro de erros</h3></div><div class="ctl"><button class="btn" id="elCsv" type="button">Baixar CSV</button></div></div>
+    <div class="elinfo" id="elInfo">Carregando o registro…</div><div class="elrank" id="elRank"></div>
+    <div class="elfilt"><select id="elTipo"></select><select id="elLoja"></select><input id="elQ" type="search" placeholder="Buscar produto, pedido ou comentário…"></div>
+    <div class="elwrap"><table class="etab"><thead><tr><th>Reportado</th><th>Loja (quem reportou)</th><th>Hub</th><th>Tipo</th><th>O que aconteceu</th><th>Pedido</th></tr></thead><tbody id="elBody"></tbody></table></div><div class="elinfo" id="elFoot"></div></div>
+</section>
 
 <section class="sec" id="secMan"><div class="eyebrow">MANUTENÇÃO DOS HUBS · <span style="color:var(--lime)">DADOS REAIS</span></div>
   <div class="grid g-21"><div class="card"><div class="ch"><div><small id="manSub">NO PERÍODO</small><h3>Manutenções por hub</h3></div><div class="hint" id="manHint"></div></div><div class="chart" id="cMan"></div></div>
@@ -191,12 +196,12 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="assets/config.js"></script>
-<script src="assets/compras.js?v=20261124h"></script>
-<script src="assets/manutencoes.js?v=20261124h"></script>
-<script src="assets/central-data.js?v=20261124h"></script>
-<script src="assets/brain3d.js?v=20261124h"></script>
-<script src="assets/central.js?v=20261124h"></script>
+<script src="assets/compras.js?v=20261124i"></script>
+<script src="assets/manutencoes.js?v=20261124i"></script>
+<script src="assets/central-data.js?v=20261124i"></script>
+<script src="assets/brain3d.js?v=20261124i"></script>
+<script src="assets/central.js?v=20261124i"></script>
 <script>window.__V="20261123a"</script>
-<script src="assets/modulos.js?v=20261124h"></script>
+<script src="assets/modulos.js?v=20261124i"></script>
 </body>
 </html>

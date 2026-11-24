@@ -328,3 +328,17 @@ body.locked .main,body.locked .top{visibility:hidden}
 .tip.hubtip div{justify-content:flex-start}
 .ml > div[data-k]{cursor:help;border-radius:8px;transition:background .15s}
 .ml > div[data-k]:hover{background:rgba(255,255,255,.05)}
+
+/* registro de erros */
+.elinfo{font:500 12px var(--mono);color:var(--muted);margin:2px 0 12px;line-height:1.6}.elinfo b{color:var(--text)}.elinfo .okc{color:var(--lime)}.elinfo .wac{color:#ffb020}
+.elrank{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:6px 22px;margin-bottom:14px}
+.elrank .r{display:grid;grid-template-columns:1fr auto;gap:2px 10px;font-size:12px;color:var(--muted);cursor:pointer}.elrank .r:hover{color:var(--text)}
+.elrank .r b{font:600 12px var(--mono);color:var(--text)}.elrank .r i{grid-column:1/3;height:4px;border-radius:4px;background:var(--lime);opacity:.85;display:block}
+.elfilt{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.elfilt select,.elfilt input{background:rgba(255,255,255,.04);border:1px solid var(--line2);color:var(--text);border-radius:10px;padding:8px 11px;font:500 12px var(--mono);min-width:160px}
+.elfilt input{flex:1;min-width:220px}
+.elwrap{max-height:520px;overflow:auto;border:1px solid var(--line);border-radius:12px}
+.etab{width:100%;border-collapse:collapse;font-size:12.5px}.etab th{position:sticky;top:0;background:#0d0f0b;text-align:left;font:600 10px var(--mono);letter-spacing:.12em;color:var(--muted);padding:10px 12px;z-index:1}
+.etab td{padding:9px 12px;border-top:1px solid var(--line);vertical-align:top;color:var(--text)}.etab td small{display:block;color:var(--muted);font:500 11px var(--mono)}
+.etab .tg{display:inline-block;font:600 10.5px var(--mono);padding:3px 8px;border-radius:20px;border:1px solid var(--line2);white-space:nowrap}
+.etab .pr{color:var(--lime)}

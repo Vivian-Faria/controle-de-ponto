@@ -68,15 +68,15 @@ async function api(path, params, ctx) {
 }
 
 // ---------------------------------------------------------------- classificação dos erros
-const tipoErro = e => { const t = nrm([e.comments, e.conclusion, e.incorrect_product, e.replacement_product].join(" "));
-  if (/embal|vazou|amassad|derram|lacre/.test(t)) return "emb";
-  if (/atras|demor|coleta|motoboy|entregador/.test(t)) return "atr";
-  if (e.replacement_product && nrm(e.replacement_product)) return "troc";
-  if (/troc|errad|incorret|outro produto/.test(t)) return "troc";
-  return "falt"; };
+const tipoErro = e => { const t = nrm([e.comments, e.conclusion, e.incorrect_product, e.replacement_product].join(" ")), c = nrm(e.comments || "");
+  if (/embal|sacola|vazou|amassad|derram|lacre|derret/.test(c)) return "emb";
+  if (/atras|demor|motoboy|entregador/.test(c)) return "atr";
+  if ((e.replacement_product && nrm(e.replacement_product)) || /errad|incorret|no lugar|ao inves|outra loja|trocad|troca|2 itens|dois produtos|a mais|em excesso/.test(c)) return "troc";
+  if (/nao (foi )?(enviad|veio|tinha|entreg)|faltou|faltand|incomplet|sem o |nao enviaram/.test(c)) return "falt";
+  return "out"; };                                                                           // sem descrição ou outro motivo (ex.: operação não aceitou o pedido)
 
 // ---------------------------------------------------------------- agregação de um dia (retomável)
-const novoHub = () => ({ pedidos: 0, cancel: 0, erros: 0, errTipos: { falt: 0, troc: 0, emb: 0, atr: 0 }, tSoma: 0, tN: 0, horas: Array(24).fill(0) });
+const novoHub = () => ({ pedidos: 0, cancel: 0, erros: 0, errTipos: { falt: 0, troc: 0, emb: 0, atr: 0, out: 0 }, tSoma: 0, tN: 0, horas: Array(24).fill(0) });
 const novoEstado = dia => ({ dia, fase: "orders", pag: 1, hubs: Object.fromEntries(HUBS.map(h => [h, novoHub()])), semHub: 0, vistos: { hubs: {}, unidades: {}, negocios: {} }, fim: false });
 function somaPedido(e, o) {
   const k = o.hub, ctx = e.vistos; const rot = [o.hub, o.unit_name, o.business_name];
@@ -150,7 +150,7 @@ async function pessoasDoDia(dias) {
 }
 
 // ---------------------------------------------------------------- orquestração
-const LOGV = 1;                                                                            // versão do diário de erros (subir força refazer a fase de erros)
+const LOGV = 2;                                                                            // versão do diário de erros (subir força refazer a fase de erros)
 const PV = 3;                                                                              // versão da regra de contagem de pessoas
 const chaveDia = d => `v3/dia/${d}`;
 const fechado = (d, agora) => agora >= Date.parse(d + "T00:00:00Z") - TZ * HOUR + DAY + 2 * HOUR;       // 2 h depois da meia-noite local
@@ -175,7 +175,7 @@ export async function atualizar({ ate = DIAS, max = ORCAMENTO_REQ } = {}) {
   }
   for (const { d, parc, reg } of alvo) {
     let e = parc || novoEstado(d);
-    if (!parc && reg?.fim && (reg.errosFalhou || reg.logv !== LOGV)) { e = { ...reg, fase: "errors", pag: 1, fim: false, errosFalhou: null, lista: [] }; for (const h of Object.values(e.hubs)) { h.erros = 0; h.errTipos = { falt: 0, troc: 0, emb: 0, atr: 0 }; } }
+    if (!parc && reg?.fim && (reg.errosFalhou || reg.logv !== LOGV)) { e = { ...reg, fase: "errors", pag: 1, fim: false, errosFalhou: null, lista: [] }; for (const h of Object.values(e.hubs)) { h.erros = 0; h.errTipos = { falt: 0, troc: 0, emb: 0, atr: 0, out: 0 }; } }
     try {
       e = await avancaDia(e, ctx);
       e.em = Date.now(); e.final = fechado(d, agora); e.pv = PV; e.pEm = Date.now();
@@ -207,7 +207,7 @@ export async function montar() {
       let pessoas = 0;
       if (p && p.tem) { const hs = hj.map(i => p.h[i]).filter(x => x > 0); pessoas = hs.length ? hs.reduce((a, b) => a + b, 0) / hs.length : 0; }
       if (!pessoas && h.pedidos) semEscala++;                                           // dia sem escala lançada: fica de fora da produtividade
-      return { date: d, pedidos: h.pedidos, pessoas: +pessoas.toFixed(2), cabecas: p && p.tem ? p.total : 0, horas: +horas.toFixed(2), cancel: h.cancel, erros: h.erros, errTipos: h.errTipos, tempo: h.tN ? +(h.tSoma / h.tN).toFixed(1) : 0 };
+      return { date: d, pedidos: h.pedidos, pessoas: +pessoas.toFixed(2), cabecas: p && p.tem ? p.total : 0, horas: +horas.toFixed(2), cancel: h.cancel, erros: h.erros, errTipos: { out: 0, ...h.errTipos }, tempo: h.tN ? +(h.tSoma / h.tN).toFixed(1) : 0 };
     });
     const rec = faixa.slice(-14); const n = Math.max(1, rec.length);
     out.hourly[id] = Array.from({ length: 24 }, (_, hh) => ({ h: hh, pedidos: Math.round(rec.reduce((a, d) => a + (R[d].hubs[id]?.horas[hh] || 0), 0) / n),
