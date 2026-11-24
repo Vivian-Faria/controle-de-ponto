@@ -192,7 +192,7 @@ export async function montar() {
       let pessoas = 0;
       if (p && p.tem) { const hs = hj.map(i => p.h[i]).filter(x => x > 0); pessoas = hs.length ? hs.reduce((a, b) => a + b, 0) / hs.length : 0; }
       if (!pessoas && h.pedidos) semEscala++;                                           // dia sem escala lançada: fica de fora da produtividade
-      return { date: d, pedidos: h.pedidos, pessoas: +pessoas.toFixed(2), horas: +horas.toFixed(2), cancel: h.cancel, erros: h.erros, errTipos: h.errTipos, tempo: h.tN ? +(h.tSoma / h.tN).toFixed(1) : 0 };
+      return { date: d, pedidos: h.pedidos, pessoas: +pessoas.toFixed(2), cabecas: p && p.tem ? p.total : 0, horas: +horas.toFixed(2), cancel: h.cancel, erros: h.erros, errTipos: h.errTipos, tempo: h.tN ? +(h.tSoma / h.tN).toFixed(1) : 0 };
     });
     const rec = faixa.slice(-14); const n = Math.max(1, rec.length);
     out.hourly[id] = Array.from({ length: 24 }, (_, hh) => ({ h: hh, pedidos: Math.round(rec.reduce((a, d) => a + (R[d].hubs[id]?.horas[hh] || 0), 0) / n),

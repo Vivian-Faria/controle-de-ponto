@@ -50,9 +50,9 @@ function agg(slices){           // slices: lista de arrays de linhas (um array p
   let ped=0, canc=0, err=0, tp=0, pph=0, ppl=0, errDia=0, tgS=0, prodOk=false;
   slices.forEach(rows => {
     const n = rows.length || 1; let p=0, e=0, vp=0, vh=0, vpe=0, vn=0;
-    rows.forEach(r => { p += r.pedidos; e += r.erros; canc += r.cancel; tp += r.tempo*r.pedidos; if(r.pessoas > 0){ vp += r.pedidos; vh += r.horas; vpe += r.pessoas; vn++; } });   // produtividade só conta dias com escala lançada
+    rows.forEach(r => { p += r.pedidos; e += r.erros; canc += r.cancel; tp += r.tempo*r.pedidos; if(r.cabecas > 0){ vp += r.pedidos; vh += r.cabecas; vn++; } });   // produtividade só conta dias com escala lançada
     tgS += p * ((D.hubs.find(x => x.id === rows.hid) || {}).tempoGoal ?? D.targets.tempo.goal);
-    ped += p; err += e; if(vn){ pph += vp / (vh||1); ppl += vpe / vn; prodOk = true; } errDia += e / n;
+    ped += p; err += e; if(vn){ pph += vp; ppl += vh; prodOk = true; } errDia += e / n;
   });
   return {ped, prod: prodOk ? pph/(ppl||1) : null, cancel: canc/(ped||1)*100, assert: (1-err/(ped||1))*100, tempo: tp/(ped||1), erros: errDia, tg: ped ? tgS/ped : D.targets.tempo.goal};
 }
@@ -287,7 +287,7 @@ function manLine(sh, n){
 function briefing(){
   const sh = selHubs(), n = S.period, a = analyze(sh, n), nm = sh.length > 1 ? 'dos hubs selecionados' : 'do ' + sh[0].short;
   const L = []; const dN = (a.net.prod - a.netP.prod)/(a.netP.prod||1)*100;
-  L.push(`<p>Panorama do ${perTxt(n)} ${nm}: saúde operacional <b class="${cls(band(a.netScore))}">${a.netScore}/100</b>. A produtividade está em <b>${nf(a.net.prod,2)}</b> pedidos/h por pessoa (${dN>=0?'+':''}${nf(dN,1)}% vs. período anterior) e o tempo médio de processamento é <b>${nf(a.net.tempo,1)} min</b>.</p>`);
+  L.push(`<p>Panorama do ${perTxt(n)} ${nm}: saúde operacional <b class="${cls(band(a.netScore))}">${a.netScore}/100</b>. A produtividade está em <b>${nf(a.net.prod,1)}</b> pedidos por pessoa ao dia (${dN>=0?'+':''}${nf(dN,1)}% vs. período anterior) e o tempo médio de processamento é <b>${nf(a.net.tempo,1)} min</b>.</p>`);
   const items = [];
   if(sh.length > 1){
     items.push(`<b>${a.best.h.short}</b> lidera com índice ${a.best.sc}. <b class="${cls(band(a.worst.sc))}">${a.worst.h.short}</b> é o ponto mais frágil (${a.worst.sc}).`);
