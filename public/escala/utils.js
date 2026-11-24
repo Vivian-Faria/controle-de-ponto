@@ -264,8 +264,15 @@ export function vagasDoTurno(cfg, escalasMap, hubId, turno, iso, dow) {
   const faltas = new Set((doc?.faltas?.[turno.id] || []).map(normalizaNome));
   const faltou = (nome) => faltas.has(normalizaNome(nome));
   const n = Number(turno.vagas?.[dow]) || 0;
-  const vagas = Array.from({ length: n }, (_, i) => {
-    const partes = salvas[i] || [];
+
+  // Pessoas lançadas não ficam presas à posição do slot configurado (podem
+  // ser lançadas livremente, inclusive além da quantidade prevista) — junta
+  // quem tem nome, de qualquer índice, e só completa com vagas vazias até
+  // bater a quantidade configurada.
+  const preenchidas = salvas.filter((partes) => partes.some((p) => p.nome));
+  const vaziasQtde = Math.max(n - preenchidas.length, 0);
+  const lista = [...preenchidas, ...Array.from({ length: vaziasQtde }, () => [])];
+  const vagas = lista.map((partes) => {
     const cob = cobertura(turno, partes, faltou);
     return { partes, coberta: cob.coberta, buracos: cob.buracos, vazia: partes.length === 0 };
   });
@@ -295,13 +302,12 @@ export function contagemTurno(cfg, escalasMap, hubId, turno, iso, dow) {
     (cfg.colaboradores || []).filter((c) => c.papel === 'supervisor').map((c) => normalizaNome(c.nome))
   );
   const creditos = (doc?.folgas?.[turno.id] || []).filter((nome) => sobressalentes.has(normalizaNome(nome)));
-  let credito = creditos.length;
-  let necessarias = 0;
-  for (let i = 0; i < n; i++) {
-    const vazia = !(salvas[i] || []).length;
-    if (credito > 0 && vazia) { credito--; continue; }
-    necessarias++;
-  }
+  // Quantas vagas configuradas seguem de fato vazias (ninguém lançado, em
+  // qualquer posição) é o que decide quantos créditos de folga se aplicam —
+  // não a posição no array, que pode não bater com a vaga configurada.
+  const preenchidasQtde = salvas.filter((partes) => partes.some((p) => p.nome)).length;
+  const vaziasReais = Math.max(n - preenchidasQtde, 0);
+  const necessarias = n - Math.min(creditos.length, vaziasReais);
   const lancadas = salvas.reduce((s, partes) => s + partes.filter((p) => p.nome).length, 0);
   return { necessarias, lancadas };
 }

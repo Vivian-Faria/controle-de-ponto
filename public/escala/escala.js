@@ -10,7 +10,7 @@ import { marcosDoDia, ROTULO_TIPO } from './feriados.js';
 import {
   DIAS_CURTO, DIAS_LONGO, MESES, isoDate, parseIso, addDays, startOfWeek, capitalizar,
   ordenaTurnos, faixaDoDia, normalizaNome, limparNome, sobrepoe, escapeHtml, porNome,
-  vagasDe, plural, criarStatus, TIPOS, cobertura, ehDividida, hhmm, toMin, faixaCurta, horaCurta,
+  vagasDe, plural, criarStatus, cobertura, ehDividida, hhmm, toMin, faixaCurta, horaCurta,
   vagasDoTurno
 } from './utils.js';
 
@@ -157,21 +157,39 @@ function marcasDoTurno(iso, turnoId) {
 // Situação de cada vaga cadastrada de um turno naquele dia.
 // A vaga pode ter uma pessoa no turno inteiro ou várias em horários quebrados.
 // Quem faltou deixa o seu trecho em aberto.
+//
+// As pessoas lançadas não ficam presas à posição do slot configurado (podem
+// ser lançadas livremente, inclusive além da quantidade prevista) — por isso
+// cada vaga real carrega o seu índice de verdade (`idx`, o índice onde está
+// salva no Firestore), em vez de supor que as N primeiras posições do array
+// são sempre as N vagas configuradas: o nome pode acabar lançado em
+// qualquer posição, e contar só pela posição deixava vaga preenchida
+// marcada como descoberta.
 function situacaoVagas(iso, t, dow) {
   const salvas = vagasSalvas(iso, t.id);
   const { faltou, marcas } = marcasDoTurno(iso, t.id);
-  const vagas = Array.from({ length: vagasNoDia(t, dow) }, (_, i) => montarVaga(t, salvas[i] || [], faltou, marcas));
+  const n = vagasNoDia(t, dow);
+
+  const preenchidas = salvas
+    .map((partes, idx) => ({ idx, partes }))
+    .filter((x) => x.partes.some((p) => p.nome));
+  const vaziasReais = Math.max(n - preenchidas.length, 0);
 
   // Vaga vazia + folga de um supervisor sobressalente naquele turno = não é furo.
   // Cada folga de supervisor "perdoa" uma vaga vazia; sobrando vagas vazias
   // além disso, seguem contando como furo normalmente.
   const sobressalentes = supervisoresSobressalentes();
   const creditos = listaDoTurno(iso, 'folgas', t.id).filter((nome) => sobressalentes.has(normalizaNome(nome)));
-  let credito = creditos.length;
-  for (const v of vagas) {
-    if (credito > 0 && v.vazia) { v.dispensada = creditos[creditos.length - credito]; credito--; }
-  }
-  return vagas;
+  const dispensadasQtde = Math.min(creditos.length, vaziasReais);
+
+  let proximoIdx = salvas.length;
+  const dispensadas = creditos.slice(0, dispensadasQtde)
+    .map((nome) => ({ idx: proximoIdx++, partes: [], dispensada: nome }));
+
+  const vagas = [...preenchidas, ...dispensadas].map(({ idx, partes, dispensada }) => ({
+    idx, dispensada, ...montarVaga(t, partes, faltou, marcas)
+  }));
+  return { vagas, necessarias: n - dispensadasQtde };
 }
 
 function montarVaga(t, partes, faltou, marcas) {
@@ -199,22 +217,19 @@ function turnosDoDia(d) {
     || listaDoTurno(iso, 'faltas', t.id).length));
 }
 
+// Contagem do dia inteiro (todos os turnos do hub), pro selo do calendário e
+// pro resumo no topo do diálogo do dia. Usa a mesma conta de saldo
+// (lançadas/necessárias) do badge de cada turno — nada de contar vaga por
+// posição: quem foi lançado livremente, mesmo em outro índice, conta.
 function contagemDia(d) {
   const iso = isoDate(d);
   const dow = d.getDay();
-  const c = { total: 0, cobertas: 0, descobertas: 0, pendentes: 0, faltas: 0, freelancer: 0, intermitente: 0 };
+  const c = { total: 0, cobertas: 0, descobertas: 0, faltas: 0 };
   for (const t of turnosDoHub()) {
     c.faltas += listaDoTurno(iso, 'faltas', t.id).length;
-    for (const v of situacaoVagas(iso, t, dow)) {
-      if (v.dispensada) continue;
-      c.total++;
-      if (v.coberta) c.cobertas++;
-      for (const p of v.partes) {
-        if (!p.nome || p.faltou) continue;
-        if (!p.tipo) c.pendentes++;
-        if (p.tipo === 'freelancer' || p.tipo === 'intermitente') c[p.tipo]++;
-      }
-    }
+    const { necessarias, lancadas } = contagemTurnoDia(iso, dow, t);
+    c.total += necessarias;
+    c.cobertas += Math.min(lancadas, necessarias || lancadas);
   }
   c.descobertas = c.total - c.cobertas;
   return c;
@@ -483,24 +498,18 @@ function htmlAusencias(iso, t, ind, travado, rotDia) {
 // e as próprias vagas prontas pra desenhar na tela.
 function contagemTurnoDia(iso, dow, t) {
   const n = vagasNoDia(t, dow);
-  const situacao = situacaoVagas(iso, t, dow);
-  const aplicaveis = situacao.filter((v) => !v.dispensada);
-  const necessarias = aplicaveis.length;
+  const { vagas, necessarias } = situacaoVagas(iso, t, dow);
 
   // Sem engessamento: quem lidera pode lançar mais ou menos gente do que o
   // configurado, sem sugestão de horário pronta. A lista mostra só quem tem
   // nome lançado (e as vagas dispensadas, que avisam o crédito de folga) —
   // nada de linha vazia "fantasma" pra cada vaga ainda não preenchida.
   // Sempre sobra uma linha em branco no fim pra lançar mais uma pessoa.
-  const salvas = vagasSalvas(iso, t.id);
   const { faltou, marcas } = marcasDoTurno(iso, t.id);
-  const extrasFim = Math.max(n, salvas.length) + 1;
-  const linhas = [];
-  for (let i = 0; i < extrasFim; i++) {
-    const v = i < n ? situacao[i] : montarVaga(t, salvas[i] || [], faltou, marcas);
-    if (v.dispensada || v.partes.some((p) => p.nome)) linhas.push({ i, v });
-  }
-  linhas.push({ i: extrasFim, v: montarVaga(t, [], faltou, marcas) });
+  const linhasBase = vagas.filter((v) => v.dispensada || v.partes.some((p) => p.nome));
+  const maxIdx = vagas.reduce((m, v) => Math.max(m, v.idx), vagasSalvas(iso, t.id).length - 1);
+  const linhas = linhasBase.map((v, pos) => ({ i: v.idx, v, extra: pos >= necessarias }));
+  linhas.push({ i: maxIdx + 1, v: montarVaga(t, [], faltou, marcas), extra: linhas.length >= necessarias });
 
   // Quem faltou não conta como cobertura — o horário continua descoberto,
   // mesmo com o nome ainda lançado na vaga (é assim que a Central também conta).
@@ -549,7 +558,7 @@ function htmlDia(d) {
     const { linhas } = info;
     const { badge: cont, aviso, status } = htmlContTurno(info, turnoAprovado(iso, t.id));
 
-    const htmlVagas = linhas.map((x) => htmlVaga(iso, t, x.i, x.v, travado, rotDia, x.i >= info.n)).join('');
+    const htmlVagas = linhas.map((x) => htmlVaga(iso, t, x.i, x.v, travado, rotDia, x.extra)).join('');
 
     return `<section class="turno faixa-${faixaDoDia(t.inicio)}${status === 'pendente' ? ' turno-pendente' : ''}">
       <header class="turno-cab">
@@ -568,13 +577,10 @@ function htmlDia(d) {
 function somar(tot, c, futuro) {
   tot.total += c.total;
   tot.cobertas += c.cobertas;
-  tot.pendentes += c.pendentes;
-  tot.freelancer += c.freelancer;
-  tot.intermitente += c.intermitente;
   tot.faltas += c.faltas;
   if (futuro) tot.descobertas += c.descobertas;
 }
-const totalZerado = () => ({ total: 0, cobertas: 0, descobertas: 0, pendentes: 0, faltas: 0, freelancer: 0, intermitente: 0 });
+const totalZerado = () => ({ total: 0, cobertas: 0, descobertas: 0, faltas: 0 });
 
 function htmlResumo(tot, incluiHoje) {
   if (!estado.escalasProntas) return 'Carregando escala…';
@@ -590,10 +596,6 @@ function htmlResumo(tot, incluiHoje) {
     html += ` <span class="pilula pilula-furo">${plural(tot.descobertas, 'descoberta', 'descobertas')}${incluiHoje ? ' a partir de hoje' : ''}</span>`;
   }
   if (tot.faltas) html += ` <span class="pilula pilula-falta">${plural(tot.faltas, 'falta', 'faltas')}</span>`;
-  if (tot.pendentes) html += ` <span class="pilula pilula-pendente">${tot.pendentes} sem tipo confirmado</span>`;
-  for (const chave of ['freelancer', 'intermitente']) {
-    if (tot[chave]) html += ` <span class="pilula">${plural(tot[chave], ...TIPOS[chave].plural)}</span>`;
-  }
   return html;
 }
 
@@ -708,9 +710,13 @@ function htmlPontos(d) {
   const dow = d.getDay();
   const turnos = ordenaTurnos(turnosDoHub().filter((t) => vagasNoDia(t, dow) > 0));
   if (!turnos.length) return '';
-  return `<span class="pontos" aria-hidden="true">${turnos.map((t) => `<span class="pontos-turno">${
-    situacaoVagas(iso, t, dow).filter((v) => !v.dispensada).map((v) => `<i class="${v.coberta ? 'p-ok' : 'p-furo'}"></i>`).join('')
-  }</span>`).join('')}</span>`;
+  return `<span class="pontos" aria-hidden="true">${turnos.map((t) => {
+    const { necessarias, lancadas } = contagemTurnoDia(iso, dow, t);
+    const ok = Math.min(lancadas, necessarias);
+    return `<span class="pontos-turno">${
+      Array.from({ length: necessarias }, (_, i) => `<i class="${i < ok ? 'p-ok' : 'p-furo'}"></i>`).join('')
+    }</span>`;
+  }).join('')}</span>`;
 }
 
 function renderMes() {
