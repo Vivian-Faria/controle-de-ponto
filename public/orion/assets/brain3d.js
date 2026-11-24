@@ -41,20 +41,27 @@ function build(n, seed){
 function mount(canvas, opt){
   opt = opt || {};
   const small = !!opt.small, M = build(small ? 46 : 150, 11), P = M.P, E = M.E;
-  const ctx = canvas.getContext('2d'), dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const ctx = canvas.getContext('2d'); let dpr = 1;
   const css = getComputedStyle(document.documentElement);
   const G = (css.getPropertyValue('--lime') || '#b8f400').trim() || '#b8f400';
   let lastDraw = 0, W = 0, H = 0, ang = opt.start || 0.6, last = 0, talk = false, tilt = .22;
   const pulses = []; for(let i = 0; i < (small ? 2 : 9); i++) pulses.push({ e: (Math.random() * E.length) | 0, t: Math.random(), v: .35 + Math.random() * .5 });
-  function size(){ const b = canvas.getBoundingClientRect(); W = Math.max(40, b.width); H = Math.max(40, b.height); canvas.width = W * dpr; canvas.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
+  function size(){                                                   // recalcula tamanho e nitidez (zoom do navegador muda o dpr)
+    const b = canvas.getBoundingClientRect(); if(b.width < 2 || b.height < 2) return;   // escondido: não mexe (evita ficar com 40px esticado)
+    const d = Math.min(window.devicePixelRatio || 1, 2);
+    if(Math.abs(b.width - W) < .5 && Math.abs(b.height - H) < .5 && d === dpr && W) return;
+    dpr = d; W = b.width; H = b.height; canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
   size(); window.addEventListener('resize', size);
+  if(window.ResizeObserver) new ResizeObserver(size).observe(canvas);
   const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   function frame(ts){
     requestAnimationFrame(frame);
     if(document.hidden || !canvas.offsetParent) return;                // aba/tela escondida: não gasta CPU
     if(ts - lastDraw < 33) return; lastDraw = ts;                       // limita a ~30 fps                               // escondido (outra tela): não gasta CPU
     const dt = Math.min(.05, (ts - last) / 1000 || .016); last = ts;
-    if(!W) size();
+    size();                                                          // barato: só refaz se o tamanho/zoom mudou
+    if(!W) return;
     ang += dt * (reduce ? .04 : (talk ? .75 : .42));              // 360° contínuo
     const ca = Math.cos(ang), sa = Math.sin(ang), ct = Math.cos(tilt), st = Math.sin(tilt);
     const sc = Math.min(W / 2.25, H / 2.0) * (small ? 1.05 : 1), ox = W / 2, oy = H * (small ? .44 : .46);
