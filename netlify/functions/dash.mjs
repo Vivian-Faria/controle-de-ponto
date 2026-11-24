@@ -221,8 +221,24 @@ export async function sonda() {
   return r;
 }
 
+// conferência da escala de um dia: como a Central está contando as pessoas de cada hub
+async function sondaEscala(dia) {
+  const esc = await lerEscala([dia]), dow = dowOf(dia), out = { dia, hubs: [] };
+  for (const hub of esc.cfg.hubs) {
+    const doc = esc.docs[`${hub.id}_${dia}`], id = hubEscala(hub.nome || hub.id);
+    const turnos = esc.cfg.turnos.filter(x => x.hubId === hub.id).map(t => {
+      const n = Number(t.vagas?.[dow]) || 0, slots = doc?.slots?.[t.id] || {}, nomes = [];
+      for (let v = 0; v < n; v++) { const x = slots[v] ?? slots[String(v)]; const nome = typeof x === "string" ? x : Array.isArray(x?.partes) ? x.partes.map(q => q?.nome).filter(Boolean).join(" / ") : x?.nome; nomes.push(nome || null); }
+      return { turno: t.nome || t.id, inicio: t.inicio, fim: t.fim, vagasDoDia: n, preenchidas: nomes.filter(Boolean).length, nomes };
+    });
+    out.hubs.push({ hub: hub.nome || hub.id, idCentral: id, temDocumentoNoDia: !!doc, turnos });
+  }
+  return out;
+}
+
 export async function rotaDash(req, path, { json, isAdmin }) {
   if (!isAdmin(req)) return json({ error: "Não autorizado" }, 401);
+  if (path === "/api/dash/escala") { const dia = new URL(req.url).searchParams.get("dia") || isoOf(Date.now()); try { return json(await sondaEscala(dia)); } catch (e) { return json({ error: String(e.message || e) }, 500); } }
   if (path === "/api/dash/probe") return json(await sonda());
   if (path === "/api/dash" && req.method === "GET") {
     if (!TOKEN()) return json({ error: "Falta definir ORION_ADMIN_TOKEN nas variáveis de ambiente do Netlify.", semToken: true }, 503);
