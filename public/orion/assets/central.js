@@ -185,7 +185,7 @@ function drawDashboard(first, quiet){
     return `<div class="card hub s-${b} ${S.sel.has(x.h.id)?'':'off'}" style="--c:${x.h.color}" data-h="${x.h.id}" title="Clique para incluir/excluir da comparação">
       <div class="t"><b><i></i>${x.h.short}</b><span class="rk">#${order.indexOf(x)+1}</span></div>
       <div class="ring"><svg viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="40"/><circle class="fg" cx="50" cy="50" r="40" style="--len:${len}"/></svg><div><strong>${x.sc}</strong><span>SAÚDE</span></div></div>
-      <div class="ml"><div>Pedidos totais<b>${nf(x.m.ped,0)}</b></div>${KEYS.map(k => `<div class="s-${status(k,x.m[k],1,x.m)}">${D.targets[k].label.replace('Taxa de c','C').replace(' de processamento',' proc.').replace(' por dia','/dia')}<b><span class="dot"></span>${fmtM(k,x.m[k])}${k==='cancel'||k==='assert'?'%':k==='tempo'?'′':''}</b></div>`).join('')}</div></div>`; }).join('');
+      <div class="ml"><div data-k="ped">Pedidos totais<b>${nf(x.m.ped,0)}</b></div>${KEYS.map(k => `<div class="s-${status(k,x.m[k],1,x.m)}" data-k="${k}">${D.targets[k].label.replace('Taxa de c','C').replace(' de processamento',' proc.').replace(' por dia','/dia')}<b><span class="dot"></span>${fmtM(k,x.m[k])}${k==='cancel'||k==='assert'?'%':k==='tempo'?'′':''}</b></div>`).join('')}</div></div>`; }).join('');
   $('#hubCards').insertAdjacentHTML('beforeend', D.hubs.filter(h => !temDados(h.id)).map(h => `<div class="card hub nodata-card" style="--c:${h.color}"><div class="t"><b><i></i>${h.short}</b></div><div class="nd"><strong>—</strong><span>SEM DADOS AINDA</span><p>Esta unidade ainda não tem pedidos na API.</p></div></div>`).join(''));
   $$('#hubCards .hub').forEach(c => c.onclick = () => toggleHub(c.dataset.h));
   // comparativo (abas + barras + linhas)
@@ -407,4 +407,35 @@ window.CentralApp = {go, get data(){return D},  agg, lastN, status, score, band,
     go(start, false); if(start !== 'dashboard') drawDashboard(true);
   });
 });
+
+/* ---------- card explicativo ao passar o mouse nos indicadores dos cards de saúde ---------- */
+(function(){
+  let tip = null;
+  const get = () => tip || (tip = Object.assign(document.createElement('div'), {className:'tip hubtip'}), document.body.appendChild(tip), tip);
+  const SIT = {ok:['dentro da meta','var(--lime)'], wa:['perto da meta','var(--amber,#ffb020)'], bd:['fora da meta','var(--red,#ff5a4d)']};
+  function html(hid, k){
+    const h = D.hubs.find(x => x.id === hid), n = S.period, m = agg([lastN(hid, n)]), dias = lastN(hid, n).length;
+    if(k === 'ped') return `<b>PEDIDOS TOTAIS · ${h.short}</b><p>Todos os pedidos criados no hub dentro do horário de funcionamento, cancelados incluídos.</p><div>Total no período: <em>${nf(m.ped,0)}</em></div><div>Média por dia: <em>${nf(m.ped/(dias||1),0)}</em></div>`;
+    const T = D.targets[k], mu = k === 'erros' ? 1 : 1, g = gl(k, m), st = status(k, m[k], mu, m), sit = SIT[st] || SIT.ok;
+    const meta = (T.dir === 'up' ? '≥ ' : (k === 'cancel' ? '< ' : '≤ ')) + nf(g, T.dec) + ' ' + T.unit;
+    const cancs = Math.round(m.cancel/100*m.ped), errs = Math.round((100-m.assert)/100*m.ped);
+    const calc = {
+      prod:   `Pedidos totais ÷ pessoas escaladas no dia (média dos dias com escala lançada).`,
+      cancel: `Cancelados ÷ pedidos totais. No período: ${nf(cancs,0)} de ${nf(m.ped,0)} pedidos.`,
+      assert: `1 − (erros reportados ÷ pedidos totais). No período: ${nf(errs,0)} erros em ${nf(m.ped,0)} pedidos.`,
+      tempo:  `Pedido pronto para coleta − pedido criado, em média ponderada pelos pedidos de cada dia.`,
+      erros:  `Erros reportados ÷ dias do período (${dias} dia${dias>1?'s':''}).`
+    }[k];
+    return `<b>${T.label.toUpperCase()} · ${h.short}</b><p>${calc}</p><div>Atual: <em>${fmtM(k, m[k])} ${T.unit}</em></div><div>Meta: <em>${meta}</em></div><div><i style="background:${sit[1]}"></i>${m[k] == null ? 'sem dados no período' : sit[0]}</div>`;
+  }
+  function pos(e){ const t = get(), w = t.offsetWidth, hh = t.offsetHeight; let x = e.clientX + 16, y = e.clientY - hh - 14;
+    if(x + w > innerWidth - 8) x = e.clientX - w - 16; if(y < 8) y = e.clientY + 18; t.style.left = Math.max(8, x) + 'px'; t.style.top = y + 'px'; }
+  document.addEventListener('DOMContentLoaded', () => {
+    const box = $('#hubCards'); if(!box) return;
+    box.addEventListener('mouseover', e => { const r = e.target.closest('.ml > div[data-k]'); if(!r || !D) return; const c = r.closest('.hub'); if(!c || !c.dataset.h) return;
+      const t = get(); t.innerHTML = html(c.dataset.h, r.dataset.k); t.classList.add('on'); pos(e); });
+    box.addEventListener('mousemove', e => { if(tip && tip.classList.contains('on')) pos(e); });
+    box.addEventListener('mouseout', e => { const r = e.target.closest('.ml > div[data-k]'); if(r && tip && !(e.relatedTarget && r.contains(e.relatedTarget))) tip.classList.remove('on'); });
+  });
+})();
 })();

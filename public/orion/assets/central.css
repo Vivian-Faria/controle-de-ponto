@@ -321,3 +321,10 @@ body.locked .main,body.locked .top{visibility:hidden}
 /* atualização automática silenciosa: sem reanimar anéis/barras/linhas */
 #v-dashboard.quiet *{animation-duration:.01ms!important;animation-delay:0s!important}
 .aurora i{will-change:auto}
+
+.tip.hubtip{position:fixed;z-index:60;max-width:290px;white-space:normal;transform:none}
+.tip.hubtip p{margin:0 0 7px;line-height:1.5;color:var(--text);font:500 11.5px var(--mono)}
+.tip.hubtip em{font-style:normal;color:var(--lime);font-weight:600}
+.tip.hubtip div{justify-content:flex-start}
+.ml > div[data-k]{cursor:help;border-radius:8px;transition:background .15s}
+.ml > div[data-k]:hover{background:rgba(255,255,255,.05)}
