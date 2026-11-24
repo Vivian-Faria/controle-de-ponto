@@ -159,8 +159,9 @@ function deltaHTML(k, cur, prev){
   const good = Math.abs(d) < .3 ? 'eq' : ((d > 0) === up ? 'up' : 'dn');
   return `<span class="dl ${good}">${Math.abs(d)<.3?'▬':d>0?'▲':'▼'} ${nf(Math.abs(d),1)}% <span style="color:var(--dim)">vs. período anterior</span></span>`;
 }
-function drawDashboard(first){
+function drawDashboard(first, quiet){
   if(!D) return;
+  { const v = $('#v-dashboard'); if(v) v.classList.toggle('quiet', !!quiet); }
   const wx = $('#v-dashboard .wrapx'), vz = !D.days.length; if(wx) wx.classList.toggle('vazio', vz);
   if(vz){ const m = D.meta || {}; $('#dashVazio').innerHTML = m.reason === 'carregando' ? '<b>Atualizando os dados da operação…</b><span>Estamos buscando os números reais na API. Eles aparecem aqui assim que chegarem.</span>' : '<b>Sem dados reais para mostrar agora.</b><span>' + (m.msg || 'A API não respondeu.') + ' Nenhum número de exemplo é exibido; o painel tenta de novo sozinho.</span>'; return; }
   const sh = selHubs(), n = S.period;
@@ -377,14 +378,15 @@ function setPill(m){
     if(nt) nt.innerHTML = '<b>Sem dados reais agora.</b> ' + (m.msg ? 'Motivo: ' + m.msg + '. ' : '') + 'Nenhum número de exemplo é exibido; o painel tenta de novo sozinho.';
   }
 }
-let refT = null;
+let refT = null, lastSig = '';
+const sigD = x => JSON.stringify([x.days, x.byHub, x.hourly, x.meta && x.meta.live, x.meta && x.meta.pendente]);   // só redesenha se os números mudaram
 function agendaRefresh(){
   clearTimeout(refT);
   const m = (D && D.meta) || {}, rapido = m.pendente || (m.live === false && m.reason === 'carregando');
   refT = setTimeout(() => {
     if(document.hidden || $('#v-dashboard').hidden){ agendaRefresh(); return; }
-    Dd.load().then(nd => { D = nd; if(!S.sel.size) D.hubs.forEach(h => S.sel.add(h.id)); setPill(nd.meta); drawDashboard(false); agendaRefresh(); });
-  }, rapido ? 12000 : 45000);
+    Dd.load().then(nd => { const mudou = sigD(nd) !== lastSig; D = nd; if(!S.sel.size) D.hubs.forEach(h => S.sel.add(h.id)); setPill(nd.meta); if(mudou){ lastSig = sigD(nd); drawDashboard(false, true); } agendaRefresh(); });
+  }, rapido ? 12000 : 60000);
 }
 
 /* ---------- init ---------- */
@@ -400,7 +402,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('#dFrom').onchange = aplica; $('#dTo').onchange = aplica;
     if(window.ComprasStore) ComprasStore.onChange(() => { if(window.CentralApp && D && !$('#v-dashboard').hidden) drawMaint(selHubs(), S.period); });
 window.CentralApp = {go, get data(){return D},  agg, lastN, status, score, band, fmtM, nf, KEYS};
-    setPill(D.meta); agendaRefresh();
+    setPill(D.meta); lastSig = sigD(D); agendaRefresh();
     const start = (location.hash.match(/#\/(\w+)/) || [])[1] || 'dashboard';
     go(start, false); if(start !== 'dashboard') drawDashboard(true);
   });

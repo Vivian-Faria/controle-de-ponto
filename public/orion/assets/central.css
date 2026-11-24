@@ -1,9 +1,9 @@
 /* ============ CENTRAL · shell unificado ============ */
 body.shell{--sbw:272px;--amber:#d9ddcf;--amber-d:rgba(217,221,207,.10)}
 .aurora{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}
-.aurora i{position:absolute;border-radius:50%;filter:blur(90px);opacity:.28;animation:drift 22s ease-in-out infinite alternate}
+.aurora i{position:absolute;border-radius:50%;filter:blur(90px);opacity:.28}
 .aurora i:nth-child(1){width:520px;height:520px;background:#b8f400;left:-160px;top:8%;opacity:.16}
-.aurora i:nth-child(2){width:420px;height:420px;background:#b8f400;right:-120px;top:42%;opacity:.07;animation-duration:28s}
+.aurora i:nth-child(2){width:420px;height:420px;background:#b8f400;right:-120px;top:42%;opacity:.07}
 .aurora i:nth-child(3){width:360px;height:360px;background:#b8f400;left:38%;bottom:-180px;opacity:.09;animation-duration:34s}
 @keyframes drift{to{transform:translate(70px,-50px) scale(1.15)}}
 
@@ -317,3 +317,7 @@ body.locked .main,body.locked .top{visibility:hidden}
 .hub.nodata-card .nd strong{font-size:44px;color:var(--dim)}
 .hub.nodata-card .nd span{font:600 10px var(--mono);letter-spacing:.14em;color:var(--muted)}
 .hub.nodata-card .nd p{font-size:12px;color:var(--dim);margin:6px 0 0}
+
+/* atualização automática silenciosa: sem reanimar anéis/barras/linhas */
+#v-dashboard.quiet *{animation-duration:.01ms!important;animation-delay:0s!important}
+.aurora i{will-change:auto}

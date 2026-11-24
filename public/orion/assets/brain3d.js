@@ -44,14 +44,15 @@ function mount(canvas, opt){
   const ctx = canvas.getContext('2d'), dpr = Math.min(window.devicePixelRatio || 1, 2);
   const css = getComputedStyle(document.documentElement);
   const G = (css.getPropertyValue('--lime') || '#b8f400').trim() || '#b8f400';
-  let W = 0, H = 0, ang = opt.start || 0.6, last = 0, talk = false, tilt = .22;
+  let lastDraw = 0, W = 0, H = 0, ang = opt.start || 0.6, last = 0, talk = false, tilt = .22;
   const pulses = []; for(let i = 0; i < (small ? 2 : 9); i++) pulses.push({ e: (Math.random() * E.length) | 0, t: Math.random(), v: .35 + Math.random() * .5 });
   function size(){ const b = canvas.getBoundingClientRect(); W = Math.max(40, b.width); H = Math.max(40, b.height); canvas.width = W * dpr; canvas.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
   size(); window.addEventListener('resize', size);
   const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   function frame(ts){
     requestAnimationFrame(frame);
-    if(!canvas.offsetParent) return;                               // escondido (outra tela): não gasta CPU
+    if(document.hidden || !canvas.offsetParent) return;                // aba/tela escondida: não gasta CPU
+    if(ts - lastDraw < 33) return; lastDraw = ts;                       // limita a ~30 fps                               // escondido (outra tela): não gasta CPU
     const dt = Math.min(.05, (ts - last) / 1000 || .016); last = ts;
     if(!W) size();
     ang += dt * (reduce ? .04 : (talk ? .75 : .42));              // 360° contínuo
@@ -70,7 +71,7 @@ function mount(canvas, opt){
       ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
     }
     ctx.globalAlpha = 1;
-    ctx.shadowColor = G; ctx.shadowBlur = small ? 4 : 9;
+    ctx.shadowColor = G; ctx.shadowBlur = small ? 3 : 5;
     const t = ts / 1000;
     for(let i = 0; i < P.length; i++){                              // nós: piscam de leve, de forma discreta
       const p = P[i]; if(p.k === 2) continue;
