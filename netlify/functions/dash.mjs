@@ -88,8 +88,19 @@ function somaPedido(e, o) {
   if (o.status === "canceled" || o.canceled_at) { h.cancel++; return; }
   const p = tms(o.ready_to_collect_at); if (c != null && p != null) { const m = (p - c) / 60000; if (m >= 0 && m <= 240) { h.tSoma += m; h.tN++; } }
 }
+const CONHECIDOS = new Set(["id", "reported_at", "reported_by", "hub", "business_name", "unit_name", "incorrect_product", "replacement_product", "swap_authorized", "financial_loss", "comments", "conclusion", "finished_at", "order"]);
+function regErro(e, x, id) {                                                              // registro permanente de UM erro reportado (nada é descartado)
+  const o = x.order || {}, extra = Object.fromEntries(Object.entries(x).filter(([k]) => !CONHECIDOS.has(k)));
+  return { id: x.id, dia: e.dia, reportadoEm: x.reported_at ?? null, reportadoPor: x.reported_by ?? null, hubApi: x.hub ?? null, negocio: x.business_name ?? null, unidade: x.unit_name ?? null,
+    hub: id || null, tipo: tipoErro(x), produto: x.incorrect_product ?? null, troca: x.replacement_product ?? null, trocaAutorizada: x.swap_authorized ?? null, perdaFinanceira: !!x.financial_loss,
+    comentario: x.comments ?? null, conclusao: x.conclusion ?? null, finalizadoEm: x.finished_at ?? null,
+    pedidoId: o.id ?? null, pedidoRef: o.reference ?? null, pedidoTotal: o.total ?? null, pedidoCriadoEm: o.created_at ?? null, pedidoCanceladoEm: o.canceled_at ?? null,
+    ...(Object.keys(extra).length ? { extra } : {}) };
+}
 function somaErro(e, x) {
-  const id = hubDe(x.hub, x.unit_name, x.business_name); if (!id) { e.semHub++; return; }
+  const id = hubDe(x.hub, x.unit_name, x.business_name);
+  (e.lista ||= []).push(regErro(e, x, id));
+  if (!id) { e.semHub++; return; }
   const h = e.hubs[id]; h.erros++; h.errTipos[tipoErro(x)]++;
 }
 async function avancaDia(e, ctx) {
@@ -163,11 +174,13 @@ export async function atualizar({ ate = DIAS, max = ORCAMENTO_REQ } = {}) {
   }
   for (const { d, parc, reg } of alvo) {
     let e = parc || novoEstado(d);
-    if (!parc && reg?.errosFalhou && reg.fim) { e = { ...reg, fase: "errors", pag: 1, fim: false, errosFalhou: null }; for (const h of Object.values(e.hubs)) { h.erros = 0; h.errTipos = { falt: 0, troc: 0, emb: 0, atr: 0 }; } }
+    if (!parc && reg?.errosFalhou && reg.fim) { e = { ...reg, fase: "errors", pag: 1, fim: false, errosFalhou: null, lista: [] }; for (const h of Object.values(e.hubs)) { h.erros = 0; h.errTipos = { falt: 0, troc: 0, emb: 0, atr: 0 }; } }
     try {
       e = await avancaDia(e, ctx);
       e.em = Date.now(); e.final = fechado(d, agora); e.pv = PV; e.pEm = Date.now();
       const p = await pessoasDoDia([d]); if (p.__erro) escalaErro = p.__erro; e.pessoas = p[d] || null;
+      if (!e.errosFalhou) await putJ(`log/erros/${d}`, { dia: d, atualizado: Date.now(), n: (e.lista || []).length, registros: e.lista || [] });   // diário permanente dos erros
+      delete e.lista;
       await putJ(chaveDia(d), e); try { await st().delete(`v3/parc/${d}`); } catch { /* sem parcial */ }
     } catch (err) {
       await putJ(`v3/parc/${d}`, e);                                                        // guarda o progresso; a dia anterior continua visível
@@ -270,10 +283,31 @@ async function estudoProd(dias = 30) {
   return out;
 }
 
+
+// ---------------------------------------------------------------- diário de erros (documentação)
+// ?de=&ate= (AAAA-MM-DD, padrão: últimos 30 dias) · ?hub=sion|cn|exp|... · ?conferir=1 compara o diário com o total da API · ?raw=1 busca ao vivo (diagnóstico)
+export async function listaErros(q) {
+  const hoje = isoOf(Date.now()), ate = q.get("ate") || hoje, de = q.get("de") || addDays(ate, -29);
+  if (q.get("raw")) {
+    const ctx = { req: 0, max: 12 }, out = [], vistoDia = {}; let pag = 1, tot = null;
+    for (;;) { const r = await api("/reports/order-errors", { from: de, to: ate, page: pag, per_page: PER }, ctx); tot = r.meta?.total ?? tot; out.push(...(r.data || [])); if (pag >= (r.meta?.last_page ?? 1) || !(r.data || []).length) break; pag++; }
+    for (const x of out) { const d = String(x.reported_at || "").slice(0, 10); vistoDia[d] = (vistoDia[d] || 0) + 1; }
+    return { totalApi: tot, lidos: out.length, porDiaReportado: vistoDia, registros: out };
+  }
+  const dias = []; for (let d = de; d <= ate; d = addDays(d, 1)) dias.push(d);
+  const logs = await Promise.all(dias.map(d => getJ(`log/erros/${d}`)));
+  let regs = logs.flatMap(l => l?.registros || []); const hub = q.get("hub"); if (hub) regs = regs.filter(r => (hub === "sem" ? !r.hub : r.hub === hub));
+  const conta = (f) => regs.reduce((o, r) => { const k = f(r) ?? "(vazio)"; o[k] = (o[k] || 0) + 1; return o; }, {});
+  const out = { de, ate, total: regs.length, diasDocumentados: logs.filter(Boolean).length, diasSemRegistro: dias.filter((d, i) => !logs[i]), porHub: conta(r => r.hub || "sem hub"), porLoja: conta(r => r.reportadoPor), porTipo: conta(r => r.tipo), porNegocio: conta(r => r.negocio), registros: regs.sort((a, b) => String(b.reportadoEm).localeCompare(String(a.reportadoEm))) };
+  if (q.get("conferir")) { const r = await api("/reports/order-errors", { from: de, to: ate, page: 1, per_page: 1 }, { req: 0, max: 3 }); out.conferencia = { totalApi: r.meta?.total ?? null, totalDiario: logs.reduce((a, l) => a + (l?.n || 0), 0), confere: (r.meta?.total ?? null) === logs.reduce((a, l) => a + (l?.n || 0), 0) }; }
+  return out;
+}
+
 export async function rotaDash(req, path, { json, isAdmin }) {
   if (!isAdmin(req)) return json({ error: "Não autorizado" }, 401);
   if (path === "/api/dash/estudo") { try { return json(await estudoProd(Number(new URL(req.url).searchParams.get("dias")) || 30)); } catch (e) { return json({ error: String(e.message || e) }, 500); } }
   if (path === "/api/dash/escala") { const dia = new URL(req.url).searchParams.get("dia") || isoOf(Date.now()); try { return json(await sondaEscala(dia)); } catch (e) { return json({ error: String(e.message || e) }, 500); } }
+  if (path === "/api/dash/erros") { try { return json(await listaErros(new URL(req.url).searchParams)); } catch (e) { return json({ error: String(e.message || e) }, 500); } }
   if (path === "/api/dash/probe") return json(await sonda());
   if (path === "/api/dash" && req.method === "GET") {
     if (!TOKEN()) return json({ error: "Falta definir ORION_ADMIN_TOKEN nas variáveis de ambiente do Netlify.", semToken: true }, 503);
