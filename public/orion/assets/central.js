@@ -467,9 +467,9 @@ function renderErros(){
   const por = (f, src) => src.reduce((o, r) => { const k = f(r) || '(vazio)'; o[k] = (o[k] || 0) + 1; return o; }, {});
   const hubs = Object.entries(por(r => hubNome(r.hub), all)).sort((a,b) => b[1]-a[1]);
   const cf = d.conferencia, pend = (d.diasSemRegistro || []).length;
-  $('#elInfo').innerHTML = `<b>${all.length}</b> erro${all.length===1?'':'s'} reportado${all.length===1?'':'s'} entre <b>${brD(d.de)}</b> e <b>${brD(d.ate)}</b>`
+  $('#elInfo').innerHTML = `<b>${all.length}</b> erro${all.length===1?'':'s'} entre <b>${brD(d.de)}</b> e <b>${brD(d.ate)}</b>`
     + (hubs.length ? ' · origem: ' + hubs.map(([h,n]) => `<b>${escH(h)}</b> ${n}`).join(', ') : '')
-    + '. Cada erro é aberto pela <b>loja parceira</b> no portal da Órion e vem ligado a um pedido.<br>'
+    + '. <b>Expedição:</b> erros abertos pelas lojas parceiras no portal da Órion. <b>Varandas:</b> pedidos cancelados por erro de montagem (item faltando, errado, trocado, não enviado ou embalagem).<br>' + (d.naoContados ? `<span style="color:var(--muted)">${d.naoContados} registro(s) ficam documentados mas não entram na conta (qualidade/transporte e relatório de erros fora da Expedição).</span><br>` : '')
     + (pend ? `<span class="wac">Completando o diário: ${pend} dia(s) ainda sem registro.</span>` : cf ? (cf.confere ? `<span class="okc">✔ Diário conferido com a API: ${cf.totalDiario} de ${cf.totalApi} erros do período.</span>` : `<span class="wac">Diário com ${cf.totalDiario} de ${cf.totalApi} erros da API no período — atualizando.</span>`) : '');
   const lj = Object.entries(por(r => r.reportadoPor, all)).sort((a,b) => b[1]-a[1]), mx = lj.length ? lj[0][1] : 1;
   $('#elRank').innerHTML = lj.slice(0, 8).map(([n,v]) => `<div class="r" data-l="${escH(n)}" title="Filtrar esta loja"><span>${escH(n)}</span><b>${v}</b><i style="width:${Math.max(6, v/mx*100)}%"></i></div>`).join('');
@@ -480,7 +480,7 @@ function renderErros(){
   sT.value = ER.f.tipo; sL.value = ER.f.loja;
   const tn = Object.fromEntries(D.errTypes.map(t => [t.id, t]));
   $('#elBody').innerHTML = rows.slice(0, 300).map(r => { const t = tn[r.tipo] || {name:r.tipo, color:'#888'};
-    return `<tr><td>${dtBR(r.reportadoEm)}</td><td>${escH(r.reportadoPor)}<small>${escH(r.negocio || '')}${r.hubApi ? ' · ' + escH(r.hubApi) : ''}</small></td><td>${escH(hubNome(r.hub))}</td>
+    return `<tr><td>${dtBR(r.reportadoEm)}</td><td>${escH(r.reportadoPor)}<small>${r.origem === 'cancelamento' ? 'Cancelamento · ' : 'Relatório de erros · '}${escH(r.negocio || '')}${r.hubApi ? ' · ' + escH(r.hubApi) : ''}</small></td><td>${escH(hubNome(r.hub))}</td>
       <td><span class="tg" style="color:${t.color};border-color:${t.color}55">${escH(t.name)}</span></td>
       <td>${r.produto ? '<b>' + escH(r.produto) + '</b>' : ''}${r.troca ? '<small>enviado no lugar / reposição: <span class="pr">' + escH(r.troca) + '</span></small>' : ''}<small style="white-space:normal;color:var(--text)">${escH(r.comentario || 'Sem descrição')}</small>${r.conclusao ? '<small>Conclusão: ' + escH(r.conclusao) + '</small>' : ''}</td>
       <td>${r.pedidoRef ? '#' + escH(r.pedidoRef) : '—'}<small>${r.pedidoTotal != null ? 'R$ ' + nf(r.pedidoTotal, 2) : ''}${r.pedidoCriadoEm ? ' · pedido de ' + dtBR(r.pedidoCriadoEm).slice(0,5) : ''}</small></td></tr>`; }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:22px">Nenhum erro com esses filtros.</td></tr>';

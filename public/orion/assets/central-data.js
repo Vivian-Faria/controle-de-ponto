@@ -22,9 +22,9 @@
   const TARGETS = {
     prod:   {label:'Produtividade',        unit:'ped/pessoa/dia', dir:'up',   goal:30, dec:1, short:'PRODUTIVIDADE', def:'Pedidos totais do dia ÷ pessoas escaladas no dia'},
     cancel: {label:'Taxa de cancelamento', unit:'%',            dir:'down', goal:1.0, dec:1, short:'CANCELAMENTO',  def:'Cancelamentos ÷ pedidos totais'},
-    assert: {label:'Assertividade',        unit:'%',            dir:'up',   goal:98.0,dec:1, short:'ASSERTIVIDADE', def:'Pedidos sem erro reportado ÷ pedidos totais'},
+    assert: {label:'Assertividade',        unit:'%',            dir:'up',   goal:98.0,dec:1, short:'ASSERTIVIDADE', def:'1 − erros ÷ pedidos totais (Expedição: erros reportados pelas lojas; Varandas: cancelados por erro de montagem)'},
     tempo:  {label:'Tempo de processamento',unit:'min',         dir:'down', goal:7,   dec:1, short:'TEMPO DE PROC.',def:'Pedido pronto − pedido recebido (média)'},
-    erros:  {label:'Erros por dia',        unit:'erros/dia',    dir:'down', goal:3,   dec:1, short:'ERROS / DIA',   def:'Erros reportados por dia'},
+    erros:  {label:'Erros por dia',        unit:'erros/dia',    dir:'down', goal:3,   dec:1, short:'ERROS / DIA',   def:'Erros por dia (Expedição: reportados pelas lojas; Varandas: cancelados por erro de montagem)'},
   };
   let ultimo = null;
   const hm = ms => new Date(ms).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});

@@ -75,6 +75,34 @@ const tipoErro = e => { const c = nrm(e.comments || "");
   if (/atras|demor|motoboy|entregador/.test(c)) return "atr";
   return "out"; };                                                                           // sem descrição ou outro motivo (ex.: operação não aceitou o pedido)
 
+// Varandas: erro = pedido cancelado por falha de montagem (item faltando/errado/trocado/não enviado, embalagem). Definição da Ví.
+// Fora da regra (não contam): desistência, pagamento, cliente não encontrado, veículo, atraso, duplicado etc.
+// "qual" = qualidade/transporte (impróprio para consumo, violado, avariado, item indisponível): NÃO conta, fica registrado para a Ví decidir.
+const CONTA_QUALIDADE = false;
+function tipoCancel(motivo) {
+  const t = nrm(String(motivo || "").replace(/\s+/g, " "));
+  if (!t || t === "null") return null;
+  if (/embalagem|derram|vazou|selad|lacre|amassad/.test(t)) return "emb";
+  if (/missing_item|faltand|faltou|faltante|nao (foi )?(enviad|enivad|entreg\w* o item)|incomplet|sem o item|nao veio/.test(t)) return "falt";
+  if (/itens? errad|veio errad|salada veio errada|em vez de|no lugar de|trocad|outras? (sobremesa|item|produto)s?|produto errado|item errado/.test(t)) return "troc";
+  if (/improprio|violad|revirad|nao esta apto|caracteristica de qualidade|damaged_on_transport|item indisponivel|desatualizado/.test(t)) return "qual";
+  return null;
+}
+function regCancel(e, x, id, tipo) {
+  return { id: x.id, dia: e.dia, origem: "cancelamento", conta: tipo !== "qual" || CONTA_QUALIDADE, reportadoEm: x.canceled_at ?? null, reportadoPor: x.business_name ?? null, hubApi: x.hub ?? null, negocio: x.business_name ?? null, unidade: x.unit_name ?? null,
+    hub: id, tipo, produto: null, troca: null, trocaAutorizada: null, perdaFinanceira: false, comentario: String(x.cancellation_reason || "").replace(/\s+/g, " ").trim(), conclusao: null, finalizadoEm: x.finished_at ?? null,
+    pedidoId: x.id ?? null, pedidoRef: x.reference ?? null, pedidoTotal: x.total ?? null, pedidoCriadoEm: x.created_at ?? null, pedidoCanceladoEm: x.canceled_at ?? null };
+}
+const VARANDAS = new Set(["sion", "cn", "bur", "cas"]);
+function somaCancel(e, x) {
+  const id = hubDe(x.hub, x.unit_name, x.business_name); if (!id || !VARANDAS.has(id)) return;
+  const c = tms(x.created_at); if (c != null && !dentro(id, c)) return;                       // mesma janela dos pedidos
+  const tipo = tipoCancel(x.cancellation_reason); if (!tipo) return;
+  const r = regCancel(e, x, id, tipo); (e.lista ||= []).push(r);
+  if (!r.conta) { e.qualidade = (e.qualidade || 0) + 1; return; }
+  const h = e.hubs[id]; h.erros++; h.errTipos[tipo]++;
+}
+
 // ---------------------------------------------------------------- agregação de um dia (retomável)
 const novoHub = () => ({ pedidos: 0, cancel: 0, erros: 0, errTipos: { falt: 0, troc: 0, emb: 0, atr: 0, out: 0 }, tSoma: 0, tN: 0, horas: Array(24).fill(0) });
 const novoEstado = dia => ({ dia, fase: "orders", pag: 1, hubs: Object.fromEntries(HUBS.map(h => [h, novoHub()])), semHub: 0, vistos: { hubs: {}, unidades: {}, negocios: {} }, fim: false });
@@ -91,7 +119,7 @@ function somaPedido(e, o) {
 const CONHECIDOS = new Set(["id", "reported_at", "reported_by", "hub", "business_name", "unit_name", "incorrect_product", "replacement_product", "swap_authorized", "financial_loss", "comments", "conclusion", "finished_at", "order"]);
 function regErro(e, x, id) {                                                              // registro permanente de UM erro reportado (nada é descartado)
   const o = x.order || {}, extra = Object.fromEntries(Object.entries(x).filter(([k]) => !CONHECIDOS.has(k)));
-  return { id: x.id, dia: e.dia, reportadoEm: x.reported_at ?? null, reportadoPor: x.reported_by ?? null, hubApi: x.hub ?? null, negocio: x.business_name ?? null, unidade: x.unit_name ?? null,
+  return { id: x.id, dia: e.dia, origem: "relatorio-erros", conta: true, reportadoEm: x.reported_at ?? null, reportadoPor: x.reported_by ?? null, hubApi: x.hub ?? null, negocio: x.business_name ?? null, unidade: x.unit_name ?? null,
     hub: id || null, tipo: tipoErro(x), produto: x.incorrect_product ?? null, troca: x.replacement_product ?? null, trocaAutorizada: x.swap_authorized ?? null, perdaFinanceira: !!x.financial_loss,
     comentario: x.comments ?? null, conclusao: x.conclusion ?? null, finalizadoEm: x.finished_at ?? null,
     pedidoId: o.id ?? null, pedidoRef: o.reference ?? null, pedidoTotal: o.total ?? null, pedidoCriadoEm: o.created_at ?? null, pedidoCanceladoEm: o.canceled_at ?? null,
@@ -99,23 +127,25 @@ function regErro(e, x, id) {                                                    
 }
 function somaErro(e, x) {
   const id = hubDe(x.hub, x.unit_name, x.business_name);
-  (e.lista ||= []).push(regErro(e, x, id));
+  const r = regErro(e, x, id); (e.lista ||= []).push(r);
   if (!id) { e.semHub++; return; }
+  if (id !== "exp") { r.conta = false; return; }                                             // relatório de erros = Expedição; Varandas contam pelos cancelamentos
   const h = e.hubs[id]; h.erros++; h.errTipos[tipoErro(x)]++;
 }
+const ROTAS = { orders: "/reports/orders", errors: "/reports/order-errors", cancel: "/reports/cancellations" };
+const PROX = { orders: "errors", errors: "cancel" };
 async function avancaDia(e, ctx) {
   while (!e.fim) {
-    const rota = e.fase === "orders" ? "/reports/orders" : "/reports/order-errors";
     let r;
-    try { r = await api(rota, { from: e.dia, to: e.dia, page: e.pag, per_page: PER, ...(e.fase === "orders" ? { cancellation_status: "all" } : {}) }, ctx); }
+    try { r = await api(ROTAS[e.fase], { from: e.dia, to: e.dia, page: e.pag, per_page: PER, ...(e.fase === "orders" ? { cancellation_status: "all" } : {}) }, ctx); }
     catch (err) {
-      // o relatório de erros é complementar: se ele falhar (ex.: 500 da API), o dia fecha com os pedidos e tenta os erros de novo depois
-      if (e.fase === "errors" && err instanceof ApiErro && ![0, 401, 429].includes(err.status)) { e.errosFalhou = err.status; e.errosTent = Date.now(); e.fim = true; break; }
+      // erros e cancelamentos são complementares: se falharem (ex.: 500 da API), o dia fecha com os pedidos e tenta de novo depois
+      if (e.fase !== "orders" && err instanceof ApiErro && ![0, 401, 429].includes(err.status)) { e.errosFalhou = err.status; e.errosTent = Date.now(); e.fim = true; break; }
       throw err;
     }
-    for (const x of r.data || []) (e.fase === "orders" ? somaPedido : somaErro)(e, x);
+    for (const x of r.data || []) ({ orders: somaPedido, errors: somaErro, cancel: somaCancel })[e.fase](e, x);
     const ult = r.meta?.last_page ?? 1;
-    if (e.pag >= ult || !(r.data || []).length) { if (e.fase === "orders") { e.fase = "errors"; e.pag = 1; } else e.fim = true; } else e.pag++;
+    if (e.pag >= ult || !(r.data || []).length) { if (PROX[e.fase]) { e.fase = PROX[e.fase]; e.pag = 1; } else e.fim = true; } else e.pag++;
   }
   return e;
 }
@@ -150,7 +180,7 @@ async function pessoasDoDia(dias) {
 }
 
 // ---------------------------------------------------------------- orquestração
-const LOGV = 3;                                                                            // versão do diário de erros (subir força refazer a fase de erros)
+const LOGV = 4;                                                                            // versão do diário de erros (subir força refazer a fase de erros)
 const PV = 3;                                                                              // versão da regra de contagem de pessoas
 const chaveDia = d => `v3/dia/${d}`;
 const fechado = (d, agora) => agora >= Date.parse(d + "T00:00:00Z") - TZ * HOUR + DAY + 2 * HOUR;       // 2 h depois da meia-noite local
@@ -175,7 +205,7 @@ export async function atualizar({ ate = DIAS, max = ORCAMENTO_REQ } = {}) {
   }
   for (const { d, parc, reg } of alvo) {
     let e = parc || novoEstado(d);
-    if (!parc && reg?.fim && (reg.errosFalhou || reg.logv !== LOGV)) { e = { ...reg, fase: "errors", pag: 1, fim: false, errosFalhou: null, lista: [] }; for (const h of Object.values(e.hubs)) { h.erros = 0; h.errTipos = { falt: 0, troc: 0, emb: 0, atr: 0, out: 0 }; } }
+    if (!parc && reg?.fim && (reg.errosFalhou || reg.logv !== LOGV)) { e = { ...reg, fase: "errors", pag: 1, fim: false, errosFalhou: null, lista: [], qualidade: 0 }; for (const h of Object.values(e.hubs)) { h.erros = 0; h.errTipos = { falt: 0, troc: 0, emb: 0, atr: 0, out: 0 }; } }
     try {
       e = await avancaDia(e, ctx);
       e.em = Date.now(); e.final = fechado(d, agora); e.pv = PV; e.pEm = Date.now();
@@ -298,10 +328,11 @@ export async function listaErros(q) {
   }
   const dias = []; for (let d = de; d <= ate; d = addDays(d, 1)) dias.push(d);
   const logs = await Promise.all(dias.map(d => getJ(`log/erros/${d}`)));
-  let regs = logs.flatMap(l => l?.registros || []); const hub = q.get("hub"); if (hub) regs = regs.filter(r => (hub === "sem" ? !r.hub : r.hub === hub));
+  const todos = logs.flatMap(l => l?.registros || []), naoContados = todos.filter(r => r.conta === false), porMotivoNaoConta = naoContados.reduce((o, r) => { const k = (r.origem === "cancelamento" ? "cancelamento/" + r.tipo + ": " : "relatório de erros fora da Expedição: ") + String(r.comentario || "").slice(0, 90); o[k] = (o[k] || 0) + 1; return o; }, {});
+  let regs = todos.filter(r => r.conta !== false); const hub = q.get("hub"); if (hub) regs = regs.filter(r => (hub === "sem" ? !r.hub : r.hub === hub));
   const conta = (f) => regs.reduce((o, r) => { const k = f(r) ?? "(vazio)"; o[k] = (o[k] || 0) + 1; return o; }, {});
-  const out = { de, ate, total: regs.length, diasDocumentados: logs.filter(Boolean).length, diasSemRegistro: dias.filter((d, i) => !logs[i]), porHub: conta(r => r.hub || "sem hub"), porLoja: conta(r => r.reportadoPor), porTipo: conta(r => r.tipo), porNegocio: conta(r => r.negocio), registros: regs.sort((a, b) => String(b.reportadoEm).localeCompare(String(a.reportadoEm))) };
-  if (q.get("conferir")) { const r = await api("/reports/order-errors", { from: de, to: ate, page: 1, per_page: 1 }, { req: 0, max: 3 }); out.conferencia = { totalApi: r.meta?.total ?? null, totalDiario: logs.reduce((a, l) => a + (l?.n || 0), 0), confere: (r.meta?.total ?? null) === logs.reduce((a, l) => a + (l?.n || 0), 0) }; }
+  const out = { de, ate, total: regs.length, diasDocumentados: logs.filter(Boolean).length, diasSemRegistro: dias.filter((d, i) => !logs[i]), porHub: conta(r => r.hub || "sem hub"), porLoja: conta(r => r.reportadoPor), porTipo: conta(r => r.tipo), porNegocio: conta(r => r.negocio), naoContados: naoContados.length, porMotivoNaoConta, registros: regs.sort((a, b) => String(b.reportadoEm).localeCompare(String(a.reportadoEm))) };
+  if (q.get("conferir")) { const r = await api("/reports/order-errors", { from: de, to: ate, page: 1, per_page: 1 }, { req: 0, max: 3 }); out.conferencia = { totalApi: r.meta?.total ?? null, totalDiario: todos.filter(x => x.origem !== "cancelamento").length, confere: (r.meta?.total ?? null) === todos.filter(x => x.origem !== "cancelamento").length }; }
   return out;
 }
 
