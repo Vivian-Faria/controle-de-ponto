@@ -73,24 +73,30 @@ export function situacoes(escala, dia, cfgA, agora = null) {      // agora: marc
     for (const t of escala.cfg.turnos.filter(x => x.hubId === hub.id)) {
       const n = Number(t.vagas?.[dow]) || 0; if (!n) continue;
       const salvas = vagasDe(doc?.slots?.[t.id]), sobress = new Set((escala.cfg.colaboradores || []).filter(c => c.papel === "supervisor").map(c => nrm(c.nome)));
-      const creditos = (doc?.folgas?.[t.id] || []).filter(x => sobress.has(nrm(x))).length; let cred = creditos;
+      const creditos = (doc?.folgas?.[t.id] || []).filter(x => sobress.has(nrm(x))).length;
       const ini = toMs(dia, t.inicio); let fim = toMs(dia, t.fim); if (fim <= ini) fim += DAY;
-      for (let i = 0; i < n; i++) {
-        const partes = salvas[i] || [];
-        if (!partes.length) { if (cred > 0) { cred--; continue; } out.push({ hubId: hub.id, hubNome: hub.nome, turnoId: t.id, turno: t.nome, vaga: i, vazia: true, nome: "", inicio: ini, fim, dia, tIni: ini, tFim: fim }); continue; }
+      // Quem é lançado não fica preso à posição do slot configurado (pode acabar
+      // salvo em qualquer índice do Firestore) — por isso quem está preenchido é
+      // reunido pelo conteúdo (nome), em qualquer índice, e não pelas N primeiras
+      // posições do array, senão vaga preenchida em posição alta vira furo falso.
+      const preenchidas = []; salvas.forEach((partes, i) => { if (partes.length) preenchidas.push({ i, partes }); });
+      const vaziasReais = Math.max(n - preenchidas.length, 0), cred = Math.min(creditos, vaziasReais);
+      const necessarias = n - cred;
+      for (let k = 0; k < vaziasReais - cred; k++) {
+        out.push({ hubId: hub.id, hubNome: hub.nome, turnoId: t.id, turno: t.nome, vaga: -1 - k, vazia: true, nome: "", inicio: ini, fim, dia, tIni: ini, tFim: fim });
+      }
+      // quem passa da quantidade necessária (contando já os créditos de folga) só
+      // conta se realmente bater o ponto (nunca gera furo) — mesma regra de antes,
+      // só que decidida pela ordem de quem tem nome, não pela posição no array.
+      preenchidas.forEach(({ i, partes }, pos) => {
+        const extra = pos >= necessarias;
         for (const [pidx, p] of partes.entries()) {
           const pi = p.inicio ? toMs(dia, p.inicio) : ini; let pf = p.fim ? toMs(dia, p.fim) : fim; if (pf <= pi) pf += DAY;
           const folga = na(doc?.folgas?.[t.id], p.nome), marcouFalta = na(doc?.faltas?.[t.id], p.nome), compareceu = na(doc?.compareceram?.[t.id], p.nome) && marcaValida(doc, pi, agora);
           if (folga) continue;
-          out.push({ hubId: hub.id, hubNome: hub.nome, turnoId: t.id, turno: t.nome, vaga: i, pidx, vazia: false, nome: p.nome, tipo: p.tipo, inicio: pi, fim: pf, dia, marcouFalta, compareceu, split: !!(p.inicio || p.fim), tIni: ini, tFim: fim });
+          out.push({ hubId: hub.id, hubNome: hub.nome, turnoId: t.id, turno: t.nome, vaga: i, pidx, vazia: false, nome: p.nome, tipo: p.tipo, inicio: pi, fim: pf, dia, marcouFalta, compareceu, split: !!(p.inicio || p.fim), ...(extra ? { extra: true } : {}), tIni: ini, tFim: fim });
         }
-      }
-      // nomes lançados além do nº de vagas do dia: só contam se a pessoa realmente bater o ponto (nunca geram furo)
-      for (let i = n; i < salvas.length; i++) for (const [pidx, p] of (salvas[i] || []).entries()) {
-        if (na(doc?.folgas?.[t.id], p.nome)) continue;
-        const pi = p.inicio ? toMs(dia, p.inicio) : ini; let pf = p.fim ? toMs(dia, p.fim) : fim; if (pf <= pi) pf += DAY;
-        out.push({ hubId: hub.id, hubNome: hub.nome, turnoId: t.id, turno: t.nome, vaga: i, pidx, vazia: false, nome: p.nome, tipo: p.tipo, inicio: pi, fim: pf, dia, marcouFalta: false, compareceu: na(doc?.compareceram?.[t.id], p.nome) && marcaValida(doc, pi, agora), split: !!(p.inicio || p.fim), extra: true, tIni: ini, tFim: fim });
-      }
+      });
     }
   }
   return out;
