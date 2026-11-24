@@ -305,11 +305,23 @@ export async function listaErros(q) {
   return out;
 }
 
+
+// diagnóstico dos cancelamentos: campos e motivos reais (?de=&ate=)
+export async function motivosCancel(q) {
+  const hoje = isoOf(Date.now()), ate = q.get("ate") || hoje, de = q.get("de") || addDays(ate, -29), ctx = { req: 0, max: 14 }, out = [];
+  let pag = 1, tot = null;
+  for (;;) { const r = await api("/reports/cancellations", { from: de, to: ate, page: pag, per_page: PER }, ctx); tot = r.meta?.total ?? tot; out.push(...(r.data || [])); if (pag >= (r.meta?.last_page ?? 1) || !(r.data || []).length) break; pag++; }
+  const conta = f => out.reduce((o, x) => { const k = String(f(x) ?? "(vazio)").slice(0, 140); o[k] = (o[k] || 0) + 1; return o; }, {});
+  return { totalApi: tot, lidos: out.length, campos: out[0] ? Object.keys(out[0]) : [], exemplo: out[0] || null, porHub: conta(x => x.hub), porNegocio: conta(x => x.business_name),
+    motivos: Object.fromEntries(Object.keys(out[0] || {}).filter(k => /reason|motivo|category|type|cause|origin|status/i.test(k)).map(k => [k, conta(x => typeof x[k] === "object" ? JSON.stringify(x[k]) : x[k])])) };
+}
+
 export async function rotaDash(req, path, { json, isAdmin }) {
   if (!isAdmin(req)) return json({ error: "Não autorizado" }, 401);
   if (path === "/api/dash/estudo") { try { return json(await estudoProd(Number(new URL(req.url).searchParams.get("dias")) || 30)); } catch (e) { return json({ error: String(e.message || e) }, 500); } }
   if (path === "/api/dash/escala") { const dia = new URL(req.url).searchParams.get("dia") || isoOf(Date.now()); try { return json(await sondaEscala(dia)); } catch (e) { return json({ error: String(e.message || e) }, 500); } }
   if (path === "/api/dash/erros") { try { return json(await listaErros(new URL(req.url).searchParams)); } catch (e) { return json({ error: String(e.message || e) }, 500); } }
+  if (path === "/api/dash/cancel") { try { return json(await motivosCancel(new URL(req.url).searchParams)); } catch (e) { return json({ error: String(e.message || e) }, 500); } }
   if (path === "/api/dash/probe") return json(await sonda());
   if (path === "/api/dash" && req.method === "GET") {
     if (!TOKEN()) return json({ error: "Falta definir ORION_ADMIN_TOKEN nas variáveis de ambiente do Netlify.", semToken: true }, 503);
