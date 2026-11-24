@@ -94,7 +94,13 @@ function somaErro(e, x) {
 async function avancaDia(e, ctx) {
   while (!e.fim) {
     const rota = e.fase === "orders" ? "/reports/orders" : "/reports/order-errors";
-    const r = await api(rota, { from: e.dia, to: e.dia, page: e.pag, per_page: PER, ...(e.fase === "orders" ? { cancellation_status: "all" } : {}) }, ctx);
+    let r;
+    try { r = await api(rota, { from: e.dia, to: e.dia, page: e.pag, per_page: PER, ...(e.fase === "orders" ? { cancellation_status: "all" } : {}) }, ctx); }
+    catch (err) {
+      // o relatório de erros é complementar: se ele falhar (ex.: 500 da API), o dia fecha com os pedidos e tenta os erros de novo depois
+      if (e.fase === "errors" && err instanceof ApiErro && ![0, 401, 429].includes(err.status)) { e.errosFalhou = err.status; e.errosTent = Date.now(); e.fim = true; break; }
+      throw err;
+    }
     for (const x of r.data || []) (e.fase === "orders" ? somaPedido : somaErro)(e, x);
     const ult = r.meta?.last_page ?? 1;
     if (e.pag >= ult || !(r.data || []).length) { if (e.fase === "orders") { e.fase = "errors"; e.pag = 1; } else e.fim = true; } else e.pag++;
@@ -141,11 +147,13 @@ export async function atualizar({ ate = DIAS, max = ORCAMENTO_REQ } = {}) {
   const alvo = [];                                                                       // ordem: hoje, depois do mais novo para o mais antigo
   for (const d of [...dias].reverse()) {
     const reg = await getJ(chaveDia(d)), parc = await getJ(`v3/parc/${d}`);
-    const precisa = parc || !reg || (d === hoje ? agora - (reg.em || 0) > AO_VIVO_MS : !reg.final && fechado(d, agora));
-    if (precisa) alvo.push({ d, parc });
+    const rever = reg?.errosFalhou && Date.now() - (reg.errosTent || 0) > 10 * 60000;          // só os erros, sem refazer os pedidos
+    const precisa = parc || rever || !reg || (d === hoje ? agora - (reg.em || 0) > AO_VIVO_MS : !reg.final && fechado(d, agora));
+    if (precisa) alvo.push({ d, parc, reg });
   }
-  for (const { d, parc } of alvo) {
+  for (const { d, parc, reg } of alvo) {
     let e = parc || novoEstado(d);
+    if (!parc && reg?.errosFalhou && reg.fim) { e = { ...reg, fase: "errors", pag: 1, fim: false, errosFalhou: null }; for (const h of Object.values(e.hubs)) { h.erros = 0; h.errTipos = { falt: 0, troc: 0, emb: 0, atr: 0 }; } }
     try {
       e = await avancaDia(e, ctx);
       e.em = Date.now(); e.final = fechado(d, agora);
@@ -181,7 +189,7 @@ export async function montar() {
       pessoas: Math.round(rec.reduce((a, d) => a + (R[d].pessoas?.[id]?.h?.[hh] || 0), 0) / n) }));
   }
   for (const d of faixa) semHub += R[d].semHub || 0;
-  out.meta = { live: true, atualizado: Math.max(0, ...faixa.map(d => R[d].em || 0)), carregados: faixa.length, total: DIAS, pendente: faixa.length < DIAS, semEscala, semHub, hoje };
+  out.meta = { live: true, atualizado: Math.max(0, ...faixa.map(d => R[d].em || 0)), carregados: faixa.length, total: DIAS, pendente: faixa.length < DIAS, semEscala, semHub, hoje, errosIndisponiveis: faixa.filter(d => R[d].errosFalhou).length };
   return out;
 }
 
@@ -199,11 +207,13 @@ export async function sonda() {
       if ((p.data || []).length) { r.exemplo = r.exemplo || Object.fromEntries(Object.entries(p.data[0]).filter(([k]) => !/customer|name$/.test(k) || /unit|business/.test(k))); }
     }
     r.valores = e.vistos; r.semHub = e.semHub; r.pedidosAmostra = HUBS.map(h => [h, e.hubs[h].pedidos]);
+    try {
     const er = await api("/reports/order-errors", { from: addDays(r.hoje, -7), to: r.hoje, page: 1, per_page: 5 }, ctx);
     r.errosSemana = er.meta?.total ?? (er.data || []).length;
     const e30 = await api("/reports/order-errors", { from: addDays(r.hoje, -30), to: r.hoje, page: 1, per_page: 5 }, ctx);
     r.erros30dias = e30.meta?.total ?? (e30.data || []).length; r.resumoErros30 = e30.summary ?? null; r.metaErros = e30.meta ?? null;
     if ((e30.data || []).length) r.exemploErro = Object.fromEntries(Object.entries(e30.data[0]).map(([k, v]) => [k, typeof v === "string" ? v.slice(0, 80) : v]));
+    } catch (x) { r.errosRelatorioErro = x.message; r.errosRelatorioStatus = x.status; }
     try { const c = await api("/reports/cancellations", { from: addDays(r.hoje, -7), to: r.hoje, page: 1, per_page: 3 }, ctx); r.cancelamentos7dias = c.meta?.total ?? (c.data || []).length; r.resumoCancel = c.summary ?? null;
       if ((c.data || []).length) r.exemploCancel = Object.fromEntries(Object.entries(c.data[0]).filter(([k]) => /reason|hub|unit|business|status|canceled_at/.test(k))); } catch (x) { r.cancelErro = x.message; }
     r.ok = true;
@@ -220,7 +230,7 @@ export async function rotaDash(req, path, { json, isAdmin }) {
     if (r.erro && r.erro.status === 401) return json({ error: r.erro.message }, 502);
     const d = await montar();
     if (!d.days.length) return json({ error: r.erro ? r.erro.message : "Ainda carregando os primeiros dias da API.", carregando: true, meta: d.meta }, 202);
-    d.meta.aviso = r.erro ? r.erro.message : r.escalaErro ? "Escala indisponível: pessoas estimadas." : null;
+    d.meta.aviso = r.erro ? r.erro.message : r.escalaErro ? "Escala indisponível: pessoas estimadas." : d.meta.errosIndisponiveis ? `Relatório de erros da API indisponível em ${d.meta.errosIndisponiveis} dia(s); erros dessses dias podem estar incompletos.`.replace("dessses", "desses") : null;
     return json(d);
   }
   return json({ error: "Rota não encontrada" }, 404);
