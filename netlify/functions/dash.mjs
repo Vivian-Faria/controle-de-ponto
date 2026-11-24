@@ -253,13 +253,15 @@ async function estudoProd(dias = 30) {
   const out = { periodo: [ds[0], ds[ds.length - 1]], hubs: {} };
   const regs = await Promise.all(ds.map(d => getJ(chaveDia(d))));
   for (const id of HUBS) {
-    const hj = horasJanela(id), horaHora = [], dia = [], porHora = Array.from({ length: 24 }, () => ({ n: 0, p: 0, d: 0 })); let sn = 0, sp = 0, dd = 0, semEsc = 0;
+    const hj = horasJanela(id), horaHora = [], dia = [], porHora = Array.from({ length: 24 }, () => ({ n: 0, p: 0, d: 0 })); let sn = 0, sp = 0, dd = 0, semEsc = 0; const cab = [], sem = {}, pedDia = [], cabN = [];
     regs.forEach(r => { if (!r?.fim) return; const h = r.hubs?.[id], pe = r.pessoas?.[id]; if (!h || !h.pedidos) return;
       if (!pe || !pe.tem || !hj.some(x => pe.h[x] > 0)) { semEsc++; return; }
       let dn = 0, dp = 0; for (const x of hj) { const n = h.horas[x], q = pe.h[x]; if (q > 0) { horaHora.push({ x, v: n / q, n, q }); dn += n; dp += q; porHora[x].n += n; porHora[x].p += q; porHora[x].d++; } }
-      if (dp) { dia.push(dn / dp); sn += dn; sp += dp; dd++; } });
+      if (dp) { dia.push(dn / dp); sn += dn; sp += dp; dd++; }
+      if (pe.total > 0) { const v = h.pedidos / pe.total; cab.push(v); (sem[dowOf(r.dia)] ||= []).push(v); pedDia.push(h.pedidos); cabN.push(pe.total); } });
     const vs = horaHora.map(o => o.v), topo = [...horaHora].sort((a, b) => b.n - a.n).slice(0, Math.max(1, Math.round(horaHora.length * 0.25)));
     out.hubs[id] = { diasComEscala: dd, diasSemEscala: semEsc, geralPedidosPorPessoaHora: sp ? +(sn / sp).toFixed(1) : null,
+      porCabeca: { dias: cab.length, pedidosPorDiaMedio: cab.length ? +(pedDia.reduce((a, b) => a + b, 0) / cab.length).toFixed(0) : null, pessoasPorDiaMedio: cab.length ? +(cabN.reduce((a, b) => a + b, 0) / cab.length).toFixed(1) : null, p25: pct(cab, .25), p50: pct(cab, .5), p75: pct(cab, .75), p90: pct(cab, .9), max: pct(cab, .999), porDiaSemana: Object.fromEntries(Object.entries(sem).map(([k, v]) => [["dom", "seg", "ter", "qua", "qui", "sex", "sab"][k], pct(v, .5)])) },
       porDia: { p25: pct(dia, .25), p50: pct(dia, .5), p75: pct(dia, .75), p90: pct(dia, .9), max: pct(dia, .999) },
       porHora: { p25: pct(vs, .25), p50: pct(vs, .5), p75: pct(vs, .75), p90: pct(vs, .9), max: pct(vs, .999) },
       horasDePico25pct: topo.length ? { pedidosPorHoraMedio: +(topo.reduce((a, o) => a + o.n, 0) / topo.length).toFixed(1), pessoasMedio: +(topo.reduce((a, o) => a + o.q, 0) / topo.length).toFixed(1), pedidosPorPessoaHora: +(topo.reduce((a, o) => a + o.n, 0) / topo.reduce((a, o) => a + o.q, 0)).toFixed(1) } : null,
