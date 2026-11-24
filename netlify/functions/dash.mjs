@@ -311,7 +311,8 @@ export async function motivosCancel(q) {
   const hoje = isoOf(Date.now()), ate = q.get("ate") || hoje, de = q.get("de") || addDays(ate, -29), ctx = { req: 0, max: 14 }, out = [];
   let pag = 1, tot = null;
   for (;;) { const r = await api("/reports/cancellations", { from: de, to: ate, page: pag, per_page: PER }, ctx); tot = r.meta?.total ?? tot; out.push(...(r.data || [])); if (pag >= (r.meta?.last_page ?? 1) || !(r.data || []).length) break; pag++; }
-  const conta = f => out.reduce((o, x) => { const k = String(f(x) ?? "(vazio)").slice(0, 140); o[k] = (o[k] || 0) + 1; return o; }, {});
+  const hf = q.get("hub"); if (hf) { const keep = out.filter(x => hubDe(x.hub, x.unit_name, x.business_name) === hf); out.length = 0; out.push(...keep); }
+  const conta = f => out.reduce((o, x) => { const k = String(f(x) ?? "(vazio)").replace(/\s+/g, " ").slice(0, 220); o[k] = (o[k] || 0) + 1; return o; }, {});
   return { totalApi: tot, lidos: out.length, campos: out[0] ? Object.keys(out[0]) : [], exemplo: out[0] || null, porHub: conta(x => x.hub), porNegocio: conta(x => x.business_name),
     motivos: Object.fromEntries(Object.keys(out[0] || {}).filter(k => /reason|motivo|category|type|cause|origin|status/i.test(k)).map(k => [k, conta(x => typeof x[k] === "object" ? JSON.stringify(x[k]) : x[k])])) };
 }
