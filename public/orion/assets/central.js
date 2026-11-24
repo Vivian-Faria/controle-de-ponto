@@ -462,6 +462,17 @@ function drawErros(force){
     if(j.diasSemRegistro && j.diasSemRegistro.length) ER.t = setTimeout(() => drawErros(true), 25000);       // diário ainda sendo completado
   }).catch(() => { $('#elInfo').textContent = 'Não foi possível carregar o registro de erros agora.'; });
 }
+
+/* ---------- seletor próprio (mesma paleta; o nativo usa o azul do sistema) ---------- */
+function ddSync(sel){
+  if(!sel) return; let w = sel.nextElementSibling; if(!w || !w.classList.contains('dd')){ sel.style.display = 'none'; w = document.createElement('div'); w.className = 'dd'; w.innerHTML = '<button type="button" class="ddb"></button><div class="ddm"></div>'; sel.after(w);
+    w.querySelector('.ddb').onclick = e => { e.stopPropagation(); const o = w.classList.contains('open'); $$('.dd.open').forEach(x => x.classList.remove('open')); if(!o) w.classList.add('open'); };
+    document.addEventListener('click', () => w.classList.remove('open')); }
+  const cur = sel.options[sel.selectedIndex];
+  w.querySelector('.ddb').textContent = cur ? cur.textContent : '';
+  const m = w.querySelector('.ddm'); m.innerHTML = [...sel.options].map(o => `<div class="ddi${o.value === sel.value ? ' on' : ''}" data-v="${escH(o.value)}">${escH(o.textContent)}</div>`).join('');
+  m.querySelectorAll('.ddi').forEach(i => i.onclick = e => { e.stopPropagation(); sel.value = i.dataset.v; w.classList.remove('open'); sel.dispatchEvent(new Event('change')); ddSync(sel); });
+}
 const limpaMotivo = t => String(t || '').replace(/^Cancelamento realizado pelo motivo de:\s*/i, '').replace(/\s*Cliente considerado fraudulento\?.*$/i, '').replace(/\s+/g, ' ').trim();
 const MOT = {order__missing_item:'Item faltando no pedido', order__order_late:'Pedido atrasado', CUSTOMER_NOT_FOUND:'Cliente não encontrado'};
 const orig = r => r.origem === 'cancelamento' ? 'cancelamento' : 'loja';
@@ -480,7 +491,7 @@ function renderErros(){
   const optT = '<option value="">Todos os tipos</option>' + D.errTypes.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
   const optL = '<option value="">Todas as origens</option>' + lj.map(([n]) => `<option>${escH(n)}</option>`).join('');
   const sT = $('#elTipo'), sL = $('#elLoja'); if(sT.options.length !== D.errTypes.length + 1) sT.innerHTML = optT; if(sL.dataset.n !== String(lj.length)){ sL.innerHTML = optL; sL.dataset.n = lj.length; }
-  sT.value = ER.f.tipo; sL.value = ER.f.loja;
+  sT.value = ER.f.tipo; sL.value = ER.f.loja; ddSync(sT); ddSync(sL);
   const tn = Object.fromEntries(D.errTypes.map(t => [t.id, t]));
   const lista = rows.filter(r => !ER.f.loja || nomeOrig(r) === ER.f.loja);
   $('#elBody').innerHTML = lista.slice(0, 300).map(r => { const t = tn[r.tipo] || {name:r.tipo, color:'#888'}, canc = r.origem === 'cancelamento', hc = (D.hubs.find(h => h.id === r.hub) || {}).color || '#888';
