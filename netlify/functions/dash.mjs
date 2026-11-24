@@ -17,17 +17,21 @@ const putJ = (k, v) => st().setJSON(k, v);
 export const HUBS = ["sion", "cn", "bur", "cas", "exp"];
 const nrm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 let extra = []; try { extra = Object.entries(JSON.parse(process.env.ORION_HUB_MAP || "{}")).map(([k, v]) => [nrm(k), v]); } catch { /* mapa opcional */ }
-// ordem importa: Expedição antes de Sion; "1389 CN" antes de "1389"
-export function hubDe(...campos) {
-  const t = " " + nrm(campos.filter(Boolean).join(" | ")) + " ";
+// Regras de identificação (definidas pela Vívian, comparação exata do texto, sem acento/maiúscula):
+//   Varanda Sion  = pedidos do estabelecimento "Varanda 1389"
+//   Varanda CN    = pedidos do estabelecimento "Varanda 1389 CN"
+//   Expedição     = pedidos cujo hub é "DS Sion"
+//   Buritis e Castelo: ainda sem dados na API, então não recebem pedido algum.
+export function hubDe(hub, unidade, negocio) {
+  const t = [nrm(hub), nrm(unidade), nrm(negocio)].join(" | ");
   for (const [k, v] of extra) if (t.includes(k)) return v;
-  if (/expedic/.test(t)) return "exp";
-  if (/cidade nova|\bcn\b/.test(t)) return "cn";
-  if (/buritis/.test(t)) return "bur";
-  if (/castelo/.test(t)) return "cas";
-  if (/\bsion\b|1389/.test(t)) return "sion";
+  if (nrm(hub) === "ds sion") return "exp";
+  if (nrm(negocio) === "varanda 1389 cn") return "cn";
+  if (nrm(negocio) === "varanda 1389") return "sion";
   return null;
 }
+// nomes de hub da ESCALA (outro sistema) -> id da Central
+const hubEscala = n => { const t = nrm(n); return /expedic/.test(t) ? "exp" : /cidade nova|\bcn\b/.test(t) ? "cn" : /buritis/.test(t) ? "bur" : /castelo/.test(t) ? "cas" : /sion/.test(t) ? "sion" : null; };
 
 // ---------------------------------------------------------------- horário de funcionamento (minutos do dia, hora local)
 // Sion: 09:30 às 00:30. Demais hubs: 11h às 23h. Pedidos fora da janela não entram nos indicadores.
@@ -76,7 +80,7 @@ const novoEstado = dia => ({ dia, fase: "orders", pag: 1, hubs: Object.fromEntri
 function somaPedido(e, o) {
   const k = o.hub, ctx = e.vistos; const rot = [o.hub, o.unit_name, o.business_name];
   for (const [bag, v] of [["hubs", o.hub], ["unidades", o.unit_name], ["negocios", o.business_name]]) { const n = String(v ?? "(vazio)"); if (Object.keys(ctx[bag]).length < 40 || n in ctx[bag]) ctx[bag][n] = (ctx[bag][n] || 0) + 1; }
-  const id = hubDe(...rot); if (!id) { e.semHub++; return; }
+  const id = hubDe(o.hub, o.unit_name, o.business_name); if (!id) { e.semHub++; return; }
   const c = tms(o.created_at); if (c != null && !dentro(id, c)) { e.fora = (e.fora || 0) + 1; return; }      // fora do horário de funcionamento do hub
   const h = e.hubs[id]; h.pedidos++;
   if (c != null) h.horas[horaDe(c)]++;
@@ -104,7 +108,7 @@ async function pessoasDoDia(dias) {
   try {
     for (let i = 0; i < dias.length; i += 10) {
       const esc = await lerEscala(dias.slice(i, i + 10));
-      const mapa = Object.fromEntries(esc.cfg.hubs.map(h => [h.id, hubDe(h.nome, h.id)]));
+      const mapa = Object.fromEntries(esc.cfg.hubs.map(h => [h.id, hubEscala(h.nome || h.id)]));
       for (const dia of dias.slice(i, i + 10)) {
         const por = {};
         for (const hub of esc.cfg.hubs) {
@@ -127,7 +131,7 @@ async function pessoasDoDia(dias) {
 }
 
 // ---------------------------------------------------------------- orquestração
-const chaveDia = d => `v2/dia/${d}`;
+const chaveDia = d => `v3/dia/${d}`;
 const fechado = (d, agora) => agora >= Date.parse(d + "T00:00:00Z") - TZ * HOUR + DAY + 2 * HOUR;       // 2 h depois da meia-noite local
 
 export async function atualizar({ ate = DIAS, max = ORCAMENTO_REQ } = {}) {
@@ -136,7 +140,7 @@ export async function atualizar({ ate = DIAS, max = ORCAMENTO_REQ } = {}) {
   let erro = null, escalaErro = null;
   const alvo = [];                                                                       // ordem: hoje, depois do mais novo para o mais antigo
   for (const d of [...dias].reverse()) {
-    const reg = await getJ(chaveDia(d)), parc = await getJ(`v2/parc/${d}`);
+    const reg = await getJ(chaveDia(d)), parc = await getJ(`v3/parc/${d}`);
     const precisa = parc || !reg || (d === hoje ? agora - (reg.em || 0) > AO_VIVO_MS : !reg.final && fechado(d, agora));
     if (precisa) alvo.push({ d, parc });
   }
@@ -146,9 +150,9 @@ export async function atualizar({ ate = DIAS, max = ORCAMENTO_REQ } = {}) {
       e = await avancaDia(e, ctx);
       e.em = Date.now(); e.final = fechado(d, agora);
       const p = await pessoasDoDia([d]); if (p.__erro) escalaErro = p.__erro; e.pessoas = p[d] || null;
-      await putJ(chaveDia(d), e); try { await st().delete(`v2/parc/${d}`); } catch { /* sem parcial */ }
+      await putJ(chaveDia(d), e); try { await st().delete(`v3/parc/${d}`); } catch { /* sem parcial */ }
     } catch (err) {
-      await putJ(`v2/parc/${d}`, e);                                                        // guarda o progresso; a dia anterior continua visível
+      await putJ(`v3/parc/${d}`, e);                                                        // guarda o progresso; a dia anterior continua visível
       if (!(err instanceof ApiErro && err.status === 0)) erro = err;
       break;
     }

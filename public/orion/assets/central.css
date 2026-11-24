@@ -306,3 +306,14 @@ body.locked .main,body.locked .top{visibility:hidden}
 .perbox label{display:flex;align-items:center;gap:6px;font:500 11px var(--mono);letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
 .perbox input[type=date]{background:rgba(255,255,255,.05);border:1px solid var(--line2);border-radius:10px;color:#e8ece0;font:500 12px var(--mono);padding:7px 9px;color-scheme:dark}
 .perbox.on input{border-color:rgba(184,244,0,.55);box-shadow:0 0 0 3px rgba(184,244,0,.08)}
+
+.dashvazio{display:none}
+.wrapx.vazio>*:not(.vh):not(.dashvazio){display:none!important}
+.wrapx.vazio>.dashvazio{display:flex;flex-direction:column;gap:8px;align-items:flex-start;padding:34px 28px;margin-top:18px;border:1px dashed var(--line2);border-radius:18px;background:rgba(255,255,255,.03)}
+.dashvazio b{font-size:18px}.dashvazio span{color:var(--muted);max-width:640px;line-height:1.5}
+.hchip.nodata{opacity:.38;cursor:not-allowed}
+.hub.nodata-card{opacity:.55;border-style:dashed;cursor:default}
+.hub.nodata-card .nd{display:flex;flex-direction:column;align-items:center;gap:6px;padding:22px 0 14px;text-align:center}
+.hub.nodata-card .nd strong{font-size:44px;color:var(--dim)}
+.hub.nodata-card .nd span{font:600 10px var(--mono);letter-spacing:.14em;color:var(--muted)}
+.hub.nodata-card .nd p{font-size:12px;color:var(--dim);margin:6px 0 0}

@@ -71,7 +71,9 @@ const status = (k,v,m) => { const g = gap(k,v,m); return g <= 0 ? 'ok' : g <= .1
 const score = m => Math.round(KEYS.reduce((a,k) => { const g = gap(k,m[k]); return a + (g <= 0 ? 100 : 100 - Math.min(65, g*200)); }, 0) / KEYS.length);
 const band = s => s >= 85 ? 'ok' : s >= 65 ? 'wa' : 'bd';
 const fmtM = (k,v) => nf(v, D.targets[k].dec);
-const selHubs = () => D.hubs.filter(h => S.sel.has(h.id));
+const temDados = id => (D.byHub[id] || []).some(r => r.pedidos > 0);
+const hubsComDados = () => D.hubs.filter(h => temDados(h.id));
+const selHubs = () => D.hubs.filter(h => S.sel.has(h.id) && temDados(h.id));
 
 /* ---------- helpers de gráfico ---------- */
 function tipFor(host){ let t = host.querySelector('.tip'); if(!t){ t = document.createElement('div'); t.className = 'tip'; host.appendChild(t); } return t; }
@@ -156,10 +158,12 @@ function deltaHTML(k, cur, prev){
 }
 function drawDashboard(first){
   if(!D) return;
+  const wx = $('#v-dashboard .wrapx'), vz = !D.days.length; if(wx) wx.classList.toggle('vazio', vz);
+  if(vz){ const m = D.meta || {}; $('#dashVazio').innerHTML = m.reason === 'carregando' ? '<b>Atualizando os dados da operação…</b><span>Estamos buscando os números reais na API. Eles aparecem aqui assim que chegarem.</span>' : '<b>Sem dados reais para mostrar agora.</b><span>' + (m.msg || 'A API não respondeu.') + ' Nenhum número de exemplo é exibido; o painel tenta de novo sozinho.</span>'; return; }
   const sh = selHubs(), n = S.period;
   if(!sh.length) return;
   // chips
-  $('#hubChips').innerHTML = D.hubs.map(h => `<button class="hchip ${S.sel.has(h.id)?'on':''}" style="--c:${h.color}" data-h="${h.id}"><i></i>${h.short}</button>`).join('');
+  $('#hubChips').innerHTML = D.hubs.map(h => `<button class="hchip ${S.sel.has(h.id)&&temDados(h.id)?'on':''} ${temDados(h.id)?'':'nodata'}" ${temDados(h.id)?'':'title="Sem dados ainda"'} style="--c:${h.color}" data-h="${h.id}"><i></i>${h.short}</button>`).join('');
   $$('#hubChips .hchip').forEach(b => b.onclick = () => toggleHub(b.dataset.h));
   $$('#periodSeg button').forEach(b => b.classList.toggle('on', !S.custom && +b.dataset.p === n));
   { const f = $('#dFrom'), t = $('#dTo'); if(f && D.days.length){ f.min = t.min = D.days[0]; f.max = t.max = D.days[D.days.length-1]; if(S.custom){ f.value = S.custom.from; t.value = S.custom.to; } else { f.value = winDays(n)[0] || ''; t.value = winDays(n).slice(-1)[0] || ''; } $('#perBox').classList.toggle('on', !!S.custom); } }
@@ -171,13 +175,14 @@ function drawDashboard(first){
     const w = Math.max(8, Math.min(100, T.dir==='up' ? cur[k]/GL*100 : GL/cur[k]*100));
     return `<div class="card kpi" style="--k:${col};--w:${w}%"><small>${T.short}</small><strong>${fmtM(k,cur[k])}<u>${T.unit}</u></strong>${deltaHTML(k,cur[k],prev[k])}${spark(daily[k],col)}<div class="meta">META ${T.dir==='up'?'≥':'≤'} ${fmtM(k,GL)} ${T.unit}${mu>1?' (rede)':''}</div></div>`; }).join('');
   // saúde por hub
-  const all = D.hubs.map(h => { const m = agg([lastN(h.id,n)]); return {h, m, sc: score(m)}; });
+  const all = hubsComDados().map(h => { const m = agg([lastN(h.id,n)]); return {h, m, sc: score(m)}; });
   const order = [...all].sort((a,b) => b.sc - a.sc);
   $('#hubCards').innerHTML = all.map(x => { const b = band(x.sc), len = 2*Math.PI*40*x.sc/100;
     return `<div class="card hub s-${b} ${S.sel.has(x.h.id)?'':'off'}" style="--c:${x.h.color}" data-h="${x.h.id}" title="Clique para incluir/excluir da comparação">
       <div class="t"><b><i></i>${x.h.short}</b><span class="rk">#${order.indexOf(x)+1}</span></div>
       <div class="ring"><svg viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="40"/><circle class="fg" cx="50" cy="50" r="40" style="--len:${len}"/></svg><div><strong>${x.sc}</strong><span>SAÚDE</span></div></div>
       <div class="ml"><div>Pedidos totais<b>${nf(x.m.ped,0)}</b></div>${KEYS.map(k => `<div class="s-${status(k,x.m[k])}">${D.targets[k].label.replace('Taxa de c','C').replace(' de processamento',' proc.').replace(' por dia','/dia')}<b><span class="dot"></span>${fmtM(k,x.m[k])}${k==='cancel'||k==='assert'?'%':k==='tempo'?'′':''}</b></div>`).join('')}</div></div>`; }).join('');
+  $('#hubCards').insertAdjacentHTML('beforeend', D.hubs.filter(h => !temDados(h.id)).map(h => `<div class="card hub nodata-card" style="--c:${h.color}"><div class="t"><b><i></i>${h.short}</b></div><div class="nd"><strong>—</strong><span>SEM DADOS AINDA</span><p>Esta unidade ainda não tem pedidos na API.</p></div></div>`).join(''));
   $$('#hubCards .hub').forEach(c => c.onclick = () => toggleHub(c.dataset.h));
   // comparativo (abas + barras + linhas)
   $('#mTabs').innerHTML = KEYS.map(k => `<button class="${S.metric===k?'on':''}" data-k="${k}">${D.targets[k].label}</button>`).join('');
@@ -223,7 +228,7 @@ function hourly(sh){
     showTip(host, `<b>${hrs[i]}h</b><div><i style="background:var(--lime)"></i>Pedidos/h: ${ped[i]}</div><div><i style="background:#ffffff"></i>Pessoas na escala: ${pes[i]}</div><div>Produtividade: ${nf(ped[i]/Math.max(pes[i],1),2)}</div>`, (pl+(i+.5)*bw)/W*rect.width, Y(ped[i])/H*rect.height); });
     r.addEventListener('mouseleave', () => hideTip(host)); });
 }
-function toggleHub(id){ $('#jvText').dataset.plain = ''; if(S.sel.has(id)){ if(S.sel.size > 1) S.sel.delete(id); } else S.sel.add(id); drawDashboard(false); }
+function toggleHub(id){ if(!temDados(id)) return; $('#jvText').dataset.plain = ''; if(S.sel.has(id)){ if(S.sel.size > 1) S.sel.delete(id); } else S.sel.add(id); drawDashboard(false); }
 
 
 /* ---------- assistente: análise por regras sobre os dados do dashboard ---------- */
@@ -296,11 +301,11 @@ function briefing(){
 function answer(q){
   q = q.toLowerCase(); const sh = selHubs(), n = S.period;
   if(q.includes('manuten')||q.includes('conserto')){ const ml = manLine(D.hubs, n); return {intro:'<p>Sobre manutenção dos hubs:</p>', items:[ml || 'Ainda não há manutenções registradas neste período. Registre em Compras → Manutenções dos hubs.']}; }
-  const hub = D.hubs.find(h => q.includes(h.short.toLowerCase()) || q.includes(h.name.toLowerCase()));
+  const hub = hubsComDados().find(h => q.includes(h.short.toLowerCase()) || q.includes(h.name.toLowerCase()));
   const key = q.includes('cancel') ? 'cancel' : q.includes('assert') ? 'assert' : (q.includes('tempo')||q.includes('process')) ? 'tempo' : q.includes('produt') ? 'prod' : (q.includes('erro')) ? 'erros' : null;
   if(hub){ const m = agg([lastN(hub.id,n)]), r = {h:hub, m, sc:score(m)}, ad = advice(r,n);
     return {intro:`<p><b>${hub.name}</b>: índice de saúde <b class="${cls(band(r.sc))}">${r.sc}/100</b> nos últimos ${n} dias.</p>`, items: KEYS.map(k => `${D.targets[k].label}: <b class="${cls(status(k,m[k]))}">${fmtM(k,m[k])} ${D.targets[k].unit}</b> (meta ${D.targets[k].dir==='up'?'≥':'≤'} ${fmtM(k,D.targets[k].goal)})`).concat([band(r.sc)==='ok' ? 'Operação saudável; nada urgente.' : 'Prioridade: ' + ad.tip])}; }
-  if(key){ const T = D.targets[key], list = D.hubs.map(h => ({h, v:agg([lastN(h.id,n)])[key]})).sort((a,b) => T.dir==='up' ? b.v-a.v : a.v-b.v);
+  if(key){ const T = D.targets[key], list = hubsComDados().map(h => ({h, v:agg([lastN(h.id,n)])[key]})).sort((a,b) => T.dir==='up' ? b.v-a.v : a.v-b.v);
     return {intro:`<p><b>${T.label}</b> (${T.def.toLowerCase()}). Meta ${T.dir==='up'?'≥':'≤'} ${fmtM(key,T.goal)} ${T.unit}.</p>`, items: list.map((x,i) => `${i+1}º <b>${x.h.short}</b>: <b class="${cls(status(key,x.v))}">${fmtM(key,x.v)} ${T.unit}</b>`)}; }
   if(q.includes('agir')||q.includes('priorid')||q.includes('urgent')){ const a = analyze(D.hubs, n), top = a.rows.map(r => ({r, w:worstMetric(r)})).sort((x,y) => y.w.g-x.w.g).slice(0,3);
     return {intro:'<p>Onde eu agiria primeiro:</p>', items: top.map(x => { const ad = advice(x.r,n); return `<b>${x.r.h.short}</b> — ${ad.T.label.toLowerCase()} (${fmtM(ad.w.k,x.r.m[ad.w.k])} ${ad.T.unit}). ${ad.tip}`; })}; }
@@ -362,10 +367,10 @@ function setPill(m){
     if(nt) nt.innerHTML = '<b>Dados reais</b> da API Órion, atualizados automaticamente' + (m.aviso ? ' · <span style="color:var(--amber)">' + m.aviso + '</span>' : '') + (m.semHub ? ' · ' + m.semHub + ' registros sem hub reconhecido (veja o diagnóstico em /api/dash/probe)' : '') + (m.semEscala ? ' · ' + m.semEscala + ' dia(s) de hub sem escala lançada: pessoas estimadas em 1.' : '') + '.';
   } else {
     p.classList.add('demo'); p.classList.remove('live');
-    const t = {'sem-token':'API NÃO CONFIGURADA', 'carregando':'CARREGANDO API…', 'sessão':'FAÇA LOGIN PARA DADOS REAIS'}[m.reason] || 'API INDISPONÍVEL';
+    const t = {'sem-token':'API NÃO CONFIGURADA', 'sessão':'FAÇA LOGIN PARA VER OS DADOS'}[m.reason] || 'API INDISPONÍVEL';
     if(m.reason === 'carregando'){ p.textContent = 'ATUALIZANDO…'; if(nt) nt.innerHTML = '<b>Atualizando</b> os dados da operação. Os números aparecem assim que a API responder.'; return; }
-    p.textContent = 'DADOS FICTÍCIOS · ' + t;
-    if(nt) nt.innerHTML = '<b>Dados fictícios</b> (exceto manutenções). ' + (m.msg ? 'Motivo: ' + m.msg : '') + ' O painel tenta de novo sozinho.';
+    p.textContent = 'SEM DADOS · ' + t;
+    if(nt) nt.innerHTML = '<b>Sem dados reais agora.</b> ' + (m.msg ? 'Motivo: ' + m.msg + '. ' : '') + 'Nenhum número de exemplo é exibido; o painel tenta de novo sozinho.';
   }
 }
 let refT = null;
