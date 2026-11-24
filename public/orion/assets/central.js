@@ -462,29 +462,36 @@ function drawErros(force){
     if(j.diasSemRegistro && j.diasSemRegistro.length) ER.t = setTimeout(() => drawErros(true), 25000);       // diário ainda sendo completado
   }).catch(() => { $('#elInfo').textContent = 'Não foi possível carregar o registro de erros agora.'; });
 }
+const limpaMotivo = t => String(t || '').replace(/^Cancelamento realizado pelo motivo de:\s*/i, '').replace(/\s*Cliente considerado fraudulento\?.*$/i, '').replace(/\s+/g, ' ').trim();
+const MOT = {order__missing_item:'Item faltando no pedido', order__order_late:'Pedido atrasado', CUSTOMER_NOT_FOUND:'Cliente não encontrado'};
+const orig = r => r.origem === 'cancelamento' ? 'cancelamento' : 'loja';
 function renderErros(){
   const d = ER.data; if(!d) return; const all = d.registros.filter(r => !r.hub || S.sel.has(r.hub)), rows = errosFiltrados();
   const por = (f, src) => src.reduce((o, r) => { const k = f(r) || '(vazio)'; o[k] = (o[k] || 0) + 1; return o; }, {});
+  const nomeOrig = r => r.origem === 'cancelamento' ? hubNome(r.hub) : (r.reportadoPor || '—');
   const hubs = Object.entries(por(r => hubNome(r.hub), all)).sort((a,b) => b[1]-a[1]);
   const cf = d.conferencia, pend = (d.diasSemRegistro || []).length;
-  $('#elInfo').innerHTML = `<b>${all.length}</b> erro${all.length===1?'':'s'} entre <b>${brD(d.de)}</b> e <b>${brD(d.ate)}</b>`
-    + (hubs.length ? ' · origem: ' + hubs.map(([h,n]) => `<b>${escH(h)}</b> ${n}`).join(', ') : '')
-    + '. <b>Expedição:</b> erros abertos pelas lojas parceiras no portal da Órion. <b>Varandas:</b> pedidos cancelados por erro de montagem (item faltando, errado, trocado, não enviado ou embalagem).<br>' + (d.naoContados ? `<span style="color:var(--muted)">${d.naoContados} registro(s) ficam documentados mas não entram na conta (qualidade/transporte e relatório de erros fora da Expedição).</span><br>` : '')
-    + (pend ? `<span class="wac">Completando o diário: ${pend} dia(s) ainda sem registro.</span>` : cf ? (cf.confere ? `<span class="okc">✔ Diário conferido com a API: ${cf.totalDiario} de ${cf.totalApi} erros do período.</span>` : `<span class="wac">Diário com ${cf.totalDiario} de ${cf.totalApi} erros da API no período — atualizando.</span>`) : '');
-  const lj = Object.entries(por(r => r.reportadoPor, all)).sort((a,b) => b[1]-a[1]), mx = lj.length ? lj[0][1] : 1;
-  $('#elRank').innerHTML = lj.slice(0, 8).map(([n,v]) => `<div class="r" data-l="${escH(n)}" title="Filtrar esta loja"><span>${escH(n)}</span><b>${v}</b><i style="width:${Math.max(6, v/mx*100)}%"></i></div>`).join('');
+  $('#elInfo').innerHTML = `<div class="elkpi"><div><strong>${all.length}</strong><span>erros no período</span></div>` + hubs.map(([h,n]) => `<div><strong>${n}</strong><span>${escH(h)}</span></div>`).join('') + '</div>'
+    + `<p class="elnote"><b>Expedição:</b> erros abertos pelas lojas parceiras no portal da Órion. <b>Varandas:</b> pedidos cancelados por erro de montagem (item faltando, errado, trocado, não enviado ou embalagem).</p>`
+    + `<p class="elnote dim">${brD(d.de)} a ${brD(d.ate)}` + (d.naoContados ? ` · ${d.naoContados} registros documentados que não entram na conta (qualidade/transporte)` : '') + (pend ? ` · <span class="wac">completando o diário: ${pend} dia(s) pendente(s)</span>` : cf ? (cf.confere ? ` · <span class="okc">✔ relatório de erros conferido com a API (${cf.totalDiario} de ${cf.totalApi})</span>` : ` · <span class="wac">diário com ${cf.totalDiario} de ${cf.totalApi} erros da API — atualizando</span>`) : '') + '</p>';
+  const lj = Object.entries(por(nomeOrig, all)).sort((a,b) => b[1]-a[1]), mx = lj.length ? lj[0][1] : 1;
+  $('#elRank').innerHTML = '<div class="elrt">Quem mais aparece</div>' + lj.slice(0, 8).map(([n,v]) => `<div class="r" data-l="${escH(n)}" title="Filtrar"><span>${escH(n)}</span><b>${v}</b><i style="width:${Math.max(5, v/mx*100)}%"></i></div>`).join('');
   $$('#elRank .r').forEach(e => e.onclick = () => { ER.f.loja = e.dataset.l; $('#elLoja').value = ER.f.loja; renderErros(); });
   const optT = '<option value="">Todos os tipos</option>' + D.errTypes.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
-  const optL = '<option value="">Todas as lojas</option>' + lj.map(([n]) => `<option>${escH(n)}</option>`).join('');
+  const optL = '<option value="">Todas as origens</option>' + lj.map(([n]) => `<option>${escH(n)}</option>`).join('');
   const sT = $('#elTipo'), sL = $('#elLoja'); if(sT.options.length !== D.errTypes.length + 1) sT.innerHTML = optT; if(sL.dataset.n !== String(lj.length)){ sL.innerHTML = optL; sL.dataset.n = lj.length; }
   sT.value = ER.f.tipo; sL.value = ER.f.loja;
   const tn = Object.fromEntries(D.errTypes.map(t => [t.id, t]));
-  $('#elBody').innerHTML = rows.slice(0, 300).map(r => { const t = tn[r.tipo] || {name:r.tipo, color:'#888'};
-    return `<tr><td>${dtBR(r.reportadoEm)}</td><td>${escH(r.reportadoPor)}<small>${r.origem === 'cancelamento' ? 'Cancelamento · ' : 'Relatório de erros · '}${escH(r.negocio || '')}${r.hubApi ? ' · ' + escH(r.hubApi) : ''}</small></td><td>${escH(hubNome(r.hub))}</td>
-      <td><span class="tg" style="color:${t.color};border-color:${t.color}55">${escH(t.name)}</span></td>
-      <td>${r.produto ? '<b>' + escH(r.produto) + '</b>' : ''}${r.troca ? '<small>enviado no lugar / reposição: <span class="pr">' + escH(r.troca) + '</span></small>' : ''}<small style="white-space:normal;color:var(--text)">${escH(r.comentario || 'Sem descrição')}</small>${r.conclusao ? '<small>Conclusão: ' + escH(r.conclusao) + '</small>' : ''}</td>
-      <td>${r.pedidoRef ? '#' + escH(r.pedidoRef) : '—'}<small>${r.pedidoTotal != null ? 'R$ ' + nf(r.pedidoTotal, 2) : ''}${r.pedidoCriadoEm ? ' · pedido de ' + dtBR(r.pedidoCriadoEm).slice(0,5) : ''}</small></td></tr>`; }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:22px">Nenhum erro com esses filtros.</td></tr>';
-  $('#elFoot').textContent = rows.length > 300 ? `Mostrando 300 de ${rows.length}. Use os filtros ou baixe o CSV para ver todos.` : `${rows.length} registro${rows.length===1?'':'s'} listado${rows.length===1?'':'s'}.`;
+  const lista = rows.filter(r => !ER.f.loja || nomeOrig(r) === ER.f.loja);
+  $('#elBody').innerHTML = lista.slice(0, 300).map(r => { const t = tn[r.tipo] || {name:r.tipo, color:'#888'}, canc = r.origem === 'cancelamento', hc = (D.hubs.find(h => h.id === r.hub) || {}).color || '#888';
+    const txt = canc ? (MOT[r.comentario] || limpaMotivo(r.comentario) || 'Sem descrição') : (r.comentario || 'Sem descrição');
+    return `<div class="erow">
+      <div class="ec-when"><b>${dtBR(r.reportadoEm).slice(0,5)}</b><span>${dtBR(r.reportadoEm).slice(6)}</span></div>
+      <div class="ec-org"><b><i style="background:${hc}"></i>${escH(nomeOrig(r))}</b><span>${canc ? 'Cancelamento por erro' : 'Reportado pela loja · ' + escH(hubNome(r.hub))}</span></div>
+      <div class="ec-tipo"><span class="tg" style="color:${t.color};border-color:${t.color}">${escH(t.name)}</span></div>
+      <div class="ec-txt">${r.produto ? '<b>' + escH(r.produto) + '</b>' : ''}${r.troca ? '<em>enviado no lugar: <u>' + escH(r.troca) + '</u></em>' : ''}<p>${escH(txt)}</p>${r.conclusao ? '<em>Conclusão: ' + escH(r.conclusao) + '</em>' : ''}</div>
+      <div class="ec-ped"><b>${r.pedidoRef ? '#' + escH(r.pedidoRef) : '—'}</b><span>${r.pedidoTotal != null ? 'R$ ' + nf(r.pedidoTotal, 2) : ''}</span><span>${r.pedidoCriadoEm ? 'pedido de ' + dtBR(r.pedidoCriadoEm).slice(0,5) : ''}</span></div></div>`; }).join('') || '<div class="eempty">Nenhum erro com esses filtros.</div>';
+  $('#elFoot').textContent = lista.length > 300 ? `Mostrando 300 de ${lista.length}. Use os filtros ou baixe o CSV para ver todos.` : `${lista.length} registro${lista.length===1?'':'s'} listado${lista.length===1?'':'s'}.`;
 }
 document.addEventListener('DOMContentLoaded', () => {
   const on = (id, ev, fn) => { const e = $(id); if(e) e.addEventListener(ev, fn); };
@@ -492,7 +499,7 @@ document.addEventListener('DOMContentLoaded', () => {
   on('#elLoja', 'change', e => { ER.f.loja = e.target.value; renderErros(); });
   on('#elQ', 'input', e => { ER.f.q = e.target.value; renderErros(); });
   on('#elCsv', 'click', () => {
-    const rows = errosFiltrados(), cols = ['dia','reportadoEm','reportadoPor','negocio','unidade','hubApi','hub','tipo','produto','troca','trocaAutorizada','perdaFinanceira','comentario','conclusao','finalizadoEm','pedidoRef','pedidoId','pedidoTotal','pedidoCriadoEm','pedidoCanceladoEm','id'];
+    const rows = errosFiltrados().filter(r => !ER.f.loja || (r.origem === 'cancelamento' ? hubNome(r.hub) : r.reportadoPor) === ER.f.loja), cols = ['dia','reportadoEm','reportadoPor','negocio','unidade','hubApi','hub','tipo','produto','troca','trocaAutorizada','perdaFinanceira','comentario','conclusao','finalizadoEm','pedidoRef','pedidoId','pedidoTotal','pedidoCriadoEm','pedidoCanceladoEm','id'];
     const q = v => '"' + String(v ?? '').replace(/"/g, '""').replace(/\r?\n/g, ' ') + '"';
     const csv = '﻿' + cols.join(';') + '\n' + rows.map(r => cols.map(c => q(r[c])).join(';')).join('\n');
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'})); a.download = 'erros-orion-' + (ER.data ? ER.data.de + '_a_' + ER.data.ate : 'periodo') + '.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);

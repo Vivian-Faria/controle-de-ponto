@@ -14,9 +14,9 @@
   const ERR_TYPES = [
     {id:'falt', name:'Item faltando',   color:'#b8f400'},
     {id:'troc', name:'Item trocado',    color:'#ffffff'},
-    {id:'emb',  name:'Embalagem',       color:'#8a8e84'},
-    {id:'atr',  name:'Atraso na coleta',color:'#3d6b00'},
-    {id:'out',  name:'Outros / sem descrição', color:'#5b5f55'},
+    {id:'emb',  name:'Embalagem',       color:'#c9ccc3'},
+    {id:'atr',  name:'Atraso na coleta',color:'#6fbf1d'},
+    {id:'out',  name:'Outros motivos', color:'#4cc9f0'},
   ];
   // metas (editáveis depois)
   const TARGETS = {
