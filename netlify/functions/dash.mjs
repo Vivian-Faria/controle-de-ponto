@@ -68,11 +68,11 @@ async function api(path, params, ctx) {
 }
 
 // ---------------------------------------------------------------- classificação dos erros
-const tipoErro = e => { const t = nrm([e.comments, e.conclusion, e.incorrect_product, e.replacement_product].join(" ")), c = nrm(e.comments || "");
+const tipoErro = e => { const c = nrm(e.comments || "");
   if (/embal|sacola|vazou|amassad|derram|lacre|derret/.test(c)) return "emb";
-  if (/atras|demor|motoboy|entregador/.test(c)) return "atr";
   if ((e.replacement_product && nrm(e.replacement_product)) || /errad|incorret|no lugar|ao inves|outra loja|trocad|troca|2 itens|dois produtos|a mais|em excesso/.test(c)) return "troc";
-  if (/nao (foi )?(enviad|veio|tinha|entreg)|faltou|faltand|incomplet|sem o |nao enviaram/.test(c)) return "falt";
+  if (/nao (foi )?(enviad|enivad|entreg|veio|tinha)|nao enviou|nao enviaram|faltou|faltand|incomplet|apenas (1|um|uma)\b|sem estoque|no estoque/.test(c)) return "falt";
+  if (/atras|demor|motoboy|entregador/.test(c)) return "atr";
   return "out"; };                                                                           // sem descrição ou outro motivo (ex.: operação não aceitou o pedido)
 
 // ---------------------------------------------------------------- agregação de um dia (retomável)
@@ -150,7 +150,7 @@ async function pessoasDoDia(dias) {
 }
 
 // ---------------------------------------------------------------- orquestração
-const LOGV = 2;                                                                            // versão do diário de erros (subir força refazer a fase de erros)
+const LOGV = 3;                                                                            // versão do diário de erros (subir força refazer a fase de erros)
 const PV = 3;                                                                              // versão da regra de contagem de pessoas
 const chaveDia = d => `v3/dia/${d}`;
 const fechado = (d, agora) => agora >= Date.parse(d + "T00:00:00Z") - TZ * HOUR + DAY + 2 * HOUR;       // 2 h depois da meia-noite local
