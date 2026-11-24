@@ -150,6 +150,7 @@ async function pessoasDoDia(dias) {
 }
 
 // ---------------------------------------------------------------- orquestração
+const LOGV = 1;                                                                            // versão do diário de erros (subir força refazer a fase de erros)
 const PV = 3;                                                                              // versão da regra de contagem de pessoas
 const chaveDia = d => `v3/dia/${d}`;
 const fechado = (d, agora) => agora >= Date.parse(d + "T00:00:00Z") - TZ * HOUR + DAY + 2 * HOUR;       // 2 h depois da meia-noite local
@@ -168,17 +169,18 @@ export async function atualizar({ ate = DIAS, max = ORCAMENTO_REQ } = {}) {
   const alvo = [];                                                                       // ordem: hoje, depois do mais novo para o mais antigo
   for (const d of [...dias].reverse()) {
     const reg = await getJ(chaveDia(d)), parc = await getJ(`v3/parc/${d}`);
-    const rever = reg?.errosFalhou && Date.now() - (reg.errosTent || 0) > 10 * 60000;          // só os erros, sem refazer os pedidos
+    const rever = (reg?.errosFalhou && Date.now() - (reg.errosTent || 0) > 10 * 60000) || (reg?.fim && !reg.errosFalhou && reg.logv !== LOGV);          // só os erros, sem refazer os pedidos (nova tentativa ou diário ainda não gravado)
     const precisa = parc || rever || !reg || (d === hoje ? agora - (reg.em || 0) > AO_VIVO_MS : !reg.final && fechado(d, agora));
     if (precisa) alvo.push({ d, parc, reg });
   }
   for (const { d, parc, reg } of alvo) {
     let e = parc || novoEstado(d);
-    if (!parc && reg?.errosFalhou && reg.fim) { e = { ...reg, fase: "errors", pag: 1, fim: false, errosFalhou: null, lista: [] }; for (const h of Object.values(e.hubs)) { h.erros = 0; h.errTipos = { falt: 0, troc: 0, emb: 0, atr: 0 }; } }
+    if (!parc && reg?.fim && (reg.errosFalhou || reg.logv !== LOGV)) { e = { ...reg, fase: "errors", pag: 1, fim: false, errosFalhou: null, lista: [] }; for (const h of Object.values(e.hubs)) { h.erros = 0; h.errTipos = { falt: 0, troc: 0, emb: 0, atr: 0 }; } }
     try {
       e = await avancaDia(e, ctx);
       e.em = Date.now(); e.final = fechado(d, agora); e.pv = PV; e.pEm = Date.now();
       const p = await pessoasDoDia([d]); if (p.__erro) escalaErro = p.__erro; e.pessoas = p[d] || null;
+      if (!e.errosFalhou) e.logv = LOGV;
       if (!e.errosFalhou) await putJ(`log/erros/${d}`, { dia: d, atualizado: Date.now(), n: (e.lista || []).length, registros: e.lista || [] });   // diário permanente dos erros
       delete e.lista;
       await putJ(chaveDia(d), e); try { await st().delete(`v3/parc/${d}`); } catch { /* sem parcial */ }
