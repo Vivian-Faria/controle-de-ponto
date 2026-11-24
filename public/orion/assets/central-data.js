@@ -5,11 +5,11 @@
    ============================================================ */
 (function(){
   const HUBS = [
-    {id:'sion',  name:'Varanda Sion',        short:'Varanda Sion', color:'#b8f400', tempoGoal:7},
-    {id:'cn',    name:'Varanda CN',          short:'Varanda CN', color:'#ffffff', tempoGoal:7},
-    {id:'bur',   name:'Varanda Buritis',     short:'Buritis',     color:'#8a8e84', tempoGoal:7},
-    {id:'cas',   name:'Varanda Castelo',     short:'Castelo',     color:'#4f8f00', tempoGoal:7},
-    {id:'exp',   name:'Expedição Órion Sion',short:'Expedição',   color:'#7fe0a8', tempoGoal:3},
+    {id:'sion',  name:'Varanda Sion',        short:'Varanda Sion', color:'#b8f400', tempoGoal:7, prodGoal:25},
+    {id:'cn',    name:'Varanda CN',          short:'Varanda CN', color:'#ffffff', tempoGoal:7, prodGoal:25},
+    {id:'bur',   name:'Varanda Buritis',     short:'Buritis',     color:'#8a8e84', tempoGoal:7, prodGoal:25},
+    {id:'cas',   name:'Varanda Castelo',     short:'Castelo',     color:'#4f8f00', tempoGoal:7, prodGoal:25},
+    {id:'exp',   name:'Expedição Órion Sion',short:'Expedição',   color:'#7fe0a8', tempoGoal:3, prodGoal:30},
   ];
   const ERR_TYPES = [
     {id:'falt', name:'Item faltando',   color:'#b8f400'},
