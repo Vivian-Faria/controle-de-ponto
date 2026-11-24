@@ -47,28 +47,30 @@ let D = null;
 const S = {period:14, end:0, custom:null, sel:new Set(), metric:'prod'};
 const KEYS = ['prod','cancel','assert','tempo','erros'];
 function agg(slices){           // slices: lista de arrays de linhas (um array por hub)
-  let ped=0, canc=0, err=0, tp=0, pph=0, ppl=0, errDia=0;
+  let ped=0, canc=0, err=0, tp=0, pph=0, ppl=0, errDia=0, tgS=0;
   slices.forEach(rows => {
     const n = rows.length || 1; let p=0, h=0, pe=0, e=0;
     rows.forEach(r => { p += r.pedidos; h += r.horas; pe += r.pessoas; e += r.erros; canc += r.cancel; tp += r.tempo*r.pedidos; });
+    tgS += p * ((D.hubs.find(x => x.id === rows.hid) || {}).tempoGoal ?? D.targets.tempo.goal);
     ped += p; err += e; pph += p / (h||1); ppl += pe / n; errDia += e / n;
   });
-  return {ped, prod: pph/(ppl||1), cancel: canc/(ped||1)*100, assert: (1-err/(ped||1))*100, tempo: tp/(ped||1), erros: errDia};
+  return {ped, prod: pph/(ppl||1), cancel: canc/(ped||1)*100, assert: (1-err/(ped||1))*100, tempo: tp/(ped||1), erros: errDia, tg: ped ? tgS/ped : D.targets.tempo.goal};
 }
 const wEnd = () => D.days.length - (S.end || 0);                    // fim da janela (0 = até hoje; >0 quando o período escolhido termina antes)
-const lastN = (id, n) => D.byHub[id].slice(Math.max(0, wEnd()-n), wEnd());
+const lastN = (id, n) => Object.assign(D.byHub[id].slice(Math.max(0, wEnd()-n), wEnd()), {hid:id});
 const winDays = n => D.days.slice(Math.max(0, wEnd()-n), wEnd());
 const hubRows = (id, n) => lastN(id, n);
 const brD = iso => iso.slice(8,10) + '/' + iso.slice(5,7);
 const perTxt = n => S.custom ? 'período de <b>' + brD(S.custom.from) + ' a ' + brD(S.custom.to) + '</b> (' + n + ' dia' + (n>1?'s':'') + ')' : 'últimos <b>' + n + ' dias</b>';
-const prevN = (id, n) => { const p = D.byHub[id].slice(Math.max(0, wEnd()-2*n), wEnd()-n); return p.length >= n ? p : lastN(id, n); };     // sem histórico completo do período anterior, não inventa variação
-function gap(k, v, mult){
-  const T = D.targets[k]; const G = T.goal*(mult||1);
+const prevN = (id, n) => { const p = Object.assign(D.byHub[id].slice(Math.max(0, wEnd()-2*n), wEnd()-n), {hid:id}); return p.length >= n ? p : lastN(id, n); };     // sem histórico completo do período anterior, não inventa variação
+const gl = (k, m) => (k === 'tempo' && m && m.tg) ? m.tg : D.targets[k].goal;       // meta do indicador (a de tempo varia por hub)
+function gap(k, v, mult, m){
+  const T = D.targets[k]; const G = gl(k, m)*(mult||1);
   if(k === 'assert') return ((100-v) - (100-T.goal)) / (100-T.goal);
   return T.dir === 'up' ? (G - v)/G : (v - G)/G;
 }
-const status = (k,v,m) => { const g = gap(k,v,m); return g <= 0 ? 'ok' : g <= .15 ? 'wa' : 'bd'; };
-const score = m => Math.round(KEYS.reduce((a,k) => { const g = gap(k,m[k]); return a + (g <= 0 ? 100 : 100 - Math.min(65, g*200)); }, 0) / KEYS.length);
+const status = (k,v,mu,m) => { const g = gap(k,v,mu,m); return g <= 0 ? 'ok' : g <= .15 ? 'wa' : 'bd'; };
+const score = m => Math.round(KEYS.reduce((a,k) => { const g = gap(k,m[k],1,m); return a + (g <= 0 ? 100 : 100 - Math.min(65, g*200)); }, 0) / KEYS.length);
 const band = s => s >= 85 ? 'ok' : s >= 65 ? 'wa' : 'bd';
 const fmtM = (k,v) => nf(v, D.targets[k].dec);
 const temDados = id => (D.byHub[id] || []).some(r => r.pedidos > 0);
@@ -171,7 +173,7 @@ function drawDashboard(first){
   const cur = agg(sh.map(h => lastN(h.id,n))), prev = agg(sh.map(h => prevN(h.id,n)));
   const daily = KEYS.reduce((o,k) => (o[k] = [], o), {});
   for(let i=Math.min(n,wEnd());i>=1;i--){ const m = agg(sh.map(h => [D.byHub[h.id][wEnd()-i]])); KEYS.forEach(k => daily[k].push(m[k])); }
-  $('#kpis').innerHTML = KEYS.map(k => { const T = D.targets[k], mu = k==='erros' ? sh.length : 1, GL = T.goal*mu, st = status(k,cur[k],mu), col = `var(--${st==='ok'?'lime':st==='wa'?'amber':'red'})`;
+  $('#kpis').innerHTML = KEYS.map(k => { const T = D.targets[k], mu = k==='erros' ? sh.length : 1, GL = gl(k,cur)*mu, st = status(k,cur[k],mu,cur), col = `var(--${st==='ok'?'lime':st==='wa'?'amber':'red'})`;
     const w = Math.max(8, Math.min(100, T.dir==='up' ? cur[k]/GL*100 : GL/cur[k]*100));
     return `<div class="card kpi" style="--k:${col};--w:${w}%"><small>${T.short}</small><strong>${fmtM(k,cur[k])}<u>${T.unit}</u></strong>${deltaHTML(k,cur[k],prev[k])}${spark(daily[k],col)}<div class="meta">META ${T.dir==='up'?'≥':'≤'} ${fmtM(k,GL)} ${T.unit}${mu>1?' (rede)':''}</div></div>`; }).join('');
   // saúde por hub
@@ -181,7 +183,7 @@ function drawDashboard(first){
     return `<div class="card hub s-${b} ${S.sel.has(x.h.id)?'':'off'}" style="--c:${x.h.color}" data-h="${x.h.id}" title="Clique para incluir/excluir da comparação">
       <div class="t"><b><i></i>${x.h.short}</b><span class="rk">#${order.indexOf(x)+1}</span></div>
       <div class="ring"><svg viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="40"/><circle class="fg" cx="50" cy="50" r="40" style="--len:${len}"/></svg><div><strong>${x.sc}</strong><span>SAÚDE</span></div></div>
-      <div class="ml"><div>Pedidos totais<b>${nf(x.m.ped,0)}</b></div>${KEYS.map(k => `<div class="s-${status(k,x.m[k])}">${D.targets[k].label.replace('Taxa de c','C').replace(' de processamento',' proc.').replace(' por dia','/dia')}<b><span class="dot"></span>${fmtM(k,x.m[k])}${k==='cancel'||k==='assert'?'%':k==='tempo'?'′':''}</b></div>`).join('')}</div></div>`; }).join('');
+      <div class="ml"><div>Pedidos totais<b>${nf(x.m.ped,0)}</b></div>${KEYS.map(k => `<div class="s-${status(k,x.m[k],1,x.m)}">${D.targets[k].label.replace('Taxa de c','C').replace(' de processamento',' proc.').replace(' por dia','/dia')}<b><span class="dot"></span>${fmtM(k,x.m[k])}${k==='cancel'||k==='assert'?'%':k==='tempo'?'′':''}</b></div>`).join('')}</div></div>`; }).join('');
   $('#hubCards').insertAdjacentHTML('beforeend', D.hubs.filter(h => !temDados(h.id)).map(h => `<div class="card hub nodata-card" style="--c:${h.color}"><div class="t"><b><i></i>${h.short}</b></div><div class="nd"><strong>—</strong><span>SEM DADOS AINDA</span><p>Esta unidade ainda não tem pedidos na API.</p></div></div>`).join(''));
   $$('#hubCards .hub').forEach(c => c.onclick = () => toggleHub(c.dataset.h));
   // comparativo (abas + barras + linhas)
@@ -190,10 +192,11 @@ function drawDashboard(first){
   const k = S.metric, T = D.targets[k];
   $('#mDefT').textContent = T.label + ' (' + T.unit + ')';
   $('#mDef').textContent = T.def + ' · ' + (T.dir==='up' ? 'quanto maior, melhor' : 'quanto menor, melhor');
-  const items = sh.map(h => { const v = agg([lastN(h.id,n)])[k]; return {name:h.short, color:h.color, val:v, st:status(k,v)}; }).sort((a,b) => T.dir==='up' ? b.val-a.val : a.val-b.val);
-  barH($('#cBar'), {items, goal:T.goal, fmt:v => fmtM(k,v), aria:'Comparativo de '+T.label+' entre hubs'});
+  const items = sh.map(h => { const mm = agg([lastN(h.id,n)]), v = mm[k]; return {name:h.short, color:h.color, val:v, st:status(k,v,1,mm), tg:mm.tg}; }).sort((a,b) => T.dir==='up' ? b.val-a.val : a.val-b.val);
+  const tgs = [...new Set(items.map(i => i.tg))], gSel = k === 'tempo' ? (tgs.length === 1 ? tgs[0] : null) : T.goal;
+  barH($('#cBar'), {items, goal:gSel, fmt:v => fmtM(k,v), aria:'Comparativo de '+T.label+' entre hubs'});
   const labels = winDays(n);
-  lineChart($('#cLine'), {labels, goal:T.goal, fmt:v => nf(v, T.dec), unit:T.unit, dirUp:T.dir==='up', aria:'Evolução diária de '+T.label,
+  lineChart($('#cLine'), {labels, goal:gSel, fmt:v => nf(v, T.dec), unit:T.unit, dirUp:T.dir==='up', aria:'Evolução diária de '+T.label,
     series: sh.map(h => ({id:h.id, name:h.short, color:h.color, vals: lastN(h.id,n).map((_,i,arr) => agg([[arr[i]]])[k])}))});
   $('#cLegend').innerHTML = sh.map(h => `<span><i style="background:${h.color}"></i>${h.short}</span>`).join('');
   // erros
@@ -210,9 +213,9 @@ function drawDashboard(first){
   hourly(sh);
   jarvis(first === true || !$('#jvText').dataset.plain);
   // pontos de atenção
-  const att = []; sh.forEach(h => { const m = agg([lastN(h.id,n)]); KEYS.forEach(kk => { const g = gap(kk,m[kk]); if(g > 0) att.push({h, kk, g, v:m[kk]}); }); });
+  const att = []; sh.forEach(h => { const m = agg([lastN(h.id,n)]); KEYS.forEach(kk => { const g = gap(kk,m[kk],1,m); if(g > 0) att.push({h, kk, g, v:m[kk], m}); }); });
   att.sort((a,b) => b.g-a.g);
-  $('#attn').innerHTML = att.slice(0,6).map(a => { const T = D.targets[a.kk]; return `<li class="s-${status(a.kk,a.v)}"><span class="ic"></span><div><b>${a.h.short}</b> · ${T.label}: <b>${fmtM(a.kk,a.v)} ${T.unit}</b><small>meta ${T.dir==='up'?'≥':'≤'} ${fmtM(a.kk,T.goal)} · ${nf(a.g*100,0)}% fora da meta</small></div></li>`; }).join('') || '<li class="s-ok"><span class="ic"></span><div>Todos os hubs selecionados dentro da meta 🎯</div></li>';
+  $('#attn').innerHTML = att.slice(0,6).map(a => { const T = D.targets[a.kk]; return `<li class="s-${status(a.kk,a.v,1,a.m)}"><span class="ic"></span><div><b>${a.h.short}</b> · ${T.label}: <b>${fmtM(a.kk,a.v)} ${T.unit}</b><small>meta ${T.dir==='up'?'≥':'≤'} ${fmtM(a.kk,gl(a.kk,a.m))} · ${nf(a.g*100,0)}% fora da meta</small></div></li>`; }).join('') || '<li class="s-ok"><span class="ic"></span><div>Todos os hubs selecionados dentro da meta 🎯</div></li>';
 }
 function hourly(sh){
   const host = $('#cHour'), hrs = [...Array(14)].map((_,i) => i+10);
@@ -241,7 +244,7 @@ function analyze(sh, n){
   const best = [...rows].sort((a,b) => b.sc-a.sc)[0], worst = [...rows].sort((a,b) => a.sc-b.sc)[0];
   return {rows, net, netP, netScore, best, worst};
 }
-function worstMetric(r){ return KEYS.map(k => ({k, g:gap(k,r.m[k])})).sort((a,b) => b.g-a.g)[0]; }
+function worstMetric(r){ return KEYS.map(k => ({k, g:gap(k,r.m[k],1,r.m)})).sort((a,b) => b.g-a.g)[0]; }
 function errTop(h, n){ const t = D.errTypes.map(e => ({e, v: lastN(h.id,n).reduce((a,r) => a + r.errTipos[e.id], 0)})).sort((a,b) => b.v-a.v); const tot = t.reduce((a,x) => a + x.v, 0) || 1; return {name:t[0].e.name, pct:Math.round(t[0].v/tot*100)}; }
 function peakGap(sh){   // hora com maior carga por pessoa
   let best = {h:0, r:0}; for(let h=10; h<24; h++){ const p = sh.reduce((a,x) => a + D.hourly[x.id][h].pedidos, 0), q = sh.reduce((a,x) => a + D.hourly[x.id][h].pessoas, 0); if(q && p/q > best.r) best = {h, r:p/q}; } return best;
@@ -287,7 +290,7 @@ function briefing(){
   const items = [];
   if(sh.length > 1){
     items.push(`<b>${a.best.h.short}</b> lidera com índice ${a.best.sc}. <b class="${cls(band(a.worst.sc))}">${a.worst.h.short}</b> é o ponto mais frágil (${a.worst.sc}).`);
-    const ad = advice(a.worst, n); items.push(`Em <b>${a.worst.h.short}</b>, ${ad.T.label.toLowerCase()} é o que mais pesa (${fmtM(ad.w.k,a.worst.m[ad.w.k])} ${ad.T.unit}, meta ${D.targets[ad.w.k].dir==='up'?'≥':'≤'} ${fmtM(ad.w.k,D.targets[ad.w.k].goal)}). Recomendo: ${ad.tip}`);
+    const ad = advice(a.worst, n); items.push(`Em <b>${a.worst.h.short}</b>, ${ad.T.label.toLowerCase()} é o que mais pesa (${fmtM(ad.w.k,a.worst.m[ad.w.k])} ${ad.T.unit}, meta ${D.targets[ad.w.k].dir==='up'?'≥':'≤'} ${fmtM(ad.w.k,gl(ad.w.k,a.worst.m))}). Recomendo: ${ad.tip}`);
     const bad2 = a.rows.filter(r => r !== a.worst && band(r.sc) !== 'ok').sort((x,y) => x.sc-y.sc)[0];
     if(bad2){ const b2 = advice(bad2,n); items.push(`<b>${bad2.h.short}</b> também pede atenção em ${b2.T.label.toLowerCase()} (${fmtM(b2.w.k,bad2.m[b2.w.k])} ${b2.T.unit}).`); }
   } else { const ad = advice(a.rows[0], n), ok = band(a.rows[0].sc) === 'ok';
@@ -304,9 +307,9 @@ function answer(q){
   const hub = hubsComDados().find(h => q.includes(h.short.toLowerCase()) || q.includes(h.name.toLowerCase()));
   const key = q.includes('cancel') ? 'cancel' : q.includes('assert') ? 'assert' : (q.includes('tempo')||q.includes('process')) ? 'tempo' : q.includes('produt') ? 'prod' : (q.includes('erro')) ? 'erros' : null;
   if(hub){ const m = agg([lastN(hub.id,n)]), r = {h:hub, m, sc:score(m)}, ad = advice(r,n);
-    return {intro:`<p><b>${hub.name}</b>: índice de saúde <b class="${cls(band(r.sc))}">${r.sc}/100</b> nos últimos ${n} dias.</p>`, items: KEYS.map(k => `${D.targets[k].label}: <b class="${cls(status(k,m[k]))}">${fmtM(k,m[k])} ${D.targets[k].unit}</b> (meta ${D.targets[k].dir==='up'?'≥':'≤'} ${fmtM(k,D.targets[k].goal)})`).concat([band(r.sc)==='ok' ? 'Operação saudável; nada urgente.' : 'Prioridade: ' + ad.tip])}; }
-  if(key){ const T = D.targets[key], list = hubsComDados().map(h => ({h, v:agg([lastN(h.id,n)])[key]})).sort((a,b) => T.dir==='up' ? b.v-a.v : a.v-b.v);
-    return {intro:`<p><b>${T.label}</b> (${T.def.toLowerCase()}). Meta ${T.dir==='up'?'≥':'≤'} ${fmtM(key,T.goal)} ${T.unit}.</p>`, items: list.map((x,i) => `${i+1}º <b>${x.h.short}</b>: <b class="${cls(status(key,x.v))}">${fmtM(key,x.v)} ${T.unit}</b>`)}; }
+    return {intro:`<p><b>${hub.name}</b>: índice de saúde <b class="${cls(band(r.sc))}">${r.sc}/100</b> nos últimos ${n} dias.</p>`, items: KEYS.map(k => `${D.targets[k].label}: <b class="${cls(status(k,m[k],1,m))}">${fmtM(k,m[k])} ${D.targets[k].unit}</b> (meta ${D.targets[k].dir==='up'?'≥':'≤'} ${fmtM(k,gl(k,m))})`).concat([band(r.sc)==='ok' ? 'Operação saudável; nada urgente.' : 'Prioridade: ' + ad.tip])}; }
+  if(key){ const T = D.targets[key], list = hubsComDados().map(h => { const mm = agg([lastN(h.id,n)]); return {h, v:mm[key], m:mm}; }).sort((a,b) => T.dir==='up' ? b.v-a.v : a.v-b.v);
+    return {intro:`<p><b>${T.label}</b> (${T.def.toLowerCase()}). Meta ${T.dir==='up'?'≥':'≤'} ${fmtM(key,T.goal)} ${T.unit}${key==='tempo'?' (Expedição: ≤ 3 min)':''}.</p>`, items: list.map((x,i) => `${i+1}º <b>${x.h.short}</b>: <b class="${cls(status(key,x.v,1,x.m))}">${fmtM(key,x.v)} ${T.unit}</b>`)}; }
   if(q.includes('agir')||q.includes('priorid')||q.includes('urgent')){ const a = analyze(D.hubs, n), top = a.rows.map(r => ({r, w:worstMetric(r)})).sort((x,y) => y.w.g-x.w.g).slice(0,3);
     return {intro:'<p>Onde eu agiria primeiro:</p>', items: top.map(x => { const ad = advice(x.r,n); return `<b>${x.r.h.short}</b> — ${ad.T.label.toLowerCase()} (${fmtM(ad.w.k,x.r.m[ad.w.k])} ${ad.T.unit}). ${ad.tip}`; })}; }
   if(q.includes('pior')||q.includes('fraco')){ const a = analyze(D.hubs, n); const ad = advice(a.worst,n); return {intro:`<p>O hub mais frágil é <b class="bad">${a.worst.h.name}</b> (índice ${a.worst.sc}).</p>`, items:[ad.tip]}; }

@@ -5,11 +5,11 @@
    ============================================================ */
 (function(){
   const HUBS = [
-    {id:'sion',  name:'Varanda Sion',        short:'Varanda Sion', color:'#b8f400'},
-    {id:'cn',    name:'Varanda CN',          short:'Varanda CN', color:'#ffffff'},
-    {id:'bur',   name:'Varanda Buritis',     short:'Buritis',     color:'#8a8e84'},
-    {id:'cas',   name:'Varanda Castelo',     short:'Castelo',     color:'#4f8f00'},
-    {id:'exp',   name:'Expedição Órion Sion',short:'Expedição',   color:'#7fe0a8'},
+    {id:'sion',  name:'Varanda Sion',        short:'Varanda Sion', color:'#b8f400', tempoGoal:7},
+    {id:'cn',    name:'Varanda CN',          short:'Varanda CN', color:'#ffffff', tempoGoal:7},
+    {id:'bur',   name:'Varanda Buritis',     short:'Buritis',     color:'#8a8e84', tempoGoal:7},
+    {id:'cas',   name:'Varanda Castelo',     short:'Castelo',     color:'#4f8f00', tempoGoal:7},
+    {id:'exp',   name:'Expedição Órion Sion',short:'Expedição',   color:'#7fe0a8', tempoGoal:3},
   ];
   const ERR_TYPES = [
     {id:'falt', name:'Item faltando',   color:'#b8f400'},
@@ -20,10 +20,10 @@
   // metas (editáveis depois)
   const TARGETS = {
     prod:   {label:'Produtividade',        unit:'ped/h/pessoa', dir:'up',   goal:30, dec:1, short:'PRODUTIVIDADE', def:'Pedidos totais por hora de funcionamento ÷ pessoas na escala'},
-    cancel: {label:'Taxa de cancelamento', unit:'%',            dir:'down', goal:3.0, dec:1, short:'CANCELAMENTO',  def:'Cancelamentos ÷ pedidos totais'},
+    cancel: {label:'Taxa de cancelamento', unit:'%',            dir:'down', goal:1.0, dec:1, short:'CANCELAMENTO',  def:'Cancelamentos ÷ pedidos totais'},
     assert: {label:'Assertividade',        unit:'%',            dir:'up',   goal:98.0,dec:1, short:'ASSERTIVIDADE', def:'Pedidos sem erro reportado ÷ pedidos totais'},
-    tempo:  {label:'Tempo de processamento',unit:'min',         dir:'down', goal:12,  dec:1, short:'TEMPO DE PROC.',def:'Pedido pronto − pedido recebido (média)'},
-    erros:  {label:'Erros por dia',        unit:'erros/dia',    dir:'down', goal:6,   dec:1, short:'ERROS / DIA',   def:'Erros reportados por dia'},
+    tempo:  {label:'Tempo de processamento',unit:'min',         dir:'down', goal:7,   dec:1, short:'TEMPO DE PROC.',def:'Pedido pronto − pedido recebido (média)'},
+    erros:  {label:'Erros por dia',        unit:'erros/dia',    dir:'down', goal:3,   dec:1, short:'ERROS / DIA',   def:'Erros reportados por dia'},
   };
   let ultimo = null;
   const hm = ms => new Date(ms).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
