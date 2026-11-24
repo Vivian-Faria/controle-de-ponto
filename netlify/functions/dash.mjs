@@ -31,7 +31,8 @@ export function hubDe(hub, unidade, negocio) {
   return null;
 }
 // nomes de hub da ESCALA (outro sistema) -> id da Central
-const hubEscala = n => { const t = nrm(n); return /expedic/.test(t) ? "exp" : /cidade nova|\bcn\b/.test(t) ? "cn" : /buritis/.test(t) ? "bur" : /castelo/.test(t) ? "cas" : /sion/.test(t) ? "sion" : null; };
+const hubEscala = n => { const t = nrm(n); if (/expedic/.test(t)) return /sion/.test(t) ? "exp" : null;       // só "Expedição Sion (dia/noite)"; "Expedição CN" não entra
+  return /cidade nova|\bcn\b/.test(t) ? "cn" : /buritis/.test(t) ? "bur" : /castelo/.test(t) ? "cas" : /sion/.test(t) ? "sion" : null; };
 
 // ---------------------------------------------------------------- horário de funcionamento (minutos do dia, hora local)
 // Sion: 09:30 às 00:30. Demais hubs: 11h às 23h. Pedidos fora da janela não entram nos indicadores.
@@ -121,12 +122,14 @@ async function pessoasDoDia(dias) {
           const id = mapa[hub.id]; if (!id) continue; const doc = esc.docs[`${hub.id}_${dia}`]; const hh = por[id] ||= { h: Array(24).fill(0), total: 0, tem: !!doc };
           if (!doc) continue;
           for (const t of esc.cfg.turnos.filter(x => x.hubId === hub.id)) {
+            if (/supervisor/i.test(String(t.nome || ""))) continue;                      // supervisor não conta como mão de obra de produção
             const n = Number(t.vagas?.[dowOf(dia)]) || 0; if (!n) continue;
             const slots = doc.slots?.[t.id] || {}; let cheias = 0;
             for (let v = 0; v < n; v++) { const x = slots[v] ?? slots[String(v)]; const nome = typeof x === "string" ? x : Array.isArray(x?.partes) ? x.partes.find(p => p?.nome)?.nome : x?.nome; if (nome) cheias++; }
             if (!cheias) continue; hh.total += cheias;
-            const a = Number(String(t.inicio).split(":")[0]), b = Number(String(t.fim).split(":")[0]); let f = b <= a ? b + 24 : b;
-            for (let x = a; x < f; x++) hh.h[x % 24] += cheias;
+            const mm = z => { const [h, m] = String(z || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
+            const a = mm(t.inicio); let f = mm(t.fim); if (f <= a) f += 1440;
+            for (let x = Math.floor(a / 60); x * 60 < f; x++) { const ov = Math.min(f, (x + 1) * 60) - Math.max(a, x * 60); if (ov > 0) hh.h[x % 24] += cheias * ov / 60; }
           }
         }
         out[dia] = por;
@@ -137,6 +140,7 @@ async function pessoasDoDia(dias) {
 }
 
 // ---------------------------------------------------------------- orquestração
+const PV = 2;                                                                              // versão da regra de contagem de pessoas
 const chaveDia = d => `v3/dia/${d}`;
 const fechado = (d, agora) => agora >= Date.parse(d + "T00:00:00Z") - TZ * HOUR + DAY + 2 * HOUR;       // 2 h depois da meia-noite local
 
@@ -144,6 +148,13 @@ export async function atualizar({ ate = DIAS, max = ORCAMENTO_REQ } = {}) {
   const agora = Date.now(), hoje = isoOf(agora), ctx = { req: 0, max };
   const dias = Array.from({ length: ate }, (_, i) => addDays(hoje, i - ate + 1)), pend = [];
   let erro = null, escalaErro = null;
+  // pessoas da escala: refaz (sem tocar na API) quando a regra mudou ou nos últimos dias, que ainda podem ser preenchidos
+  try {
+    const rev = [];
+    for (const d of dias) { if (rev.length >= 10) break; const reg = await getJ(chaveDia(d)); if (reg?.fim && (reg.pv !== PV || (d >= addDays(hoje, -2) && agora - (reg.pEm || 0) > 600000))) rev.push([d, reg]); }
+    if (rev.length) { const pp = await pessoasDoDia(rev.map(x => x[0])); if (pp.__erro) escalaErro = pp.__erro;
+      else for (const [d, reg] of rev) { reg.pessoas = pp[d] || null; reg.pv = PV; reg.pEm = agora; await putJ(chaveDia(d), reg); } }
+  } catch (e) { escalaErro = String(e.message || e); }
   const alvo = [];                                                                       // ordem: hoje, depois do mais novo para o mais antigo
   for (const d of [...dias].reverse()) {
     const reg = await getJ(chaveDia(d)), parc = await getJ(`v3/parc/${d}`);
@@ -156,7 +167,7 @@ export async function atualizar({ ate = DIAS, max = ORCAMENTO_REQ } = {}) {
     if (!parc && reg?.errosFalhou && reg.fim) { e = { ...reg, fase: "errors", pag: 1, fim: false, errosFalhou: null }; for (const h of Object.values(e.hubs)) { h.erros = 0; h.errTipos = { falt: 0, troc: 0, emb: 0, atr: 0 }; } }
     try {
       e = await avancaDia(e, ctx);
-      e.em = Date.now(); e.final = fechado(d, agora);
+      e.em = Date.now(); e.final = fechado(d, agora); e.pv = PV; e.pEm = Date.now();
       const p = await pessoasDoDia([d]); if (p.__erro) escalaErro = p.__erro; e.pessoas = p[d] || null;
       await putJ(chaveDia(d), e); try { await st().delete(`v3/parc/${d}`); } catch { /* sem parcial */ }
     } catch (err) {
@@ -180,9 +191,9 @@ export async function montar() {
       const r = R[d], h = r.hubs[id] || novoHub(), p = r.pessoas?.[id];
       const hj = horasJanela(id), horas = d === hoje ? Math.min(janela(id).h, horasDecorridas(id, agora)) : janela(id).h;
       let pessoas = 0;
-      if (p && p.tem) { const hs = hj.map(i => p.h[i]).filter(x => x > 0); pessoas = hs.length ? hs.reduce((a, b) => a + b, 0) / hs.length : p.total; }
-      else if (h.pedidos) semEscala++;
-      return { date: d, pedidos: h.pedidos, pessoas: h.pedidos ? Math.max(1, +pessoas.toFixed(1)) : 0, horas: +horas.toFixed(2), cancel: h.cancel, erros: h.erros, errTipos: h.errTipos, tempo: h.tN ? +(h.tSoma / h.tN).toFixed(1) : 0 };
+      if (p && p.tem) { const hs = hj.map(i => p.h[i]).filter(x => x > 0); pessoas = hs.length ? hs.reduce((a, b) => a + b, 0) / hs.length : 0; }
+      if (!pessoas && h.pedidos) semEscala++;                                           // dia sem escala lançada: fica de fora da produtividade
+      return { date: d, pedidos: h.pedidos, pessoas: +pessoas.toFixed(2), horas: +horas.toFixed(2), cancel: h.cancel, erros: h.erros, errTipos: h.errTipos, tempo: h.tN ? +(h.tSoma / h.tN).toFixed(1) : 0 };
     });
     const rec = faixa.slice(-14); const n = Math.max(1, rec.length);
     out.hourly[id] = Array.from({ length: 24 }, (_, hh) => ({ h: hh, pedidos: Math.round(rec.reduce((a, d) => a + (R[d].hubs[id]?.horas[hh] || 0), 0) / n),
