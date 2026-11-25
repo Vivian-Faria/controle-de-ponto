@@ -46,9 +46,13 @@ Diagnóstico dos nomes de hub/unidade que a API devolve: `/api/dash/probe` (loga
 
 ## Operações (`/orion/#/operacoes`)
 
-Página única da gerência: triagem do dia (indicadores de ontem, furos de escala, manutenção, ações e demandas), visita de campo com ficha de saúde (semáforo), plano de ação, demandas de CS/DP e geração de pauta (copiar ou imprimir/PDF).
+Página única da gerência: triagem do dia (indicadores de ontem, furos de escala, manutenção, ações e demandas), visita de campo com ficha de saúde (semáforo), plano de ação, demandas de CS, DP, RH e Financeiro e geração de pauta (copiar ou imprimir/PDF).
 
-- Arquivos: `assets/operacoes.js`, `assets/operacoes.css`, `demandas.html` (página pública para CS e DP lançarem demandas).
+- Arquivos: `assets/operacoes.js`, `assets/operacoes.css`, `demandas.html` (página pública para CS, DP, RH e Financeiro lançarem demandas).
 - Armazenamento: mesma coleção `compras_pedidos` do Firestore, separada pelo campo `kind` (regras do Firestore não mudam): `manutencao` (MT-), `visita` (VS-), `acao` (AC-), `demanda` (DX-). Pedidos não têm `kind`.
 - Erros das Varandas = cancelamentos por motivo faltante ou trocado (`falt`/`troc`); embalagem e qualidade não contam. Expedição = relatório de erros da API. Reprocessamento forçado por `LOGV` em `dash.mjs`.
 - Limites do semáforo ficam em `LIM` no topo de `operacoes.js`.
+
+- Filtro de período único no topo da página (padrão, 7/14/30 dias, tudo ou de/até) vale para triagem, visitas, ações, demandas e pauta. A triagem tem botão para marcar ação, demanda ou manutenção como resolvida.
+- Meta de erros por dia: no máximo 2 (`TARGETS.erros` em `central-data.js`). Manutenções podem ser excluídas (exclusão lógica, campo `deleted`).
+- O dashboard (KPIs, fluxo por hora, mapa de erros, manutenção) segue hub e período escolhidos; `/api/dash` devolve `hourlyDia` para isso.

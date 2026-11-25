@@ -81,63 +81,99 @@ function fichaAuto(D, hid, manual, infra){
 }
 const NIVEL = { ok:'Verde', wa:'Amarelo', bd:'Vermelho' };
 
+/* ---------------- período (vale para todas as abas) ---------------- */
+const P = { k:'padrao', de:'', ate:'' };
+const PRES = [['padrao','Padrão'],['7','7 dias'],['14','14 dias'],['30','30 dias'],['0','Tudo']];
+function rangeP(){        // {de, ate} do filtro; vazio = sem limite
+  if(P.k === 'custom') return { de:P.de, ate:P.ate };
+  if(P.k === '7' || P.k === '14' || P.k === '30') return { de:addD(hoje(), -(+P.k - 1)), ate:hoje() };
+  return { de:'', ate:'' };
+}
+const filtrando = () => P.k !== 'padrao';
+const inR = dia => { const r = rangeP(); dia = (dia || '').slice(0,10); return (!r.de || dia >= r.de) && (!r.ate || dia <= r.ate); };
+const dtRef = o => (o.createdAt || '').slice(0,10);
+const rowsIn = (D, id, de, ate) => (D.byHub[id] || []).filter(r => (!de || r.date >= de) && (!ate || r.date <= ate));
+const diasEntre = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000) + 1;
+function renderPer(){
+  const host = $('#opPer'); if(!host) return; const r = rangeP();
+  host.innerHTML = `<span class="lb">PERÍODO</span>` + PRES.map(([k,l]) => `<button type="button" class="chip ${P.k === k ? 'on' : ''}" data-per="${k}">${l}</button>`).join('')
+    + `<span class="sep"></span><label>de <input type="date" class="inp" id="opDe" value="${esc(P.k === 'custom' ? P.de : r.de)}" max="${hoje()}"></label><label>até <input type="date" class="inp" id="opAte" value="${esc(P.k === 'custom' ? P.ate : r.ate)}" max="${hoje()}"></label>`
+    + `<span class="hint">${P.k === 'padrao' ? 'Padrão: triagem de ontem e de hoje; pauta dos últimos 7 dias; listas completas.' : 'Filtra triagem, visitas, ações, demandas e pauta.'}</span>`;
+}
+
 /* ---------------- TRIAGEM ---------------- */
-async function furosHoje(){
-  try{ const r = await fetch('/api/alerta/painel?d=' + hoje(), {credentials:'same-origin', cache:'no-store'}); if(!r.ok) return null; return await r.json(); }catch(e){ return null; }
+async function furosDia(d){
+  try{ const r = await fetch('/api/alerta/painel?d=' + d, {credentials:'same-origin', cache:'no-store'}); if(!r.ok) return null; return await r.json(); }catch(e){ return null; }
 }
 async function buildTriagem(){
-  const D = await getData(), itens = [], t0 = hoje(), ontem = addD(t0, -1);
+  const D = await getData(), itens = [], t0 = hoje(), ontem = addD(t0, -1), fil = filtrando(), R = rangeP();
+  const ateI = R.ate && R.ate < ontem ? R.ate : ontem;      // indicadores só de dias fechados
   if(D && D.days && D.days.length && D.meta && D.meta.live !== false){
     HUBS().forEach(h => {
       if(!temDados(D, h.id)) return;
-      const rows = (D.byHub[h.id] || []).filter(r => r.date === ontem);
+      const rows = fil ? rowsIn(D, h.id, R.de, ateI) : (D.byHub[h.id] || []).filter(r => r.date === ontem);
       if(!rows.length) return;
       const y = aggHub(h, rows), sem = aggHub(h, rowsN(D, h.id, 7, D.byHub[h.id].length - (D.days[D.days.length-1] === t0 ? 1 : 0)));
-      const nome = h.short;
-      [['tempo','Tempo de processamento','min'], ['cancel','Cancelamentos','%'], ['erros','Erros','erros'], ['prod','Produtividade','ped/pessoa']].forEach(([k, lab, un]) => {
+      const nome = h.short, quando = fil ? 'do período' : 'de ontem';
+      [['tempo','Tempo de processamento','min'], ['cancel','Cancelamentos','%'], ['erros','Erros por dia','erros'], ['prod','Produtividade','ped/pessoa']].forEach(([k, lab, un]) => {
         if(y.ped < 10 && k !== 'erros') return;   // dia com pouquíssimos pedidos não diz nada
         const g = gapK(D, k, y[k], h), s = stat(g); if(s === 'ok') return;
         const sg = stat(gapK(D, k, sem[k], h)), meta = goalOf(D, k, h);
-        let txt = `${lab} de ontem: ${fmtK(D, k, y[k])} ${un} (meta ${k === 'cancel' || k === 'erros' ? 'abaixo de ' : k === 'tempo' ? 'até ' : 'a partir de '}${nf(meta, k === 'prod' ? 0 : 1)})`;
+        let txt = `${lab} ${quando}: ${fmtK(D, k, y[k])} ${un} (meta ${k === 'cancel' ? 'abaixo de ' : k === 'erros' ? 'no máximo ' : k === 'tempo' ? 'até ' : 'a partir de '}${nf(meta, k === 'prod' ? 0 : 1)})`;
         if(k === 'erros'){ const te = topErro(D, h.id, rows); if(te) txt += `; mais comum: ${te.name.toLowerCase()} (${te.pct}%)`; }
-        if(sg !== 'ok') txt += '. A média de 7 dias também está fora da meta';
+        if(!fil && sg !== 'ok') txt += '. A média de 7 dias também está fora da meta';
         itens.push({ sev: k === 'prod' ? 'media' : (s === 'bd' ? 'alta' : 'media'), hub:nome, txt, onde:'dashboard', tag:'Indicador' });
       });
     });
   } else itens.push({ sev:'media', hub:'Central', txt:'Os números da API não carregaram agora (sessão ou API indisponível); a triagem dos indicadores fica incompleta.', onde:'dashboard', tag:'Dados' });
 
-  const fp = await furosHoje();
-  let furosRes = 0;
-  if(fp && Array.isArray(fp.furos)){
-    fp.furos.forEach(f => { if(f.estado === 'resolvido'){ furosRes++; return; }
-      itens.push({ sev:'alta', hub:f.hub || '', txt:`Furo de escala hoje${f.turno ? ' no turno ' + f.turno : ''}${f.nome ? ' (' + f.nome + ')' : f.vazia ? ' (posição vazia)' : ''}: ${String(f.estado || 'em aberto').replace(/_/g, ' ')}${f.inicio ? ', início ' + f.inicio : ''}`, onde:'presencas', tag:'Escala' }); });
-  } else itens.push({ sev:'info', hub:'Central', txt:'Não consegui ler os furos de escala de hoje agora. Confira a página Presenças.', onde:'presencas', tag:'Escala' });
+  /* escala: hoje (padrão) ou os dias do período (até 14) */
+  const dFuros = fil ? Array.from({length: Math.min(14, R.de ? diasEntre(R.de, R.ate && R.ate < t0 ? R.ate : t0) : 14)}, (_, i) => addD(R.ate && R.ate < t0 ? R.ate : t0, -i)).filter(d => !R.de || d >= R.de) : [t0];
+  const resF = await Promise.all(dFuros.map(furosDia));
+  let furosRes = 0, lidos = 0;
+  resF.forEach((fp, i) => { if(fp && Array.isArray(fp.furos)){ lidos++; fp.furos.forEach(f => { if(f.estado === 'resolvido'){ furosRes++; return; }
+      itens.push({ sev:'alta', hub:f.hub || '', txt:`Furo de escala ${fil ? 'em ' + fmtD(dFuros[i]) : 'hoje'}${f.turno ? ' no turno ' + f.turno : ''}${f.nome ? ' (' + f.nome + ')' : f.vazia ? ' (posição vazia)' : ''}: ${String(f.estado || 'em aberto').replace(/_/g, ' ')}${f.inicio ? ', início ' + f.inicio : ''}`, onde:'presencas', tag:'Escala' }); }); } });
+  if(!lidos) itens.push({ sev:'info', hub:'Central', txt:'Não consegui ler os furos de escala agora. Confira a página Presenças.', onde:'presencas', tag:'Escala' });
 
-  manut().filter(o => o.status !== 'resolvida').forEach(o => {
+  manut().filter(o => o.status !== 'resolvida' && (!fil || inR(o.ocorreuEm || ''))).forEach(o => {
     const dias = Math.max(0, Math.round((Date.now() - new Date((o.ocorreuEm || t0) + 'T12:00:00')) / 86400000));
-    if(o.urgencia === 'alta') itens.push({ sev:'alta', hub:o.hub.replace(/^Varanda /,''), txt:`Manutenção urgente em aberto há ${dias} dia(s): ${o.title}`, onde:'manut', tag:'Manutenção' });
-    else if(dias >= 7) itens.push({ sev:'media', hub:o.hub.replace(/^Varanda /,''), txt:`Manutenção em aberto há ${dias} dias: ${o.title}`, onde:'manut', tag:'Manutenção' });
+    const rec = { kind:'manut', id:o.id };
+    if(o.urgencia === 'alta') itens.push({ sev:'alta', hub:o.hub.replace(/^Varanda /,''), txt:`Manutenção urgente em aberto há ${dias} dia(s): ${o.title}`, onde:'manut', tag:'Manutenção', rec });
+    else if(dias >= 7) itens.push({ sev:'media', hub:o.hub.replace(/^Varanda /,''), txt:`Manutenção em aberto há ${dias} dias: ${o.title}`, onde:'manut', tag:'Manutenção', rec });
   });
-  acoes().filter(a => a.status !== 'feita' && a.prazo).forEach(a => {
-    if(a.prazo < t0) itens.push({ sev:'alta', hub:a.hub, txt:`Ação vencida em ${fmtD(a.prazo)}: ${a.texto}${a.resp ? ' (' + a.resp + ')' : ''}`, onde:'acoes', tag:'Plano de ação' });
-    else if(a.prazo === t0) itens.push({ sev:'media', hub:a.hub, txt:`Ação vence hoje: ${a.texto}${a.resp ? ' (' + a.resp + ')' : ''}`, onde:'acoes', tag:'Plano de ação' });
+  acoes().filter(a => a.status !== 'feita' && a.prazo && (!fil || inR(a.prazo))).forEach(a => {
+    const rec = { kind:'acao', id:a.id };
+    if(a.prazo < t0) itens.push({ sev:'alta', hub:a.hub, txt:`Ação vencida em ${fmtD(a.prazo)}: ${a.texto}${a.resp ? ' (' + a.resp + ')' : ''}`, onde:'acoes', tag:'Plano de ação', rec });
+    else if(a.prazo === t0) itens.push({ sev:'media', hub:a.hub, txt:`Ação vence hoje: ${a.texto}${a.resp ? ' (' + a.resp + ')' : ''}`, onde:'acoes', tag:'Plano de ação', rec });
+    else if(fil) itens.push({ sev:'media', hub:a.hub, txt:`Ação com prazo em ${fmtD(a.prazo)}: ${a.texto}${a.resp ? ' (' + a.resp + ')' : ''}`, onde:'acoes', tag:'Plano de ação', rec });
   });
-  demandas().forEach(d => {
-    if(d.status === 'nova') itens.push({ sev: d.urgencia === 'alta' ? 'alta' : 'media', hub:d.hub || 'Geral', txt:`Demanda nova do ${d.de}: ${d.texto}`, onde:'demandas', tag:'Demanda ' + d.de });
-    else if(d.status === 'processo' && d.updatedAt && (Date.now() - new Date(d.updatedAt)) > 3*86400000) itens.push({ sev:'media', hub:d.hub || 'Geral', txt:`Demanda do ${d.de} em processo há mais de 3 dias: ${d.texto}`, onde:'demandas', tag:'Demanda ' + d.de });
+  demandas().filter(d => !fil || inR(dtRef(d))).forEach(d => {
+    const rec = { kind:'demanda', id:d.id };
+    if(d.status === 'nova') itens.push({ sev: d.urgencia === 'alta' ? 'alta' : 'media', hub:d.hub || 'Geral', txt:`Demanda nova (${d.de}${d.quem ? ', ' + d.quem : ''}): ${d.texto}`, onde:'demandas', tag:'Demanda ' + d.de, rec });
+    else if(d.status === 'processo' && d.updatedAt && (Date.now() - new Date(d.updatedAt)) > 3*86400000) itens.push({ sev:'media', hub:d.hub || 'Geral', txt:`Demanda de ${d.de} em processo há mais de 3 dias: ${d.texto}`, onde:'demandas', tag:'Demanda ' + d.de, rec });
   });
   const ordem = { alta:0, media:1, info:2 };
   itens.sort((a,b) => ordem[a.sev] - ordem[b.sev]);
-  return { itens, furosRes, ontem, fp };
+  return { itens, furosRes, ontem, fil, R, ateI };
 }
 async function renderTriagem(){
   const host = $('#opTriagem'); host.innerHTML = '<div class="empty"><b>ATUALIZANDO</b>Lendo indicadores, escala, manutenções, ações e demandas…</div>';
   const t = await buildTriagem();
   const n = s => t.itens.filter(i => i.sev === s).length;
-  const grp = (sev, titulo) => { const l = t.itens.filter(i => i.sev === sev); return l.length ? `<div class="op-grp"><h4>${titulo} <span>${l.length}</span></h4>${l.map(i => `<div class="op-it ${sev}"><span class="op-tag">${esc(i.tag)}</span><b>${esc(i.hub)}</b><p>${esc(i.txt)}</p><a href="#" data-go="${i.onde}">Abrir</a></div>`).join('')}</div>` : ''; };
-  host.innerHTML = `<div class="stats"><div class="${n('alta') ? 'rd' : 'gr'}"><small>PRECISAM DE AÇÃO HOJE</small><strong>${n('alta')}</strong></div><div class="am"><small>PARA ACOMPANHAR</small><strong>${n('media')}</strong></div><div><small>FUROS DE ESCALA RESOLVIDOS HOJE</small><strong>${t.furosRes}</strong></div><div><small>DIA ANALISADO</small><strong style="font-size:24px">${fmtD(t.ontem)}</strong></div></div>`
-    + (grp('alta', 'Precisam de ação') + grp('media', 'Para acompanhar') + grp('info', 'Avisos') || '<div class="empty"><b>Nada fora do normal</b>Indicadores de ontem, escala, manutenções, ações e demandas estão em ordem.</div>')
-    + `<p class="mn-note">Gerada agora a partir da API, da escala, das manutenções, do plano de ação e das demandas. Indicadores de ontem são comparados com as metas do dashboard.</p>`;
+  const BT = { acao:'Marcar como feita', demanda:'Marcar como resolvida', manut:'Marcar como resolvida' };
+  const grp = (sev, titulo) => { const l = t.itens.filter(i => i.sev === sev); return l.length ? `<div class="op-grp"><h4>${titulo} <span>${l.length}</span></h4>${l.map(i => `<div class="op-it ${sev}"><span class="op-tag">${esc(i.tag)}</span><b>${esc(i.hub)}</b><p>${esc(i.txt)}</p><span class="op-btns">${i.rec ? `<button type="button" class="btn ghost sm" data-resolve="${i.rec.kind}|${esc(i.rec.id)}">${BT[i.rec.kind]}</button>` : ''}<a href="#" data-go="${i.onde}">Abrir</a></span></div>`).join('')}</div>` : ''; };
+  const per = t.fil ? (t.R.de ? fmtD(t.R.de) : 'início') + ' a ' + fmtD(t.R.ate || hoje()) : fmtD(t.ontem);
+  host.innerHTML = `<div class="stats"><div class="${n('alta') ? 'rd' : 'gr'}"><small>PRECISAM DE AÇÃO${t.fil ? '' : ' HOJE'}</small><strong>${n('alta')}</strong></div><div class="am"><small>PARA ACOMPANHAR</small><strong>${n('media')}</strong></div><div><small>FUROS DE ESCALA RESOLVIDOS${t.fil ? '' : ' HOJE'}</small><strong>${t.furosRes}</strong></div><div><small>${t.fil ? 'PERÍODO' : 'DIA ANALISADO'}</small><strong style="font-size:24px">${per}</strong></div></div>`
+    + (grp('alta', 'Precisam de ação') + grp('media', 'Para acompanhar') + grp('info', 'Avisos') || '<div class="empty"><b>Nada fora do normal</b>Indicadores, escala, manutenções, ações e demandas estão em ordem.</div>')
+    + `<p class="mn-note">Gerada agora a partir da API, da escala, das manutenções, do plano de ação e das demandas. Indicadores comparados com as metas do dashboard. Os botões marcam o item como resolvido direto aqui.</p>`;
+}
+function resolveItem(spec){
+  const [kind, id] = spec.split('|');
+  if(kind === 'acao') St().updateKind(id, o => { o.status = 'feita'; o.doneAt = new Date().toISOString(); });
+  else if(kind === 'demanda') St().updateKind(id, o => { o.status = 'resolvida'; o.statusEm = new Date().toISOString(); });
+  else if(kind === 'manut') St().update(id, o => { o.status = 'resolvida'; o.resolvedAt = new Date().toISOString(); });
+  St().toast(kind === 'acao' ? 'Ação marcada como feita' : 'Marcado como resolvido');
+  renderTriagem();
 }
 
 /* ---------------- VISITA ---------------- */
@@ -206,19 +242,19 @@ async function salvaVisita(){
   V = novaVisita(); renderVisitaForm(); renderVisitas();
 }
 function renderVisitas(){
-  const l = visitas().slice(0, 12);
-  $('#opVisitas').innerHTML = l.length ? l.map(v => `<article class="row op-v" data-v="${esc(v.id)}"><div class="id">${esc(v.id)}</div><div class="nm-col"><div class="nm">${esc(v.hub)} · ${fmtD(v.dia)}</div><div class="meta">${v.trava && v.trava.length ? `<span>Trava: ${esc(v.trava.join(', '))}</span>` : ''}${v.atrapalha ? `<span>“${esc(v.atrapalha)}”</span>` : ''}${(v.manutAbertas || []).length ? `<span>${v.manutAbertas.length} manutenção(ões)</span>` : ''}</div></div><div><span class="op-pill ${esc(v.semaforo)}">${NIVEL[v.semaforo] || ''}</span></div><div class="op-why">${esc((v.motivos || []).join('; '))}</div></article>`).join('') : '<div class="empty"><b>Nenhuma visita registrada</b>Registre a primeira acima.</div>';
+  const l = visitas().filter(v => inR(v.dia)).slice(0, filtrando() ? 60 : 12);
+  $('#opVisitas').innerHTML = l.length ? l.map(v => `<article class="row op-v" data-v="${esc(v.id)}"><div class="id">${esc(v.id)}</div><div class="nm-col"><div class="nm">${esc(v.hub)} · ${fmtD(v.dia)}</div><div class="meta">${v.trava && v.trava.length ? `<span>Trava: ${esc(v.trava.join(', '))}</span>` : ''}${v.atrapalha ? `<span>“${esc(v.atrapalha)}”</span>` : ''}${(v.manutAbertas || []).length ? `<span>${v.manutAbertas.length} manutenção(ões)</span>` : ''}</div></div><div><span class="op-pill ${esc(v.semaforo)}">${NIVEL[v.semaforo] || ''}</span></div><div class="op-why">${esc((v.motivos || []).join('; '))}</div></article>`).join('') : '<div class="empty"><b>Nenhuma visita ' + (filtrando() ? 'neste período' : 'registrada') + '</b>' + (filtrando() ? 'Ajuste o período acima.' : 'Registre a primeira acima.') + '</div>';
 }
 
 /* ---------------- PLANO DE AÇÃO ---------------- */
 const AF = { st:'abertas', hub:'' };
 function renderAcoes(){
-  const all = acoes(), t = hoje();
-  const fechadas30 = all.filter(a => a.status === 'feita' && a.doneAt && a.doneAt.slice(0,10) >= addD(t, -30));
+  const all = acoes().filter(a => inR(a.prazo || dtRef(a))), t = hoje();   // pelo prazo (ou criação, se não tiver prazo)
+  const fechadas30 = all.filter(a => a.status === 'feita' && a.doneAt && (filtrando() || a.doneAt.slice(0,10) >= addD(t, -30)));
   const noPrazo = fechadas30.filter(a => !a.prazo || a.doneAt.slice(0,10) <= a.prazo).length;
   const venc = all.filter(vencida).length, ab = all.filter(a => a.status !== 'feita').length;
   const base = fechadas30.length + venc, pct = base ? Math.round(noPrazo / base * 100) : null;
-  $('#opAcStats').innerHTML = `<div class="am"><small>EM ABERTO</small><strong>${ab}</strong></div><div class="${venc ? 'rd' : 'gr'}"><small>VENCIDAS</small><strong>${venc}</strong></div><div class="gr"><small>FEITAS (30 DIAS)</small><strong>${fechadas30.length}</strong></div><div><small>FECHADAS NO PRAZO</small><strong>${pct == null ? '—' : pct + '%'}</strong></div>`;
+  $('#opAcStats').innerHTML = `<div class="am"><small>EM ABERTO</small><strong>${ab}</strong></div><div class="${venc ? 'rd' : 'gr'}"><small>VENCIDAS</small><strong>${venc}</strong></div><div class="gr"><small>FEITAS${filtrando() ? '' : ' (30 DIAS)'}</small><strong>${fechadas30.length}</strong></div><div><small>FECHADAS NO PRAZO</small><strong>${pct == null ? '—' : pct + '%'}</strong></div>`;
   const chips = [['abertas','Em aberto'],['vencidas','Vencidas'],['feitas','Feitas'],['todas','Todas']];
   $('#opAcChips').innerHTML = chips.map(([k,l]) => `<button class="chip ${AF.st === k ? 'on' : ''}" data-st="${k}">${l}</button>`).join('') + '<span class="sep"></span>' + `<select class="inp" id="opAcHub" style="width:auto;display:inline-block"><option value="">Todos os hubs</option>${['Geral', ...Object.values(HUB_NOME)].map(h => `<option ${AF.hub === h ? 'selected' : ''}>${h}</option>`).join('')}</select>`;
   let l = all.filter(a => (AF.st === 'todas') || (AF.st === 'abertas' && a.status !== 'feita') || (AF.st === 'vencidas' && vencida(a)) || (AF.st === 'feitas' && a.status === 'feita')).filter(a => !AF.hub || a.hub === AF.hub);
@@ -235,48 +271,50 @@ function dlgAcao(){
 const DF = { de:'', st:'abertas' };
 const DST = { nova:'Nova', vista:'Vista', processo:'Em processo', resolvida:'Resolvida' };
 function renderDemandas(){
-  const all = demandas().sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+  const all = demandas().filter(d => inR(dtRef(d))).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
   const c = s => all.filter(d => d.status === s).length;
   $('#opDmStats').innerHTML = `<div class="${c('nova') ? 'rd' : 'gr'}"><small>NOVAS (NÃO VISTAS)</small><strong>${c('nova')}</strong></div><div><small>VISTAS</small><strong>${c('vista')}</strong></div><div class="am"><small>EM PROCESSO</small><strong>${c('processo')}</strong></div><div class="gr"><small>RESOLVIDAS</small><strong>${c('resolvida')}</strong></div>`;
-  $('#opDmChips').innerHTML = [['','Todas as áreas'],['CS','CS'],['DP','DP']].map(([k,l]) => `<button class="chip ${DF.de === k ? 'on' : ''}" data-de="${k}">${l}</button>`).join('') + '<span class="sep"></span>' + [['abertas','Em aberto'],['resolvidas','Resolvidas'],['todas','Todas']].map(([k,l]) => `<button class="chip ${DF.st === k ? 'on' : ''}" data-dst="${k}">${l}</button>`).join('');
+  $('#opDmChips').innerHTML = [['','Todas as áreas'],['CS','CS'],['DP','DP'],['RH','RH'],['Financeiro','Financeiro']].map(([k,l]) => `<button class="chip ${DF.de === k ? 'on' : ''}" data-de="${k}">${l}</button>`).join('') + '<span class="sep"></span>' + [['abertas','Em aberto'],['resolvidas','Resolvidas'],['todas','Todas']].map(([k,l]) => `<button class="chip ${DF.st === k ? 'on' : ''}" data-dst="${k}">${l}</button>`).join('');
   const l = all.filter(d => (!DF.de || d.de === DF.de) && (DF.st === 'todas' || (DF.st === 'abertas' && d.status !== 'resolvida') || (DF.st === 'resolvidas' && d.status === 'resolvida')));
-  $('#opDmList').innerHTML = l.length ? l.map(d => `<article class="row mn-row ${d.status === 'nova' ? 'u-alta' : ''} ${d.status === 'resolvida' ? 'ok' : ''}"><div class="id">${esc(d.id)}</div><div class="nm-col"><div class="nm">${esc(d.texto)}</div><div class="meta"><span>${esc(d.de)}${d.quem ? ' · ' + esc(d.quem) : ''}</span><span>${esc(d.hub || 'Geral')}</span><span>Urgência ${esc({baixa:'baixa',media:'média',alta:'alta'}[d.urgencia] || 'média')}</span><span>${fmtD((d.createdAt || '').slice(0,10))}</span>${d.retorno ? `<span>Retorno: ${esc(d.retorno)}</span>` : ''}</div></div><div><span class="op-pill ${d.status === 'nova' ? 'bd' : d.status === 'processo' ? 'wa' : 'ok'}">${DST[d.status] || d.status}</span></div><div class="op-btns">${['vista','processo','resolvida'].filter(s => s !== d.status).map(s => `<button class="btn ghost sm" data-dm="${esc(d.id)}" data-to="${s}">${s === 'vista' ? 'Visto' : s === 'processo' ? 'Em processo' : 'Resolvida'}</button>`).join('')}<button class="btn ghost sm" data-dm-ret="${esc(d.id)}">Retorno</button></div></article>`).join('') : '<div class="empty"><b>Nenhuma demanda aqui</b>O CS e o DP lançam pela página própria; elas chegam aqui na hora.</div>';
+  $('#opDmList').innerHTML = l.length ? l.map(d => `<article class="row mn-row ${d.status === 'nova' ? 'u-alta' : ''} ${d.status === 'resolvida' ? 'ok' : ''}"><div class="id">${esc(d.id)}</div><div class="nm-col"><div class="nm">${esc(d.texto)}</div><div class="meta"><span>${esc(d.de)}${d.quem ? ' · ' + esc(d.quem) : ''}</span><span>${esc(d.hub || 'Geral')}</span><span>Urgência ${esc({baixa:'baixa',media:'média',alta:'alta'}[d.urgencia] || 'média')}</span><span>${fmtD((d.createdAt || '').slice(0,10))}</span>${d.retorno ? `<span>Retorno: ${esc(d.retorno)}</span>` : ''}</div></div><div><span class="op-pill ${d.status === 'nova' ? 'bd' : d.status === 'processo' ? 'wa' : 'ok'}">${DST[d.status] || d.status}</span></div><div class="op-btns">${['vista','processo','resolvida'].filter(s => s !== d.status).map(s => `<button class="btn ghost sm" data-dm="${esc(d.id)}" data-to="${s}">${s === 'vista' ? 'Visto' : s === 'processo' ? 'Em processo' : 'Resolvida'}</button>`).join('')}<button class="btn ghost sm" data-dm-ret="${esc(d.id)}">Retorno</button></div></article>`).join('') : '<div class="empty"><b>Nenhuma demanda aqui</b>CS, DP, RH e Financeiro lançam pela página própria; elas chegam aqui na hora.</div>';
   const b = $('#opDmBadge'); if(b){ b.textContent = c('nova') || ''; b.hidden = !c('nova'); }
 }
 
 /* ---------------- PAUTA ---------------- */
 let PAUTA = null;
 async function criaPauta(){
-  const dias = +$('#opPDias').value || 7; const host = $('#opPautaOut');
+  const host = $('#opPautaOut');
   host.innerHTML = '<div class="empty"><b>ATUALIZANDO</b>Montando a pauta a partir dos dados do período…</div>';
-  const D = await getData(), t0 = hoje(), de = addD(t0, -(dias)), blocos = [], txt = [];
-  const fimIdx = id => (D.byHub[id] || []).length - (D.days[D.days.length-1] === t0 ? 1 : 0);   // até ontem (hoje ainda está aberto)
-  const per = `${fmtD(de)} a ${fmtD(addD(t0, -1))}`;
+  const D = await getData(), t0 = hoje(), blocos = [], txt = [], ontem = addD(t0, -1), R = rangeP();
+  const ate = R.ate && R.ate < ontem ? R.ate : ontem;                                     // hoje ainda está aberto: a pauta fecha em ontem
+  const de = P.k === 'padrao' ? addD(ate, -6) : (R.de || (D.days && D.days[0]) || addD(ate, -29));
+  const dias = Math.max(1, diasEntre(de, ate)), dePrev = addD(de, -dias), atePrev = addD(de, -1);
+  const per = `${fmtD(de)} a ${fmtD(ate)}`, noP = d => (d || '').slice(0,10) >= de && (d || '').slice(0,10) <= ate;
   txt.push(`PAUTA DA REUNIÃO · ${per} (${dias} dias)`, '');
   /* 1 indicadores */
   const ind = [], desv = [];
   HUBS().forEach(h => { if(!temDados(D, h.id)){ ind.push(`<tr><td>${esc(h.short)}</td><td colspan="5" class="dim">sem dados na API</td></tr>`); txt.push(`${h.short}: sem dados na API`); return; }
-    const cur = aggHub(h, rowsN(D, h.id, dias, fimIdx(h.id))), prev = aggHub(h, rowsN(D, h.id, dias, fimIdx(h.id) - dias));
+    const cur = aggHub(h, rowsIn(D, h.id, de, ate)), prev = aggHub(h, rowsIn(D, h.id, dePrev, atePrev));
     const cel = k => { const g = gapK(D, k, cur[k], h), s = stat(g); if(s !== 'ok') desv.push({ h:h.short, k, g, v:cur[k], meta:goalOf(D, k, h) }); const d = (prev.dias >= dias && prev[k] != null && cur[k] != null) ? cur[k] - prev[k] : null; return `<td class="k-${s}">${fmtK(D, k, cur[k])}${d != null ? `<small>${d >= 0 ? '+' : ''}${nf(d, D.targets[k].dec)}</small>` : ''}</td>`; };
     ind.push(`<tr><td>${esc(h.short)}</td>${KPIS.map(cel).join('')}</tr>`);
     txt.push(`${h.short}: produtividade ${fmtK(D,'prod',cur.prod)}, cancelamento ${fmtK(D,'cancel',cur.cancel)}%, assertividade ${fmtK(D,'assert',cur.assert)}%, tempo ${fmtK(D,'tempo',cur.tempo)} min, erros/dia ${fmtK(D,'erros',cur.erros)}`); });
   desv.sort((a,b) => b.g - a.g);
   const nm = { prod:'produtividade', cancel:'cancelamento', assert:'assertividade', tempo:'tempo de processamento', erros:'erros por dia' };
   const top3 = desv.slice(0, 3);
-  blocos.push(`<section class="pt"><h3>1. Indicadores do período</h3><div class="pt-t"><table><thead><tr><th>Hub</th>${KPIS.map(k => `<th>${esc(D.targets[k].short)}</th>`).join('')}</tr></thead><tbody>${ind.join('')}</tbody></table></div><p class="dim">Metas: produtividade ${KPIS.length ? '25 por pessoa (Varandas) e 30 (Expedição)' : ''}, cancelamento abaixo de ${D.targets.cancel.goal}%, assertividade a partir de ${D.targets.assert.goal}%, tempo até 7 min (Varandas) e 3 min (Expedição), erros abaixo de ${D.targets.erros.goal} por dia. Variação em relação ao período anterior, em pequeno.</p></section>`);
+  blocos.push(`<section class="pt"><h3>1. Indicadores do período</h3><div class="pt-t"><table><thead><tr><th>Hub</th>${KPIS.map(k => `<th>${esc(D.targets[k].short)}</th>`).join('')}</tr></thead><tbody>${ind.join('')}</tbody></table></div><p class="dim">Metas: produtividade ${KPIS.length ? '25 por pessoa (Varandas) e 30 (Expedição)' : ''}, cancelamento abaixo de ${D.targets.cancel.goal}%, assertividade a partir de ${D.targets.assert.goal}%, tempo até 7 min (Varandas) e 3 min (Expedição), erros no máximo ${D.targets.erros.goal} por dia. Variação em relação ao período anterior, em pequeno.</p></section>`);
   txt.push('', 'DESVIOS PARA O DIRETOR');
   const desvTxt = top3.map((d, i) => `${i+1}. ${d.h}: ${nm[d.k]} em ${fmtK(D, d.k, d.v)} (meta ${nf(d.meta, d.k === 'prod' ? 0 : 1)})`);
   blocos.push(`<section class="pt"><h3>2. Três desvios para levar ao diretor</h3>${top3.length ? `<ol>${desvTxt.map(x => `<li>${esc(x.replace(/^\d\. /, ''))}</li>`).join('')}</ol>` : '<p>Nenhum indicador fora da meta no período.</p>'}</section>`);
   txt.push(...(desvTxt.length ? desvTxt : ['Nenhum indicador fora da meta no período.']));
   /* 3 por unidade */
-  const vis = visitas().filter(v => v.dia >= de), mt = manut(), ac = acoes();
+  const vis = visitas().filter(v => v.dia >= de && v.dia <= ate), mt = manut(), ac = acoes();
   const un = HUBS().map(h => {
     const nome = HUB_NOME[h.id], li = [];
-    if(temDados(D, h.id)){ const rows = rowsN(D, h.id, dias, fimIdx(h.id)), te = topErro(D, h.id, rows); if(te) li.push(`Erro mais frequente: ${te.name.toLowerCase()} (${te.pct}% de ${te.tot} erros)`); }
+    if(temDados(D, h.id)){ const rows = rowsIn(D, h.id, de, ate), te = topErro(D, h.id, rows); if(te) li.push(`Erro mais frequente: ${te.name.toLowerCase()} (${te.pct}% de ${te.tot} erros)`); }
     const vh = vis.filter(v => v.hub === nome);
     if(vh.length){ const trav = {}; vh.forEach(v => (v.trava || []).forEach(t => trav[t] = (trav[t] || 0) + 1)); const tt = Object.entries(trav).sort((a,b) => b[1]-a[1]).map(([t, n]) => `${t} (${n})`).join(', '); if(tt) li.push('Onde trava, segundo as visitas: ' + tt); vh.filter(v => v.atrapalha).slice(0, 2).forEach(v => li.push(`Equipe disse (${fmtD(v.dia)}): “${v.atrapalha}”`)); const u = vh[0]; li.push(`Ficha de saúde (${fmtD(u.dia)}): ${NIVEL[u.semaforo]}${(u.motivos || []).length ? ' — ' + u.motivos.join('; ') : ''}`); }
     else li.push('Sem visita registrada no período');
-    const ma = mt.filter(o => o.hub === nome && o.status !== 'resolvida'), mn = mt.filter(o => o.hub === nome && (o.ocorreuEm || '') >= de);
+    const ma = mt.filter(o => o.hub === nome && o.status !== 'resolvida'), mn = mt.filter(o => o.hub === nome && noP(o.ocorreuEm));
     li.push(`Manutenção: ${ma.length} em aberto${ma.filter(o => o.urgencia === 'alta').length ? ` (${ma.filter(o => o.urgencia === 'alta').length} urgente)` : ''}, ${mn.length} nova(s) no período`);
     const aa = ac.filter(a => a.hub === nome && a.status !== 'feita'); li.push(`Ações: ${aa.length} em aberto, ${aa.filter(vencida).length} vencida(s)`);
     return { nome, li };
@@ -285,7 +323,7 @@ async function criaPauta(){
   txt.push('', 'POR UNIDADE'); un.forEach(u => { txt.push(u.nome); u.li.forEach(x => txt.push('  - ' + x)); });
   /* 4 escala */
   const furos = {}; let okF = 0, totF = 0;
-  const dl = Array.from({length: Math.min(dias, 14)}, (_, i) => addD(t0, -(i+1)));
+  const dl = Array.from({length: Math.min(dias, 14)}, (_, i) => addD(ate, -i));
   const res = await Promise.all(dl.map(d => fetch('/api/alerta/painel?d=' + d, {credentials:'same-origin', cache:'no-store'}).then(r => r.ok ? r.json() : null).catch(() => null)));
   res.forEach(p => { if(p && p.furos) p.furos.forEach(f => { totF++; if(f.estado === 'resolvido') okF++; furos[f.hub || '—'] = (furos[f.hub || '—'] || 0) + 1; }); });
   const okRes = res.filter(Boolean).length;
@@ -293,14 +331,14 @@ async function criaPauta(){
   blocos.push(`<section class="pt"><h3>4. Escala e cobertura</h3><p>${okRes ? `${totF} furo(s) de escala em ${okRes} dia(s) lidos (${okF} resolvidos).${fl ? ' Por hub: ' + esc(fl) + '.' : ''}` : 'Não consegui ler os furos de escala neste momento.'}${dias > 14 ? ' (últimos 14 dias)' : ''}</p></section>`);
   txt.push('', 'ESCALA E COBERTURA', okRes ? `${totF} furo(s) em ${okRes} dia(s) (${okF} resolvidos). ${fl}` : 'Furos não lidos.');
   /* 5 plano de ação */
-  const abertas = ac.filter(a => a.status !== 'feita').sort((a,b) => (a.prazo || '9').localeCompare(b.prazo || '9')), feitas = ac.filter(a => a.status === 'feita' && a.doneAt && a.doneAt.slice(0,10) >= de);
+  const abertas = ac.filter(a => a.status !== 'feita').sort((a,b) => (a.prazo || '9').localeCompare(b.prazo || '9')), feitas = ac.filter(a => a.status === 'feita' && a.doneAt && noP(a.doneAt));
   const linhaA = a => `${a.hub}: ${a.texto}${a.resp ? ' (' + a.resp + ')' : ''}${a.prazo ? ', prazo ' + fmtD(a.prazo) : ''}${vencida(a) ? ' — VENCIDA' : ''}`;
   blocos.push(`<section class="pt"><h3>5. Plano de ação</h3><p>${feitas.length} ação(ões) feita(s) no período; ${abertas.length} em aberto, ${abertas.filter(vencida).length} vencida(s).</p>${abertas.length ? `<ul>${abertas.map(a => `<li class="${vencida(a) ? 'k-bd' : ''}">${esc(linhaA(a))}</li>`).join('')}</ul>` : ''}</section>`);
   txt.push('', `PLANO DE AÇÃO (${feitas.length} feitas; ${abertas.length} em aberto)`); abertas.forEach(a => txt.push('  - ' + linhaA(a)));
   /* 6 demandas */
   const dm = demandas().filter(d => d.status !== 'resolvida');
-  blocos.push(`<section class="pt"><h3>6. Demandas do CS e do DP</h3>${dm.length ? `<ul>${dm.map(d => `<li>${esc(d.de)} · ${esc(DST[d.status])} · ${esc(d.hub || 'Geral')}: ${esc(d.texto)}</li>`).join('')}</ul>` : '<p>Nenhuma demanda em aberto.</p>'}</section>`);
-  txt.push('', 'DEMANDAS CS E DP'); (dm.length ? dm.map(d => `  - ${d.de} (${DST[d.status]}) ${d.hub || 'Geral'}: ${d.texto}`) : ['  Nenhuma em aberto.']).forEach(x => txt.push(x));
+  blocos.push(`<section class="pt"><h3>6. Demandas das áreas (CS, DP, RH e Financeiro)</h3>${dm.length ? `<ul>${dm.map(d => `<li>${esc(d.de)} · ${esc(DST[d.status])} · ${esc(d.hub || 'Geral')}: ${esc(d.texto)}</li>`).join('')}</ul>` : '<p>Nenhuma demanda em aberto.</p>'}</section>`);
+  txt.push('', 'DEMANDAS DAS ÁREAS (CS, DP, RH, FINANCEIRO)'); (dm.length ? dm.map(d => `  - ${d.de} (${DST[d.status]}) ${d.hub || 'Geral'}: ${d.texto}`) : ['  Nenhuma em aberto.']).forEach(x => txt.push(x));
   PAUTA = txt.join('\n');
   host.innerHTML = `<div class="op-pbar"><button class="btn ghost sm" id="opPCopia">Copiar texto</button><button class="btn ghost sm" id="opPPrint">Imprimir ou salvar em PDF</button></div><div id="opPautaDoc">${blocos.join('')}</div>`;
 }
@@ -309,6 +347,7 @@ async function criaPauta(){
 const TABS = ['triagem','visita','acoes','demandas','pauta'];
 function setTab(t, force){
   if(!TABS.includes(t)) t = 'triagem';
+  renderPer();
   $$('#opTabs button').forEach(b => b.classList.toggle('on', b.dataset.op === t));
   TABS.forEach(x => { const el = $('#op-' + x); if(el) el.hidden = x !== t; });
   if(t === 'triagem') renderTriagem();
@@ -320,9 +359,14 @@ function setTab(t, force){
 function init(){
   if(!$('#v-operacoes')) return;
   const root = $('#v-operacoes');
+  const cur = () => ($('#opTabs .on') || {dataset:{op:'triagem'}}).dataset.op;
+  const aplicaPer = () => { PAUTA = null; $('#opPautaOut').innerHTML = ''; setTab(cur()); };
+  $('#opPer').addEventListener('click', e => { const b = e.target.closest('[data-per]'); if(!b) return; P.k = b.dataset.per; P.de = P.ate = ''; aplicaPer(); });
+  $('#opPer').addEventListener('change', e => { if(e.target.id !== 'opDe' && e.target.id !== 'opAte') return; P.k = 'custom'; P.de = $('#opDe').value; P.ate = $('#opAte').value; if(P.de && P.ate && P.de > P.ate){ St().toast('A data inicial passou da final', true); return; } aplicaPer(); });
   $('#opTabs').addEventListener('click', e => { const b = e.target.closest('[data-op]'); if(b) setTab(b.dataset.op); });
   root.addEventListener('click', e => {
     const go = e.target.closest('a[data-go]'); if(go){ e.preventDefault(); const w = go.dataset.go; if(w === 'manut'){ location.hash = '#/compras'; setTimeout(() => { const b = document.querySelector('#cpTabs [data-cp="man"]'); if(b) b.click(); }, 60); } else if(w === 'acoes' || w === 'demandas'){ setTab(w); } else if(App()) App().go(w); return; }
+    const rs = e.target.closest('[data-resolve]'); if(rs){ resolveItem(rs.dataset.resolve); return; }
     const t = e.target.closest('.tri button');
     if(t && V){ const w = t.parentElement, g = w.dataset.g, k = w.dataset.k, v = t.dataset.v;
       if(g === 'aud'){ V.aud[+k].res = V.aud[+k].res === v ? '' : v; } else if(g === 'sla'){ V.slaBate = V.slaBate === v ? '' : v; }

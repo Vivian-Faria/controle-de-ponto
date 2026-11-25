@@ -22,9 +22,9 @@ const inPeriod = (o, dias) => !dias || (o.ocorreuEm || '') >= from(dias);
 window.Manut = {
   tipos: TIPOS, hubId: n => HUBID[n] || '',
   /** { total, abertas, porHub:{sion:n,...}, porTipo:{tipo:n}, urgentes } nos últimos `dias` */
-  resumo(dias){
+  resumo(dias, de, ate){      // com de/ate (AAAA-MM-DD) usa exatamente a janela escolhida no dashboard
     const r = { total:0, abertas:0, urgentes:0, porHub:{}, porTipo:{}, custo:0 };
-    all().filter(o => inPeriod(o, dias)).forEach(o => {
+    all().filter(o => de ? ((o.ocorreuEm || '') >= de && (o.ocorreuEm || '') <= (ate || '9999')) : inPeriod(o, dias)).forEach(o => {
       r.total++; if(o.status !== 'resolvida') r.abertas++; if(o.urgencia === 'alta') r.urgentes++;
       const h = HUBID[o.hub]; if(h) r.porHub[h] = (r.porHub[h] || 0) + 1;
       r.porTipo[o.tipo] = (r.porTipo[o.tipo] || 0) + 1;
@@ -84,7 +84,7 @@ function render(){
       <div class="nm-col"><div class="nm">${esc(o.title)}</div>
         <div class="meta"><span>${esc(o.tipo)}</span><span>Urgência ${esc(URG[o.urgencia] || '')}</span>${o.custo ? `<span>R$ ${esc(o.custo)}</span>` : ''}${o.desc ? '<span>📋 detalhes</span>' : ''}</div></div>
       <div class="hub-tag">${esc(o.hub)}</div><div class="dt">${fmtD(o.ocorreuEm)}</div>
-      <div><button type="button" class="btn ghost sm mn-st" data-tog="${esc(o.id)}">${o.status==='resolvida' ? '✓ Resolvida' : 'Marcar resolvida'}</button></div></article>`).join('')
+      <div class="op-btns"><button type="button" class="btn ghost sm mn-st" data-tog="${esc(o.id)}">${o.status==='resolvida' ? '✓ Resolvida' : 'Marcar resolvida'}</button><button type="button" class="btn ghost sm" data-del="${esc(o.id)}" aria-label="Excluir manutenção">Excluir</button></div></article>`).join('')
     : `<div class="empty"><b>${all().length ? 'Nada encontrado com esses filtros' : 'Nenhuma manutenção registrada ainda'}</b>${all().length ? 'Ajuste a busca, o hub ou o período.' : 'Clique em “Nova manutenção” para registrar a primeira.'}</div>`;
 }
 
@@ -97,8 +97,11 @@ function openDlg(o){
   $('#mData').max = dayKey(new Date()); $('#mData').value = o ? o.ocorreuEm : dayKey(new Date()); $('#mUrg').value = o ? o.urgencia : 'media';
   $('#mCusto').value = o ? o.custo : ''; $('#mDesc').value = o ? o.desc : '';
   ['mTitle','mHub','mTipo'].forEach(i => $('#'+i).classList.remove('err'));
+  const dl = $('#mDel'); if(dl){ dl.hidden = !o; dl.textContent = 'Excluir manutenção'; dl.dataset.arm = ''; }
   $('#dMan').showModal(); $('#mTitle').focus();
 }
+
+function apaga(id){ St().update(id, o => { o.deleted = true; o.deletedAt = new Date().toISOString(); }); St().toast('Manutenção excluída'); render(); }
 
 function init(){
   if(!$('#cp-man')) return;
@@ -114,6 +117,9 @@ function init(){
     }
     const c = e.target.closest('#mnChips .chip, #mnCount .chip');
     if(c){ if(c.dataset.s) F.status = c.dataset.s; if('d' in c.dataset) F.dias = +c.dataset.d; render(); return; }
+    const dr = e.target.closest('[data-del]');
+    if(dr){ e.stopPropagation(); if(dr.dataset.arm !== '1'){ dr.dataset.arm = '1'; dr.textContent = 'Confirmar exclusão?'; setTimeout(() => { if(dr.isConnected){ dr.dataset.arm = ''; dr.textContent = 'Excluir'; } }, 4000); return; } apaga(dr.dataset.del); return; }
+    if(e.target.closest('#mDel')){ const b = $('#mDel'); if(b.dataset.arm !== '1'){ b.dataset.arm = '1'; b.textContent = 'Confirmar exclusão?'; setTimeout(() => { b.dataset.arm = ''; b.textContent = 'Excluir manutenção'; }, 4000); return; } if(editing){ apaga(editing); $('#dMan').close(); editing = null; } return; }
     const tg = e.target.closest('[data-tog]');
     if(tg){ e.stopPropagation(); const id = tg.dataset.tog; St().update(id, o => { if(o.status === 'resolvida'){ o.status = 'aberta'; o.resolvedAt = null; } else { o.status = 'resolvida'; o.resolvedAt = new Date().toISOString(); } }); return; }
     const row = e.target.closest('#mnList .mn-row');

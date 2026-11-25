@@ -204,26 +204,31 @@ function drawDashboard(first, quiet){
     series: sh.map(h => ({id:h.id, name:h.short, color:h.color, vals: lastN(h.id,n).map((_,i,arr) => agg([[arr[i]]])[k]).reduce((o,v) => (o.push(v ?? o[o.length-1] ?? 0), o), [])}))});
   $('#cLegend').innerHTML = sh.map(h => `<span><i style="background:${h.color}"></i>${h.short}</span>`).join('');
   // erros
-  const nn = Math.min(n, 30), lbl = winDays(nn);
+  const nn = n, lbl = winDays(nn);
   stacked($('#cErr'), lbl, D.errTypes.map(t => ({name:t.name, color:t.color, vals: lbl.map((_,i) => sh.reduce((a,h) => a + lastN(h.id,nn)[i].errTipos[t.id], 0))})));
   $('#errLegend').innerHTML = D.errTypes.map(t => `<span><i style="background:${t.color}"></i>${t.name}</span>`).join('');
   const totT = D.errTypes.map(t => ({t, v: sh.reduce((a,h) => a + lastN(h.id,n).reduce((b,r) => b + r.errTipos[t.id], 0), 0)})), mx = Math.max(...totT.map(x => x.v), 1);
   $('#errRank').innerHTML = totT.sort((a,b) => b.v-a.v).map(x => `<div style="--c:${x.t.color}"><span>${x.t.name}</span><b>${x.v}</b><div class="bg"><i style="width:${x.v/mx*100}%"></i></div></div>`).join('');
-  const hd = winDays(14), hmMax = Math.max(...sh.flatMap(h => hubRows(h.id,14).map(r => r.erros)), 1);
+  const hd = winDays(n), hmMax = Math.max(...sh.flatMap(h => hubRows(h.id,n).map(r => r.erros)), 1);
   $('#errHeat').innerHTML = `<table class="hm"><thead><tr><th></th>${hd.map(d => `<th>${d.slice(8)}</th>`).join('')}</tr></thead><tbody>` +
-    sh.map(h => `<tr><td>${h.short}</td>${hubRows(h.id,14).map((r,i) => { const a = r.erros/hmMax; return `<td style="background:rgba(${Math.round(184+a*71)},${Math.round(244+a*11)},${Math.round(a*255)},${.1+a*.75});color:${a>.55?'#0a0d00':'#fff'};animation-delay:${i*.03}s" title="${shortDate(r.date)} · ${r.erros} erros">${r.erros}</td>`; }).join('')}</tr>`).join('') + '</tbody></table>';
+    sh.map(h => `<tr><td>${h.short}</td>${hubRows(h.id,n).map((r,i) => { const a = r.erros/hmMax; return `<td style="background:rgba(${Math.round(184+a*71)},${Math.round(244+a*11)},${Math.round(a*255)},${.1+a*.75});color:${a>.55?'#0a0d00':'#fff'};animation-delay:${i*.03}s" title="${shortDate(r.date)} · ${r.erros} erros">${r.erros}</td>`; }).join('')}</tr>`).join('') + '</tbody></table>';
   drawMaint(sh, n);
   // fluxo por hora
-  hourly(sh);
+  hourly(sh, n);
   jarvis(first === true || !$('#jvText').dataset.plain);
   // pontos de atenção
   const att = []; sh.forEach(h => { const m = agg([lastN(h.id,n)]); KEYS.forEach(kk => { const g = gap(kk,m[kk],1,m); if(g > 0) att.push({h, kk, g, v:m[kk], m}); }); });
   att.sort((a,b) => b.g-a.g);
   $('#attn').innerHTML = att.slice(0,6).map(a => { const T = D.targets[a.kk]; return `<li class="s-${status(a.kk,a.v,1,a.m)}"><span class="ic"></span><div><b>${a.h.short}</b> · ${T.label}: <b>${fmtM(a.kk,a.v)} ${T.unit}</b><small>meta ${T.dir==='up'?'≥':'≤'} ${fmtM(a.kk,gl(a.kk,a.m))} · ${nf(a.g*100,0)}% fora da meta</small></div></li>`; }).join('') || '<li class="s-ok"><span class="ic"></span><div>Todos os hubs selecionados dentro da meta 🎯</div></li>';
 }
-function hourly(sh){
+function hrAt(id, hh, n){      // média por dia, na janela escolhida (hub + período); sem o detalhe diário, cai na média fixa do servidor
+  const w = D.hourlyDia && D.hourlyDia[id] ? D.hourlyDia[id].slice(Math.max(0, wEnd()-n), wEnd()) : null;
+  if(w){ const k = Math.max(1, w.length); return {pedidos: Math.round(w.reduce((a,d) => a + d.p[hh], 0)/k), pessoas: Math.round(w.reduce((a,d) => a + d.q[hh], 0)/k)}; }
+  const x = D.hourly && D.hourly[id] && D.hourly[id][hh]; return x ? {pedidos:x.pedidos, pessoas:x.pessoas} : {pedidos:0, pessoas:0};
+}
+function hourly(sh, n){
   const host = $('#cHour'), hrs = [...Array(14)].map((_,i) => i+10);
-  const ped = hrs.map(h => sh.reduce((a,x) => a + D.hourly[x.id][h].pedidos, 0)), pes = hrs.map(h => sh.reduce((a,x) => a + D.hourly[x.id][h].pessoas, 0));
+  const ped = hrs.map(h => sh.reduce((a,x) => a + hrAt(x.id,h,n).pedidos, 0)), pes = hrs.map(h => sh.reduce((a,x) => a + hrAt(x.id,h,n).pessoas, 0));
   const W = 640, H = 250, pl = 34, pr = 30, pt = 12, pb = 24, bw = (W-pl-pr)/hrs.length, mx = Math.max(...ped,1)*1.15, mp = Math.max(...pes,1)*1.3;
   const Y = v => pt + (H-pt-pb)*(1-v/mx), Yp = v => pt + (H-pt-pb)*(1-v/mp);
   let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Pedidos por hora do dia e pessoas na escala">`;
@@ -251,7 +256,7 @@ function analyze(sh, n){
 function worstMetric(r){ return KEYS.map(k => ({k, g:gap(k,r.m[k],1,r.m)})).sort((a,b) => b.g-a.g)[0]; }
 function errTop(h, n){ const t = D.errTypes.map(e => ({e, v: lastN(h.id,n).reduce((a,r) => a + r.errTipos[e.id], 0)})).sort((a,b) => b.v-a.v); const tot = t.reduce((a,x) => a + x.v, 0) || 1; return {name:t[0].e.name, pct:Math.round(t[0].v/tot*100)}; }
 function peakGap(sh){   // hora com maior carga por pessoa
-  let best = {h:0, r:0}; for(let h=10; h<24; h++){ const p = sh.reduce((a,x) => a + D.hourly[x.id][h].pedidos, 0), q = sh.reduce((a,x) => a + D.hourly[x.id][h].pessoas, 0); if(q && p/q > best.r) best = {h, r:p/q}; } return best;
+  let best = {h:0, r:0}; for(let h=10; h<24; h++){ const p = sh.reduce((a,x) => a + hrAt(x.id,h,S.period).pedidos, 0), q = sh.reduce((a,x) => a + hrAt(x.id,h,S.period).pessoas, 0); if(q && p/q > best.r) best = {h, r:p/q}; } return best;
 }
 function advice(r, n){
   const w = worstMetric(r), T = D.targets[w.k], tip = {
@@ -266,14 +271,14 @@ function advice(r, n){
 /* ---------- Manutenção dos hubs (dados reais, vêm da aba Compras → Manutenções) ---------- */
 function manData(sh, n){
   if(!window.Manut) return null;
-  const r = Manut.resumo(n); const items = sh.map(h => ({h, v:r.porHub[h.id] || 0}));
+  const wd = winDays(n), r = Manut.resumo(n, wd[0], wd[wd.length-1]); const items = sh.map(h => ({h, v:r.porHub[h.id] || 0}));
   return {r, items, tot: items.reduce((a,x) => a + x.v, 0)};
 }
 function drawMaint(sh, n){
   const host = $('#cMan'); if(!host) return;
   const d = manData(sh, n); if(!d) return;
   const avg = d.tot / Math.max(1, d.items.length);
-  $('#manSub').textContent = 'ÚLTIMOS ' + n + ' DIAS';
+  $('#manSub').textContent = S.custom ? brD(S.custom.from) + ' A ' + brD(S.custom.to) : 'ÚLTIMOS ' + n + ' DIAS';
   $('#manHint').textContent = d.tot ? d.tot + ' registro' + (d.tot>1?'s':'') + ' · ' + d.r.abertas + ' em aberto' : '';
   if(!d.tot){ host.innerHTML = '<div class="mn-empty">Nenhuma manutenção registrada neste período. Registre em Compras → Manutenções dos hubs.</div>'; $('#manRank').innerHTML = ''; return; }
   const items = d.items.map(x => ({name:x.h.short, color:x.h.color, val:x.v, st: x.v >= 3 && x.v >= avg*1.5 ? 'bad' : x.v > avg ? 'wa' : 'ok'})).sort((a,b) => b.val-a.val);
@@ -285,7 +290,7 @@ function manLine(sh, n){
   const d = manData(sh, n); if(!d || !d.tot) return '';
   const top = [...d.items].sort((a,b) => b.v-a.v)[0], pct = Math.round(top.v/d.tot*100);
   const tp = Object.entries(d.r.porTipo).sort((a,b) => b[1]-a[1])[0];
-  return `Em manutenção, <b>${top.h.short}</b> concentra <b>${top.v}</b> de ${d.tot} registros (${pct}%) nos últimos ${n} dias${tp ? `, sobretudo <b>${tp[0].toLowerCase()}</b>` : ''}${d.r.abertas ? `. Há <b class="war">${d.r.abertas} em aberto</b>` : ''}. ${pct >= 50 && d.tot >= 3 ? 'Vale uma vistoria preventiva nesse hub.' : ''}`;
+  return `Em manutenção, <b>${top.h.short}</b> concentra <b>${top.v}</b> de ${d.tot} registros (${pct}%) no período (${n} dia${n>1?'s':''})${tp ? `, sobretudo <b>${tp[0].toLowerCase()}</b>` : ''}${d.r.abertas ? `. Há <b class="war">${d.r.abertas} em aberto</b>` : ''}. ${pct >= 50 && d.tot >= 3 ? 'Vale uma vistoria preventiva nesse hub.' : ''}`;
 }
 function briefing(){
   const sh = selHubs(), n = S.period, a = analyze(sh, n), nm = sh.length > 1 ? 'dos hubs selecionados' : 'do ' + sh[0].short;

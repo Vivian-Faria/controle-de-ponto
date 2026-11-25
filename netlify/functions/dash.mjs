@@ -228,7 +228,7 @@ export async function montar() {
   const regs = await Promise.all(dias.map(async d => [d, await getJ(chaveDia(d))]));
   let n = 0; for (let i = dias.length - 1; i >= 0 && regs[i][1]?.fim; i--) n++;
   const faixa = dias.slice(dias.length - n);
-  const out = { days: faixa, byHub: {}, hourly: {}, errTypes: undefined };
+  const out = { days: faixa, byHub: {}, hourly: {}, hourlyDia: {}, errTypes: undefined };
   const R = Object.fromEntries(regs); let semEscala = 0, semHub = 0;
   for (const id of HUBS) {
     out.byHub[id] = faixa.map(d => {
@@ -239,6 +239,7 @@ export async function montar() {
       if (!pessoas && h.pedidos) semEscala++;                                           // dia sem escala lançada: fica de fora da produtividade
       return { date: d, pedidos: h.pedidos, pessoas: +pessoas.toFixed(2), cabecas: p && p.tem ? p.total : 0, horas: +horas.toFixed(2), cancel: h.cancel, erros: h.erros, errTipos: { out: 0, ...h.errTipos }, tempo: h.tN ? +(h.tSoma / h.tN).toFixed(1) : 0 };
     });
+    out.hourlyDia[id] = faixa.map(d => ({ p: Array.from({ length: 24 }, (_, hh) => R[d].hubs[id]?.horas[hh] || 0), q: Array.from({ length: 24 }, (_, hh) => +(R[d].pessoas?.[id]?.h?.[hh] || 0).toFixed(1)) }));   // por dia, para o fluxo por hora acompanhar o período escolhido
     const rec = faixa.slice(-14); const n = Math.max(1, rec.length);
     out.hourly[id] = Array.from({ length: 24 }, (_, hh) => ({ h: hh, pedidos: Math.round(rec.reduce((a, d) => a + (R[d].hubs[id]?.horas[hh] || 0), 0) / n),
       pessoas: Math.round(rec.reduce((a, d) => a + (R[d].pessoas?.[id]?.h?.[hh] || 0), 0) / n) }));
