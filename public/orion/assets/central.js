@@ -48,15 +48,16 @@ let D = null;
 const S = {period:14, end:0, custom:null, sel:new Set(), metric:'prod'};
 const KEYS = ['prod','cancel','assert','tempo','erros'];
 function agg(slices){           // slices: lista de arrays de linhas (um array por hub)
-  let ped=0, canc=0, err=0, tp=0, pph=0, ppl=0, errDia=0, tgS=0, pgS=0, prodOk=false;
+  let ped=0, canc=0, err=0, tp=0, pph=0, ppl=0, errDia=0, nSl=0, tgS=0, pgS=0, prodOk=false;
   slices.forEach(rows => {
     const n = rows.length || 1; let p=0, e=0, vp=0, vh=0, vpe=0, vn=0;
     rows.forEach(r => { p += r.pedidos; e += r.erros; canc += r.cancel; tp += r.tempo*r.pedidos; if(r.cabecas > 0){ vp += r.pedidos; vh += r.cabecas; vn++; } });   // produtividade só conta dias com escala lançada
     tgS += p * ((D.hubs.find(x => x.id === rows.hid) || {}).tempoGoal ?? D.targets.tempo.goal);
-    ped += p; err += e; if(vn){ pph += vp; ppl += vh; pgS += vh * ((D.hubs.find(x => x.id === rows.hid) || {}).prodGoal ?? D.targets.prod.goal); prodOk = true; } errDia += e / n;
+    ped += p; err += e; if(vn){ pph += vp; ppl += vh; pgS += vh * ((D.hubs.find(x => x.id === rows.hid) || {}).prodGoal ?? D.targets.prod.goal); prodOk = true; } if(rows.some(r => r.pedidos > 0)){ errDia += e / n * 7; nSl++; }          // erros por semana, por hub: média dos hubs com dados
   });
-  return {ped, prod: prodOk ? pph/(ppl||1) : null, cancel: canc/(ped||1)*100, assert: (1-err/(ped||1))*100, tempo: tp/(ped||1), erros: errDia, tg: ped ? tgS/ped : D.targets.tempo.goal, pg: ppl ? pgS/ppl : D.targets.prod.goal};
+  return {ped, prod: prodOk ? pph/(ppl||1) : null, cancel: canc/(ped||1)*100, assert: (1-err/(ped||1))*100, tempo: tp/(ped||1), erros: errDia / (nSl || 1), errTot: err, tg: ped ? tgS/ped : D.targets.tempo.goal, pg: ppl ? pgS/ppl : D.targets.prod.goal};
 }
+const errRoll = (ids, idx) => ids.reduce((a,id) => a + D.byHub[id].slice(Math.max(0, idx-6), idx+1).reduce((b,r) => b + r.erros, 0), 0) / (ids.length || 1);     // erros nos 7 dias até o dia idx (média por hub): comparável à meta semanal
 const wEnd = () => D.days.length - (S.end || 0);                    // fim da janela (0 = até hoje; >0 quando o período escolhido termina antes)
 const lastN = (id, n) => Object.assign(D.byHub[id].slice(Math.max(0, wEnd()-n), wEnd()), {hid:id});
 const winDays = n => D.days.slice(Math.max(0, wEnd()-n), wEnd());
@@ -176,10 +177,10 @@ function drawDashboard(first, quiet){
   // KPIs da rede (hubs selecionados)
   const cur = agg(sh.map(h => lastN(h.id,n))), prev = agg(sh.map(h => prevN(h.id,n)));
   const daily = KEYS.reduce((o,k) => (o[k] = [], o), {});
-  for(let i=Math.min(n,wEnd());i>=1;i--){ const m = agg(sh.map(h => [D.byHub[h.id][wEnd()-i]])); KEYS.forEach(k => daily[k].push(m[k] ?? daily[k][daily[k].length-1] ?? 0)); }
-  $('#kpis').innerHTML = KEYS.map(k => { const T = D.targets[k], mu = k==='erros' ? sh.length : 1, GL = gl(k,cur)*mu, st = status(k,cur[k],mu,cur), col = `var(--${st==='ok'?'lime':st==='wa'?'amber':'red'})`;
+  for(let i=Math.min(n,wEnd());i>=1;i--){ const m = agg(sh.map(h => [D.byHub[h.id][wEnd()-i]])); m.erros = errRoll(sh.map(h => h.id), wEnd()-i); KEYS.forEach(k => daily[k].push(m[k] ?? daily[k][daily[k].length-1] ?? 0)); }
+  $('#kpis').innerHTML = KEYS.map(k => { const T = D.targets[k], mu = 1, GL = gl(k,cur)*mu, st = status(k,cur[k],mu,cur), col = `var(--${st==='ok'?'lime':st==='wa'?'amber':'red'})`;
     const w = Math.max(8, Math.min(100, T.dir==='up' ? cur[k]/GL*100 : GL/cur[k]*100));
-    return `<div class="card kpi" style="--k:${col};--w:${w}%"><small>${T.short}</small><strong>${fmtM(k,cur[k])}<u>${T.unit}</u></strong>${deltaHTML(k,cur[k],prev[k])}${spark(daily[k],col)}<div class="meta">META ${T.dir==='up'?'≥':'≤'} ${fmtM(k,GL)} ${T.unit}${mu>1?' (rede)':''}</div></div>`; }).join('');
+    return `<div class="card kpi" style="--k:${col};--w:${w}%"><small>${T.short}</small><strong>${fmtM(k,cur[k])}<u>${T.unit}</u></strong>${deltaHTML(k,cur[k],prev[k])}${spark(daily[k],col)}<div class="meta">META ${T.dir==='up'?'≥':'≤'} ${fmtM(k,GL)} ${T.unit}${k==='erros' ? ' POR HUB · ' + cur.errTot + ' NO PERÍODO' : ''}</div></div>`; }).join('');
   // saúde por hub
   const all = hubsComDados().map(h => { const m = agg([lastN(h.id,n)]); return {h, m, sc: score(m)}; });
   const order = [...all].sort((a,b) => b.sc - a.sc);
@@ -187,7 +188,7 @@ function drawDashboard(first, quiet){
     return `<div class="card hub s-${b} ${S.sel.has(x.h.id)?'':'off'}" style="--c:${x.h.color}" data-h="${x.h.id}" title="Clique para incluir/excluir da comparação">
       <div class="t"><b><i></i>${x.h.short}</b><span class="rk">#${order.indexOf(x)+1}</span></div>
       <div class="ring"><svg viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="40"/><circle class="fg" cx="50" cy="50" r="40" style="--len:${len}"/></svg><div><strong>${x.sc}</strong><span>SAÚDE</span></div></div>
-      <div class="ml"><div data-k="ped">Pedidos totais<b>${nf(x.m.ped,0)}</b></div>${KEYS.map(k => `<div class="s-${status(k,x.m[k],1,x.m)}" data-k="${k}">${D.targets[k].label.replace('Taxa de c','C').replace(' de processamento',' proc.').replace(' por dia','/dia')}<b><span class="dot"></span>${fmtM(k,x.m[k])}${k==='cancel'||k==='assert'?'%':k==='tempo'?'′':''}</b></div>`).join('')}</div></div>`; }).join('');
+      <div class="ml"><div data-k="ped">Pedidos totais<b>${nf(x.m.ped,0)}</b></div>${KEYS.map(k => `<div class="s-${status(k,x.m[k],1,x.m)}" data-k="${k}">${D.targets[k].label.replace('Taxa de c','C').replace(' de processamento',' proc.').replace(' por semana','/sem')}<b><span class="dot"></span>${fmtM(k,x.m[k])}${k==='cancel'||k==='assert'?'%':k==='tempo'?'′':''}</b></div>`).join('')}</div></div>`; }).join('');
   $('#hubCards').insertAdjacentHTML('beforeend', D.hubs.filter(h => !temDados(h.id)).map(h => `<div class="card hub nodata-card" style="--c:${h.color}"><div class="t"><b><i></i>${h.short}</b></div><div class="nd"><strong>—</strong><span>SEM DADOS AINDA</span><p>Esta unidade ainda não tem pedidos na API.</p></div></div>`).join(''));
   $$('#hubCards .hub').forEach(c => c.onclick = () => toggleHub(c.dataset.h));
   // comparativo (abas + barras + linhas)
@@ -201,7 +202,7 @@ function drawDashboard(first, quiet){
   barH($('#cBar'), {items, goal:gSel, fmt:v => fmtM(k,v), aria:'Comparativo de '+T.label+' entre hubs'});
   const labels = winDays(n);
   lineChart($('#cLine'), {labels, goal:gSel, fmt:v => nf(v, T.dec), unit:T.unit, dirUp:T.dir==='up', aria:'Evolução diária de '+T.label,
-    series: sh.map(h => ({id:h.id, name:h.short, color:h.color, vals: lastN(h.id,n).map((_,i,arr) => agg([[arr[i]]])[k]).reduce((o,v) => (o.push(v ?? o[o.length-1] ?? 0), o), [])}))});
+    series: sh.map(h => ({id:h.id, name:h.short, color:h.color, vals: lastN(h.id,n).map((_,i,arr) => k === 'erros' ? errRoll([h.id], Math.max(0, wEnd()-n) + i) : agg([[arr[i]]])[k]).reduce((o,v) => (o.push(v ?? o[o.length-1] ?? 0), o), [])}))});
   $('#cLegend').innerHTML = sh.map(h => `<span><i style="background:${h.color}"></i>${h.short}</span>`).join('');
   // erros
   const nn = n, lbl = winDays(nn);

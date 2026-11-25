@@ -54,5 +54,5 @@ Página única da gerência: triagem do dia (indicadores de ontem, furos de esca
 - Limites do semáforo ficam em `LIM` no topo de `operacoes.js`.
 
 - Filtro de período único no topo da página (padrão, 7/14/30 dias, tudo ou de/até) vale para triagem, visitas, ações, demandas e pauta. A triagem tem botão para marcar ação, demanda ou manutenção como resolvida.
-- Meta de erros por dia: no máximo 2 (`TARGETS.erros` em `central-data.js`). Manutenções podem ser excluídas (exclusão lógica, campo `deleted`).
+- Meta de erros: no máximo 2 por semana em cada hub (`TARGETS.erros` em `central-data.js`). Manutenções podem ser excluídas (exclusão lógica, campo `deleted`).
 - O dashboard (KPIs, fluxo por hora, mapa de erros, manutenção) segue hub e período escolhidos; `/api/dash` devolve `hourlyDia` para isso.

@@ -31,7 +31,7 @@ async function getData(){
 function aggHub(h, rows){
   let p=0, e=0, c=0, tp=0, vp=0, vh=0; const n = rows.length || 1;
   rows.forEach(r => { p += r.pedidos; e += r.erros; c += r.cancel; tp += r.tempo * r.pedidos; if(r.cabecas > 0){ vp += r.pedidos; vh += r.cabecas; } });
-  return { ped:p, prod: vh ? vp/vh : null, cancel: c/(p||1)*100, assert: (1 - e/(p||1))*100, tempo: tp/(p||1), erros: e/n, dias: rows.length };
+  return { ped:p, prod: vh ? vp/vh : null, cancel: c/(p||1)*100, assert: (1 - e/(p||1))*100, tempo: tp/(p||1), erros: e/n*7, errTot:e, dias: rows.length };     // erros = por semana
 }
 function gapK(D, k, v, h){
   if(v == null) return 0;
@@ -64,7 +64,7 @@ function fichaAuto(D, hid, manual, infra){
   if(D && temDados(D, hid)){
     const m = aggHub(h, rowsN(D, hid, 7));
     KPIS.forEach(k => { const g = gapK(D, k, m[k], h), s = stat(g); r.kpi[k] = { v:m[k], s }; if(s === 'bd') r.ruins++; if(s === 'wa') r.alertas++; });
-    const nomes = { prod:'produtividade', cancel:'cancelamento', assert:'assertividade', tempo:'tempo de processamento', erros:'erros por dia' };
+    const nomes = { prod:'produtividade', cancel:'cancelamento', assert:'assertividade', tempo:'tempo de processamento', erros:'erros por semana' };
     const ruins = KPIS.filter(k => r.kpi[k].s === 'bd').map(k => nomes[k]);
     if(ruins.length) r.motivos.push(ruins.join(' e ') + ' fora da meta nos últimos 7 dias');
   } else r.motivos.push('sem dados da API para este hub');
@@ -115,12 +115,13 @@ async function buildTriagem(){
       if(!rows.length) return;
       const y = aggHub(h, rows), sem = aggHub(h, rowsN(D, h.id, 7, D.byHub[h.id].length - (D.days[D.days.length-1] === t0 ? 1 : 0)));
       const nome = h.short, quando = fil ? 'do período' : 'de ontem';
-      [['tempo','Tempo de processamento','min'], ['cancel','Cancelamentos','%'], ['erros','Erros por dia','erros'], ['prod','Produtividade','ped/pessoa']].forEach(([k, lab, un]) => {
+      [['tempo','Tempo de processamento','min'], ['cancel','Cancelamentos','%'], ['erros','Erros por semana','erros'], ['prod','Produtividade','ped/pessoa']].forEach(([k, lab, un]) => {
         if(y.ped < 10 && k !== 'erros') return;   // dia com pouquíssimos pedidos não diz nada
-        const g = gapK(D, k, y[k], h), s = stat(g); if(s === 'ok') return;
+        const yy = (k === 'erros' && !fil) ? sem : y;          // erros: meta é semanal, então no padrão olha os últimos 7 dias fechados
+        const g = gapK(D, k, yy[k], h), s = stat(g); if(s === 'ok') return;
         const sg = stat(gapK(D, k, sem[k], h)), meta = goalOf(D, k, h);
-        let txt = `${lab} ${quando}: ${fmtK(D, k, y[k])} ${un} (meta ${k === 'cancel' ? 'abaixo de ' : k === 'erros' ? 'no máximo ' : k === 'tempo' ? 'até ' : 'a partir de '}${nf(meta, k === 'prod' ? 0 : 1)})`;
-        if(k === 'erros'){ const te = topErro(D, h.id, rows); if(te) txt += `; mais comum: ${te.name.toLowerCase()} (${te.pct}%)`; }
+        let txt = `${k === 'erros' && !fil ? 'Erros nos últimos 7 dias' : lab + ' ' + quando}: ${fmtK(D, k, yy[k])} ${un} (meta ${k === 'cancel' ? 'abaixo de ' : k === 'erros' ? 'no máximo ' : k === 'tempo' ? 'até ' : 'a partir de '}${nf(meta, k === 'prod' ? 0 : 1)})`;
+        if(k === 'erros'){ const te = topErro(D, h.id, fil ? rows : rowsN(D, h.id, 7, D.byHub[h.id].length - (D.days[D.days.length-1] === t0 ? 1 : 0))); if(te) txt += `; mais comum: ${te.name.toLowerCase()} (${te.pct}%)`; }
         if(!fil && sg !== 'ok') txt += '. A média de 7 dias também está fora da meta';
         itens.push({ sev: k === 'prod' ? 'media' : (s === 'bd' ? 'alta' : 'media'), hub:nome, txt, onde:'dashboard', tag:'Indicador' });
       });
@@ -297,11 +298,11 @@ async function criaPauta(){
     const cur = aggHub(h, rowsIn(D, h.id, de, ate)), prev = aggHub(h, rowsIn(D, h.id, dePrev, atePrev));
     const cel = k => { const g = gapK(D, k, cur[k], h), s = stat(g); if(s !== 'ok') desv.push({ h:h.short, k, g, v:cur[k], meta:goalOf(D, k, h) }); const d = (prev.dias >= dias && prev[k] != null && cur[k] != null) ? cur[k] - prev[k] : null; return `<td class="k-${s}">${fmtK(D, k, cur[k])}${d != null ? `<small>${d >= 0 ? '+' : ''}${nf(d, D.targets[k].dec)}</small>` : ''}</td>`; };
     ind.push(`<tr><td>${esc(h.short)}</td>${KPIS.map(cel).join('')}</tr>`);
-    txt.push(`${h.short}: produtividade ${fmtK(D,'prod',cur.prod)}, cancelamento ${fmtK(D,'cancel',cur.cancel)}%, assertividade ${fmtK(D,'assert',cur.assert)}%, tempo ${fmtK(D,'tempo',cur.tempo)} min, erros/dia ${fmtK(D,'erros',cur.erros)}`); });
+    txt.push(`${h.short}: produtividade ${fmtK(D,'prod',cur.prod)}, cancelamento ${fmtK(D,'cancel',cur.cancel)}%, assertividade ${fmtK(D,'assert',cur.assert)}%, tempo ${fmtK(D,'tempo',cur.tempo)} min, erros/semana ${fmtK(D,'erros',cur.erros)}`); });
   desv.sort((a,b) => b.g - a.g);
-  const nm = { prod:'produtividade', cancel:'cancelamento', assert:'assertividade', tempo:'tempo de processamento', erros:'erros por dia' };
+  const nm = { prod:'produtividade', cancel:'cancelamento', assert:'assertividade', tempo:'tempo de processamento', erros:'erros por semana' };
   const top3 = desv.slice(0, 3);
-  blocos.push(`<section class="pt"><h3>1. Indicadores do período</h3><div class="pt-t"><table><thead><tr><th>Hub</th>${KPIS.map(k => `<th>${esc(D.targets[k].short)}</th>`).join('')}</tr></thead><tbody>${ind.join('')}</tbody></table></div><p class="dim">Metas: produtividade ${KPIS.length ? '25 por pessoa (Varandas) e 30 (Expedição)' : ''}, cancelamento abaixo de ${D.targets.cancel.goal}%, assertividade a partir de ${D.targets.assert.goal}%, tempo até 7 min (Varandas) e 3 min (Expedição), erros no máximo ${D.targets.erros.goal} por dia. Variação em relação ao período anterior, em pequeno.</p></section>`);
+  blocos.push(`<section class="pt"><h3>1. Indicadores do período</h3><div class="pt-t"><table><thead><tr><th>Hub</th>${KPIS.map(k => `<th>${esc(D.targets[k].short)}</th>`).join('')}</tr></thead><tbody>${ind.join('')}</tbody></table></div><p class="dim">Metas: produtividade ${KPIS.length ? '25 por pessoa (Varandas) e 30 (Expedição)' : ''}, cancelamento abaixo de ${D.targets.cancel.goal}%, assertividade a partir de ${D.targets.assert.goal}%, tempo até 7 min (Varandas) e 3 min (Expedição), erros no máximo ${D.targets.erros.goal} por semana em cada hub. Variação em relação ao período anterior, em pequeno.</p></section>`);
   txt.push('', 'DESVIOS PARA O DIRETOR');
   const desvTxt = top3.map((d, i) => `${i+1}. ${d.h}: ${nm[d.k]} em ${fmtK(D, d.k, d.v)} (meta ${nf(d.meta, d.k === 'prod' ? 0 : 1)})`);
   blocos.push(`<section class="pt"><h3>2. Três desvios para levar ao diretor</h3>${top3.length ? `<ol>${desvTxt.map(x => `<li>${esc(x.replace(/^\d\. /, ''))}</li>`).join('')}</ol>` : '<p>Nenhum indicador fora da meta no período.</p>'}</section>`);
