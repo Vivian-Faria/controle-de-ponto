@@ -492,7 +492,7 @@ function renderErros(){
     + `<p class="elnote"><b>Expedição:</b> erros abertos pelas lojas parceiras no portal da Órion. <b>Varandas:</b> pedidos cancelados por erro de montagem (item faltante, errado, trocado ou não enviado).</p>`
     + `<p class="elnote dim">${brD(d.de)} a ${brD(d.ate)}` + (d.naoContados ? ` · ${d.naoContados} registros documentados que não entram na conta (embalagem, qualidade e outros motivos)` : '') + (pend ? ` · <span class="wac">completando o diário: ${pend} dia(s) pendente(s)</span>` : cf ? (cf.confere ? ` · <span class="okc">✔ relatório de erros conferido com a API (${cf.totalDiario} de ${cf.totalApi})</span>` : ` · <span class="wac">diário com ${cf.totalDiario} de ${cf.totalApi} erros da API — atualizando</span>`) : '') + '</p>';
   const lj = Object.entries(por(nomeOrig, all)).sort((a,b) => b[1]-a[1]), mx = lj.length ? lj[0][1] : 1;
-  $('#elRank').innerHTML = '<div class="elrt">Quem mais aparece</div>' + lj.slice(0, 8).map(([n,v]) => `<div class="r" data-l="${escH(n)}" title="Filtrar"><span>${escH(n)}</span><b>${v}</b><i style="width:${Math.max(5, v/mx*100)}%"></i></div>`).join('');
+  $('#elRank').innerHTML = '<div class="elrt">Quem mais aparece</div>' + lj.slice(0, 8).map(([n,v]) => `<div class="r"><span>${escH(n)}</span><b>${v}</b><i style="width:${Math.max(5, v/mx*100)}%"></i></div>`).join('');
   const optT = '<option value="">Todos os tipos</option>' + D.errTypes.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
   const hubIds = [...new Set(all.map(r => r.hub).filter(Boolean))].sort((a,b) => hubNome(a).localeCompare(hubNome(b)));      // origem = só os hubs
   if(ER.f.loja && !hubIds.includes(ER.f.loja)) ER.f.loja = '';
