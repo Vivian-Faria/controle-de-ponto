@@ -191,7 +191,7 @@ function renderVisitaForm(){
   const hubOpt = '<option value="">Selecione o hub…</option>' + HUBS().map(h => `<option value="${h.id}" ${V.hub === h.id ? 'selected' : ''}>${esc(HUB_NOME[h.id])}</option>`).join('');
   $('#opVisitaForm').innerHTML = `
   <div class="g2"><div class="fg"><label>HUB <i>*</i></label><select class="inp" id="vHub">${hubOpt}</select></div><div class="fg"><label>DATA</label><input class="inp" id="vDia" type="date" value="${V.dia}" max="${hoje()}"></div></div>
-  <div class="op-sec"><h4>1. Observação em campo <small>só observar, sem entrar na escala</small></h4>
+  <div class="op-sec"><h4>1. Análise de campo <small>analisar a operação, sem compor a escala</small></h4>
     ${OBS.map(([k,t,q]) => `<div class="op-q"><div><b>${t}</b><span>${q}</span></div>${tri('obs', k, OKP)}</div>`).join('')}
     <div class="op-q col"><div><b>Onde trava</b><span>Marque o que mais atrapalhou</span></div><div class="op-chips" id="vTrava">${TRAVA.map(t => `<button type="button" class="chip" data-trava="${esc(t)}">${t}</button>`).join('')}</div></div>
     <div class="fg"><label>O QUE MAIS ATRAPALHA HOJE, SEGUNDO A EQUIPE</label><input class="inp" id="vAtrapalha" maxlength="240" placeholder="Uma frase com o que ouviu de quem está na linha"></div></div>
