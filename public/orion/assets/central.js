@@ -6,7 +6,7 @@ const svgNS = 'http://www.w3.org/2000/svg';
 const Dd = window.CentralData;
 
 /* ---------- navegação e menu lateral ---------- */
-const ROUTES = {dashboard:'Dashboard', compras:'Compras', ponto:'Controle de ponto', alertas:'Central de alertas', escala:'Escala', presencas:'Presenças'};
+const ROUTES = {dashboard:'Dashboard', operacoes:'Operações', compras:'Compras', ponto:'Controle de ponto', alertas:'Central de alertas', escala:'Escala', presencas:'Presenças'};
 const rendered = {};
 function go(name, push){
   if(!ROUTES[name]) name = 'dashboard';
@@ -17,6 +17,7 @@ function go(name, push){
   if(push !== false) history.replaceState(null,'','#/' + name);
   if(!rendered[name]){ rendered[name] = true; (window.CentralModules && CentralModules.render) && CentralModules.render(name); }
   if(name === 'dashboard') drawDashboard(false);
+  document.dispatchEvent(new CustomEvent('central:view', {detail:name}));
   const dm = $('#dataPill'); if(dm) dm.style.visibility = name === 'dashboard' ? 'visible' : 'hidden';
   window.scrollTo({top:0});
   if(!document.body.classList.contains('pinned')) setSb(false);
@@ -483,8 +484,8 @@ function renderErros(){
   const hubs = Object.entries(por(r => hubNome(r.hub), all)).sort((a,b) => b[1]-a[1]);
   const cf = d.conferencia, pend = (d.diasSemRegistro || []).length;
   $('#elInfo').innerHTML = `<div class="elkpi"><div><strong>${all.length}</strong><span>erros no período</span></div>` + hubs.map(([h,n]) => `<div><strong>${n}</strong><span>${escH(h)}</span></div>`).join('') + '</div>'
-    + `<p class="elnote"><b>Expedição:</b> erros abertos pelas lojas parceiras no portal da Órion. <b>Varandas:</b> pedidos cancelados por erro de montagem (item faltando, errado, trocado, não enviado ou embalagem).</p>`
-    + `<p class="elnote dim">${brD(d.de)} a ${brD(d.ate)}` + (d.naoContados ? ` · ${d.naoContados} registros documentados que não entram na conta (qualidade/transporte)` : '') + (pend ? ` · <span class="wac">completando o diário: ${pend} dia(s) pendente(s)</span>` : cf ? (cf.confere ? ` · <span class="okc">✔ relatório de erros conferido com a API (${cf.totalDiario} de ${cf.totalApi})</span>` : ` · <span class="wac">diário com ${cf.totalDiario} de ${cf.totalApi} erros da API — atualizando</span>`) : '') + '</p>';
+    + `<p class="elnote"><b>Expedição:</b> erros abertos pelas lojas parceiras no portal da Órion. <b>Varandas:</b> pedidos cancelados por erro de montagem (item faltante, errado, trocado ou não enviado).</p>`
+    + `<p class="elnote dim">${brD(d.de)} a ${brD(d.ate)}` + (d.naoContados ? ` · ${d.naoContados} registros documentados que não entram na conta (embalagem, qualidade e outros motivos)` : '') + (pend ? ` · <span class="wac">completando o diário: ${pend} dia(s) pendente(s)</span>` : cf ? (cf.confere ? ` · <span class="okc">✔ relatório de erros conferido com a API (${cf.totalDiario} de ${cf.totalApi})</span>` : ` · <span class="wac">diário com ${cf.totalDiario} de ${cf.totalApi} erros da API — atualizando</span>`) : '') + '</p>';
   const lj = Object.entries(por(nomeOrig, all)).sort((a,b) => b[1]-a[1]), mx = lj.length ? lj[0][1] : 1;
   $('#elRank').innerHTML = '<div class="elrt">Quem mais aparece</div>' + lj.slice(0, 8).map(([n,v]) => `<div class="r" data-l="${escH(n)}" title="Filtrar"><span>${escH(n)}</span><b>${v}</b><i style="width:${Math.max(5, v/mx*100)}%"></i></div>`).join('');
   $$('#elRank .r').forEach(e => e.onclick = () => { ER.f.loja = e.dataset.l; $('#elLoja').value = ER.f.loja; renderErros(); });

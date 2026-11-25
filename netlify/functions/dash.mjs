@@ -75,9 +75,9 @@ const tipoErro = e => { const c = nrm(e.comments || "");
   if (/atras|demor|motoboy|entregador/.test(c)) return "atr";
   return "out"; };                                                                           // sem descrição ou outro motivo (ex.: operação não aceitou o pedido)
 
-// Varandas: erro = pedido cancelado por falha de montagem (item faltando/errado/trocado/não enviado, embalagem). Definição da Ví.
+// Varandas: erro = pedido cancelado por item faltante, errado, não enviado ou trocado. Definição da Ví (25/11/2026): só esses; qualquer outro motivo NÃO conta.
 // Fora da regra (não contam): desistência, pagamento, cliente não encontrado, veículo, atraso, duplicado etc.
-// "qual" = qualidade/transporte (impróprio para consumo, violado, avariado, item indisponível): NÃO conta, fica registrado para a Ví decidir.
+// "emb" (embalagem) e "qual" (qualidade/transporte) ficam registrados na lista, mas NÃO contam como erro.
 const CONTA_QUALIDADE = false;
 function tipoCancel(motivo) {
   const t = nrm(String(motivo || "").replace(/\s+/g, " "));
@@ -89,7 +89,7 @@ function tipoCancel(motivo) {
   return null;
 }
 function regCancel(e, x, id, tipo) {
-  return { id: x.id, dia: e.dia, origem: "cancelamento", conta: tipo !== "qual" || CONTA_QUALIDADE, reportadoEm: x.canceled_at ?? null, reportadoPor: x.business_name ?? null, hubApi: x.hub ?? null, negocio: x.business_name ?? null, unidade: x.unit_name ?? null,
+  return { id: x.id, dia: e.dia, origem: "cancelamento", conta: tipo === "falt" || tipo === "troc", reportadoEm: x.canceled_at ?? null, reportadoPor: x.business_name ?? null, hubApi: x.hub ?? null, negocio: x.business_name ?? null, unidade: x.unit_name ?? null,
     hub: id, tipo, produto: null, troca: null, trocaAutorizada: null, perdaFinanceira: false, comentario: String(x.cancellation_reason || "").replace(/\s+/g, " ").trim(), conclusao: null, finalizadoEm: x.finished_at ?? null,
     pedidoId: x.id ?? null, pedidoRef: x.reference ?? null, pedidoTotal: x.total ?? null, pedidoCriadoEm: x.created_at ?? null, pedidoCanceladoEm: x.canceled_at ?? null };
 }
@@ -180,7 +180,7 @@ async function pessoasDoDia(dias) {
 }
 
 // ---------------------------------------------------------------- orquestração
-const LOGV = 4;                                                                            // versão do diário de erros (subir força refazer a fase de erros)
+const LOGV = 5;                                                                            // versão do diário de erros (subir força refazer a fase de erros)
 const PV = 3;                                                                              // versão da regra de contagem de pessoas
 const chaveDia = d => `v3/dia/${d}`;
 const fechado = (d, agora) => agora >= Date.parse(d + "T00:00:00Z") - TZ * HOUR + DAY + 2 * HOUR;       // 2 h depois da meia-noite local

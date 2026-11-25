@@ -77,7 +77,8 @@ function render(){
     + [[7,'7 dias'],[30,'30 dias'],[90,'90 dias'],[0,'Tudo']].map(([k,l]) => `<button class="chip ${F.dias===k?'on':''}" data-d="${k}">${l}</button>`).join('');
 
   const list = filtered();
-  $('#mnCount').textContent = list.length + ' de ' + all().length + ' registros';
+  const fora = all().filter(o => !inPeriod(o, F.dias)).length;
+  $('#mnCount').innerHTML = esc(list.length + ' de ' + all().length + ' registros') + (fora ? ` · <button type="button" class="chip" data-d="0" style="vertical-align:middle">${fora} fora do período · ver tudo</button>` : '');
   $('#mnList').innerHTML = list.length ? list.map(o => `<article class="row mn-row u-${esc(o.urgencia)} ${o.status==='resolvida'?'ok':''}" data-id="${esc(o.id)}">
       <div class="id">${esc(o.id)}</div>
       <div class="nm-col"><div class="nm">${esc(o.title)}</div>
@@ -93,7 +94,7 @@ function openDlg(o){
   $('#mTit').textContent = o ? 'Atualize o registro' : 'O que precisou de conserto?';
   $('#mOk').textContent = o ? 'Salvar alterações' : 'Registrar manutenção';
   $('#mTitle').value = o ? o.title : ''; $('#mHub').value = o ? o.hub : ''; $('#mTipo').value = o ? o.tipo : '';
-  $('#mData').value = o ? o.ocorreuEm : dayKey(new Date()); $('#mUrg').value = o ? o.urgencia : 'media';
+  $('#mData').max = dayKey(new Date()); $('#mData').value = o ? o.ocorreuEm : dayKey(new Date()); $('#mUrg').value = o ? o.urgencia : 'media';
   $('#mCusto').value = o ? o.custo : ''; $('#mDesc').value = o ? o.desc : '';
   ['mTitle','mHub','mTipo'].forEach(i => $('#'+i).classList.remove('err'));
   $('#dMan').showModal(); $('#mTitle').focus();
@@ -111,7 +112,7 @@ function init(){
       if(man) render();
       return;
     }
-    const c = e.target.closest('#mnChips .chip');
+    const c = e.target.closest('#mnChips .chip, #mnCount .chip');
     if(c){ if(c.dataset.s) F.status = c.dataset.s; if('d' in c.dataset) F.dias = +c.dataset.d; render(); return; }
     const tg = e.target.closest('[data-tog]');
     if(tg){ e.stopPropagation(); const id = tg.dataset.tog; St().update(id, o => { if(o.status === 'resolvida'){ o.status = 'aberta'; o.resolvedAt = null; } else { o.status = 'resolvida'; o.resolvedAt = new Date().toISOString(); } }); return; }
@@ -127,9 +128,22 @@ function init(){
     const d = { title:$('#mTitle').value.trim(), hub:$('#mHub').value, tipo:$('#mTipo').value, ocorreuEm:$('#mData').value, urgencia:$('#mUrg').value, custo:$('#mCusto').value.trim(), desc:$('#mDesc').value.trim() };
     $('#mTitle').classList.toggle('err', !d.title); $('#mHub').classList.toggle('err', !d.hub); $('#mTipo').classList.toggle('err', !d.tipo);
     if(!d.title || !d.hub || !d.tipo){ St().toast('Preencha o que aconteceu, o hub e o tipo', true); return; }
+    const today = dayKey(new Date());
+    if(!d.ocorreuEm){ $('#mData').classList.add('err'); St().toast('Informe a data em que aconteceu', true); return; }
+    if(d.ocorreuEm > today){ $('#mData').classList.add('err'); St().toast('A data não pode ser no futuro', true); return; }
+    $('#mData').classList.remove('err');
     if(editing){ St().update(editing, o => Object.assign(o, d)); St().toast('Manutenção atualizada'); editing = null; }
     else await St().add(d);
+    // o registro novo nunca pode sumir da lista: se ficou fora do período ou dos filtros, abre o filtro para mostrá-lo
+    let msg = '';
+    if(F.dias && d.ocorreuEm < from(F.dias)){ F.dias = 0; msg = 'Registrada com data de ' + fmtD(d.ocorreuEm) + ', fora do período filtrado: mostrando todo o período'; }
+    if(F.hub && F.hub !== d.hub){ F.hub = ''; $('#mnHub').value = ''; }
+    if(F.tipo && F.tipo !== d.tipo){ F.tipo = ''; $('#mnTipo').value = ''; }
+    if(F.status === 'resolvidas') F.status = 'todos';
+    F.q = ''; $('#mnQ').value = '';
+    if(msg) St().toast(msg);
     $('#dMan').close();
+    render();
   });
   if(St()) St().onChange(render);
   render();

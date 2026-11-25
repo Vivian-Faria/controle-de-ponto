@@ -1,0 +1,35 @@
+/* Central · Operações */
+.nbadge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--lime);color:#0a0d00;font:700 11px var(--mono);margin-left:8px}
+.nbadge[hidden]{display:none}
+#v-operacoes .seg button{display:inline-flex;align-items:center}
+#v-operacoes .op-card{padding:20px 22px}
+.op-grp{margin:18px 0 6px}.op-grp h4{font:500 11px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}.op-grp h4 span{color:var(--lime);margin-left:6px}
+.op-it{display:grid;grid-template-columns:auto 150px 1fr auto;gap:14px;align-items:center;padding:12px 16px;border:1px solid var(--line);border-radius:14px;background:var(--panel);margin-bottom:8px}
+.op-it.alta{border-color:rgba(255,82,82,.45)}.op-it.alta .op-tag{background:var(--red-d);color:var(--red)}
+.op-it p{margin:0;font-size:14px;line-height:1.5}.op-it b{font-size:13px}.op-it a{font-size:12px;color:var(--lime)}
+.op-tag{font:500 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;padding:4px 9px;border-radius:8px;background:rgba(255,255,255,.07);color:var(--muted);white-space:nowrap}
+.op-sec{border-top:1px solid var(--line);padding:16px 0 4px;margin-top:14px}.op-sec h4{margin:0 0 10px;font-size:15px}.op-sec h4 small{font-weight:400;color:var(--muted);margin-left:8px;font-size:12px}
+.op-q{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}.op-q.col{grid-template-columns:1fr}
+.op-q b{display:block;font-size:14px;font-weight:500}.op-q span{font-size:12px;color:var(--muted)}
+.op-q .tn{grid-column:1/-1;margin-top:2px}.op-q input.inp[data-aud]{min-width:0}
+.tri{display:inline-flex;border:1px solid var(--line2);border-radius:12px;overflow:hidden}
+.tri button{padding:8px 14px;font-size:13px;color:var(--muted);background:transparent;min-width:64px}
+.tri button+button{border-left:1px solid var(--line2)}
+.tri .t-ok.on{background:var(--lime);color:#0a0d00;font-weight:700}
+.tri .t-at.on{background:#e8e8e3;color:#0a0a09;font-weight:700}
+.tri .t-pr.on,.tri .t-qb.on{background:var(--red);color:#fff;font-weight:700}
+.op-chips{display:flex;flex-wrap:wrap;gap:8px}
+.op-ac{display:grid;grid-template-columns:2fr 1fr 150px auto;gap:8px;margin-bottom:8px}
+.op-prev{margin-top:12px;padding:12px 14px;border:1px dashed var(--line2);border-radius:12px;font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.op-pill{display:inline-block;padding:4px 11px;border-radius:999px;font:700 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line2)}
+.op-pill.ok{background:var(--lime);color:#0a0d00;border-color:var(--lime)}.op-pill.wa{background:#e8e8e3;color:#0a0a09}.op-pill.bd{background:var(--red);color:#fff;border-color:var(--red)}
+.op-v{grid-template-columns:90px 1fr auto 1.2fr}.op-why{font-size:12px;color:var(--muted)}
+.op-btns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.op-pbar{display:flex;gap:8px;margin:0 0 14px}
+.pt{border:1px solid var(--line);border-radius:16px;padding:18px 22px;margin-bottom:14px;background:var(--panel)}.pt h3{margin:0 0 10px;font-size:16px}
+.pt table{width:100%;border-collapse:collapse;font-size:13px}.pt th{font:500 10px var(--mono);letter-spacing:.12em;color:var(--muted);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+.pt td{padding:8px;border-bottom:1px solid var(--line)}.pt td small{display:block;font-size:11px;color:var(--muted)}
+.pt .k-ok{color:var(--lime)}.pt .k-bd{color:var(--red)}.pt .k-wa{color:#e8e8e3}
+.pt-t{overflow-x:auto}.pt-u{margin:0 0 12px}.pt-u h4{margin:0 0 4px;font-size:14px}.pt ul,.pt ol{margin:6px 0 0;padding-left:20px;font-size:14px;line-height:1.6}.pt .dim,.dim{color:var(--muted);font-size:12px}
+@media(max-width:800px){.op-it{grid-template-columns:1fr;gap:6px}.op-ac{grid-template-columns:1fr}.op-q{grid-template-columns:1fr}.op-v{grid-template-columns:1fr}}
+@media print{body.printing-pauta *{visibility:hidden}body.printing-pauta #opPautaDoc,body.printing-pauta #opPautaDoc *{visibility:visible}body.printing-pauta #opPautaDoc{position:absolute;left:0;top:0;width:100%;color:#000}body.printing-pauta .pt{background:#fff;border-color:#bbb}body.printing-pauta .pt *{color:#000!important}}

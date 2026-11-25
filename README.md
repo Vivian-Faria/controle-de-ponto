@@ -43,3 +43,12 @@ O token da API **nunca** vai para o navegador: defina no Netlify (Site settings 
 Cada dia fechado é calculado uma vez e guardado (Netlify Blobs, loja `dash`); hoje é recalculado a cada ~60 s. O histórico (60 dias) é preenchido
 aos poucos, do mais recente para o mais antigo, respeitando o limite de 60 req/min da API; a função agendada `vigia` também ajuda a manter tudo aquecido.
 Diagnóstico dos nomes de hub/unidade que a API devolve: `/api/dash/probe` (logada como admin).
+
+## Operações (`/orion/#/operacoes`)
+
+Página única da gerência: triagem do dia (indicadores de ontem, furos de escala, manutenção, ações e demandas), visita de campo com ficha de saúde (semáforo), plano de ação, demandas de CS/DP e geração de pauta (copiar ou imprimir/PDF).
+
+- Arquivos: `assets/operacoes.js`, `assets/operacoes.css`, `demandas.html` (página pública para CS e DP lançarem demandas).
+- Armazenamento: mesma coleção `compras_pedidos` do Firestore, separada pelo campo `kind` (regras do Firestore não mudam): `manutencao` (MT-), `visita` (VS-), `acao` (AC-), `demanda` (DX-). Pedidos não têm `kind`.
+- Erros das Varandas = cancelamentos por motivo faltante ou trocado (`falt`/`troc`); embalagem e qualidade não contam. Expedição = relatório de erros da API. Reprocessamento forçado por `LOGV` em `dash.mjs`.
+- Limites do semáforo ficam em `LIM` no topo de `operacoes.js`.

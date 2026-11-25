@@ -34,7 +34,7 @@ function mergeInto(list){
   const map = new Map(state.orders.map(o => [o.id, o]));
   list.forEach(o => map.set(o.id, mergeOrder(map.get(o.id), o)));
   state.orders = [...map.values()];
-  state.seq = Math.max(state.seq||0, ...state.orders.filter(o => o.kind !== 'manutencao').map(o => parseInt(o.id.slice(3))||0));
+  state.seq = Math.max(state.seq||0, ...state.orders.filter(o => !o.kind).map(o => parseInt(o.id.slice(3))||0));
 }
 
 /* ---- Firebase (Firestore) ---- */
@@ -147,7 +147,7 @@ function answer(o, text){
 function removeOrder(o){ o.deleted = true; touch(o); save(o); toast('Pedido removido'); }
 
 /* ============ RENDER ============ */
-function visibleOrders(){ return state.orders.filter(o => !o.deleted && o.kind !== 'manutencao'); }   // manutenções ficam no mesmo banco, mas só aparecem na aba própria
+function visibleOrders(){ return state.orders.filter(o => !o.deleted && !o.kind); }   // manutenções, visitas, ações e demandas ficam no mesmo banco (campo kind), mas só aparecem nas próprias telas
 
 function filtered(){
   const q = F.q.trim().toLowerCase();
@@ -416,6 +416,16 @@ window.ComprasStore = {
     state.orders.push(rec); save(rec); toast('Manutenção ' + rec.id + ' registrada'); return rec;
   },
   update(id, fn){ const o = state.orders.find(x => x.id === id && x.kind === 'manutencao'); if(!o) return; fn(o); touch(o); save(o); },
+  /* registros genéricos (visita 'VS', ação 'AC', demanda 'DM'): mesmo banco e mesma coleção, então não exige regra nova no Firestore */
+  listKind(kind){ return state.orders.filter(o => o.kind === kind && !o.deleted); },
+  async addKind(kind, prefix, d){
+    await pull();
+    const n = Math.max(0, ...state.orders.filter(o => o.kind === kind).map(o => parseInt(o.id.slice(3)) || 0)) + 1;
+    const rec = Object.assign({ id: prefix + '-' + String(n).padStart(4,'0'), kind, status:'aberta', createdAt:nowISO(), updatedAt:nowISO(), thread:[], deleted:false, awaiting:false, alert:null }, JSON.parse(JSON.stringify(d)));
+    state.orders.push(rec); save(rec); return rec;
+  },
+  updateKind(id, fn){ const o = state.orders.find(x => x.id === id && x.kind); if(!o) return; fn(o); touch(o); save(o); },
+  hoje: () => dayKey(nowISO()),
   toast(m, bad){ toast(m, bad); }
 };
 
