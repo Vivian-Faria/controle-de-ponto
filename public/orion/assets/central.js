@@ -272,7 +272,7 @@ function advice(r, n){
 /* ---------- Manutenção dos hubs (dados reais, vêm da aba Compras → Manutenções) ---------- */
 function manData(sh, n){
   if(!window.Manut) return null;
-  const wd = winDays(n), r = Manut.resumo(n, wd[0], wd[wd.length-1]); const items = sh.map(h => ({h, v:r.porHub[h.id] || 0}));
+  const wd = winDays(n), r = Manut.resumo(n, wd[0], wd[wd.length-1], sh.map(h => h.id)); const items = sh.map(h => ({h, v:r.porHub[h.id] || 0}));
   return {r, items, tot: items.reduce((a,x) => a + x.v, 0)};
 }
 function drawMaint(sh, n){
@@ -296,7 +296,7 @@ function manLine(sh, n){
 function briefing(){
   const sh = selHubs(), n = S.period, a = analyze(sh, n), nm = sh.length > 1 ? 'dos hubs selecionados' : 'do ' + sh[0].short;
   const L = []; const dN = (a.net.prod - a.netP.prod)/(a.netP.prod||1)*100;
-  L.push(`<p>Panorama do ${perTxt(n)} ${nm}: saúde operacional <b class="${cls(band(a.netScore))}">${a.netScore}/100</b>. A produtividade está em <b>${nf(a.net.prod,1)}</b> pedidos por pessoa ao dia (${dN>=0?'+':''}${nf(dN,1)}% vs. período anterior) e o tempo médio de processamento é <b>${nf(a.net.tempo,1)} min</b>.</p>`);
+  L.push(`<p>Panorama ${S.custom ? 'do' : 'dos'} ${perTxt(n)} ${nm}: saúde operacional <b class="${cls(band(a.netScore))}">${a.netScore}/100</b>. A produtividade está em <b>${nf(a.net.prod,1)}</b> pedidos por pessoa ao dia (${dN>=0?'+':''}${nf(dN,1)}% vs. período anterior) e o tempo médio de processamento é <b>${nf(a.net.tempo,1)} min</b>.</p>`);
   const items = [];
   if(sh.length > 1){
     items.push(`<b>${a.best.h.short}</b> lidera com índice ${a.best.sc}. <b class="${cls(band(a.worst.sc))}">${a.worst.h.short}</b> é o ponto mais frágil (${a.worst.sc}).`);
@@ -393,7 +393,7 @@ function agendaRefresh(){
   const m = (D && D.meta) || {}, rapido = m.pendente || (m.live === false && m.reason === 'carregando');
   refT = setTimeout(() => {
     if(document.hidden || $('#v-dashboard').hidden){ agendaRefresh(); return; }
-    Dd.load().then(nd => { const mudou = sigD(nd) !== lastSig; D = nd; if(!S.sel.size) D.hubs.forEach(h => S.sel.add(h.id)); setPill(nd.meta); if(mudou){ lastSig = sigD(nd); drawDashboard(false, true); } agendaRefresh(); });
+    Dd.load().then(nd => { const mudou = sigD(nd) !== lastSig; D = nd; if(S.custom){ const a = D.days.indexOf(S.custom.from), b = D.days.indexOf(S.custom.to); if(a >= 0 && b >= 0){ S.period = b - a + 1; S.end = D.days.length - 1 - b; } } if(!S.sel.size) D.hubs.forEach(h => S.sel.add(h.id)); setPill(nd.meta); if(mudou){ lastSig = sigD(nd); drawDashboard(false, true); } agendaRefresh(); });
   }, rapido ? 12000 : 60000);
 }
 
@@ -465,6 +465,7 @@ function drawErros(force){
   if(!force && key === ER.key){ renderErros(); return; }
   ER.key = key; clearTimeout(ER.t);
   fetch('/api/dash/erros?conferir=1&de=' + de + '&ate=' + ate, {credentials:'same-origin'}).then(r => r.ok ? r.json() : Promise.reject()).then(j => {
+    if(ER.key !== key) return;          // resposta de um filtro antigo: ignora
     ER.data = j; renderErros();
     if(j.diasSemRegistro && j.diasSemRegistro.length) ER.t = setTimeout(() => drawErros(true), 25000);       // diário ainda sendo completado
   }).catch(() => { $('#elInfo').textContent = 'Não foi possível carregar o registro de erros agora.'; });

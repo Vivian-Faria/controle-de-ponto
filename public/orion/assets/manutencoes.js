@@ -22,9 +22,9 @@ const inPeriod = (o, dias) => !dias || (o.ocorreuEm || '') >= from(dias);
 window.Manut = {
   tipos: TIPOS, hubId: n => HUBID[n] || '',
   /** { total, abertas, porHub:{sion:n,...}, porTipo:{tipo:n}, urgentes } nos últimos `dias` */
-  resumo(dias, de, ate){      // com de/ate (AAAA-MM-DD) usa exatamente a janela escolhida no dashboard
+  resumo(dias, de, ate, ids){      // com de/ate (AAAA-MM-DD) usa exatamente a janela escolhida no dashboard
     const r = { total:0, abertas:0, urgentes:0, porHub:{}, porTipo:{}, custo:0 };
-    all().filter(o => de ? ((o.ocorreuEm || '') >= de && (o.ocorreuEm || '') <= (ate || '9999')) : inPeriod(o, dias)).forEach(o => {
+    all().filter(o => (de ? ((o.ocorreuEm || '') >= de && (o.ocorreuEm || '') <= (ate || '9999')) : inPeriod(o, dias)) && (!ids || ids.includes(HUBID[o.hub]))).forEach(o => {      // ids: só os hubs selecionados no dashboard
       r.total++; if(o.status !== 'resolvida') r.abertas++; if(o.urgencia === 'alta') r.urgentes++;
       const h = HUBID[o.hub]; if(h) r.porHub[h] = (r.porHub[h] || 0) + 1;
       r.porTipo[o.tipo] = (r.porTipo[o.tipo] || 0) + 1;
