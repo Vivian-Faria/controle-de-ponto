@@ -454,7 +454,7 @@ const dtBR = iso => iso ? iso.slice(8,10) + '/' + iso.slice(5,7) + ' ' + iso.sli
 function errosFiltrados(){
   const d = ER.data; if(!d) return [];
   const q = ER.f.q.trim().toLowerCase();
-  return d.registros.filter(r => (!r.hub || S.sel.has(r.hub)) && (!ER.f.tipo || r.tipo === ER.f.tipo) && (!ER.f.loja || r.reportadoPor === ER.f.loja)
+  return d.registros.filter(r => (!r.hub || S.sel.has(r.hub)) && (!ER.f.tipo || r.tipo === ER.f.tipo) && (!ER.f.loja || r.hub === ER.f.loja)
     && (!q || [r.reportadoPor, r.produto, r.troca, r.comentario, r.pedidoRef, r.unidade].join(' ').toLowerCase().includes(q)));
 }
 function drawErros(force){
@@ -493,13 +493,14 @@ function renderErros(){
     + `<p class="elnote dim">${brD(d.de)} a ${brD(d.ate)}` + (d.naoContados ? ` · ${d.naoContados} registros documentados que não entram na conta (embalagem, qualidade e outros motivos)` : '') + (pend ? ` · <span class="wac">completando o diário: ${pend} dia(s) pendente(s)</span>` : cf ? (cf.confere ? ` · <span class="okc">✔ relatório de erros conferido com a API (${cf.totalDiario} de ${cf.totalApi})</span>` : ` · <span class="wac">diário com ${cf.totalDiario} de ${cf.totalApi} erros da API — atualizando</span>`) : '') + '</p>';
   const lj = Object.entries(por(nomeOrig, all)).sort((a,b) => b[1]-a[1]), mx = lj.length ? lj[0][1] : 1;
   $('#elRank').innerHTML = '<div class="elrt">Quem mais aparece</div>' + lj.slice(0, 8).map(([n,v]) => `<div class="r" data-l="${escH(n)}" title="Filtrar"><span>${escH(n)}</span><b>${v}</b><i style="width:${Math.max(5, v/mx*100)}%"></i></div>`).join('');
-  $$('#elRank .r').forEach(e => e.onclick = () => { ER.f.loja = e.dataset.l; $('#elLoja').value = ER.f.loja; renderErros(); });
   const optT = '<option value="">Todos os tipos</option>' + D.errTypes.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
-  const optL = '<option value="">Todas as origens</option>' + lj.map(([n]) => `<option>${escH(n)}</option>`).join('');
-  const sT = $('#elTipo'), sL = $('#elLoja'); if(sT.options.length !== D.errTypes.length + 1) sT.innerHTML = optT; if(sL.dataset.n !== String(lj.length)){ sL.innerHTML = optL; sL.dataset.n = lj.length; }
+  const hubIds = [...new Set(all.map(r => r.hub).filter(Boolean))].sort((a,b) => hubNome(a).localeCompare(hubNome(b)));      // origem = só os hubs
+  if(ER.f.loja && !hubIds.includes(ER.f.loja)) ER.f.loja = '';
+  const optL = '<option value="">Todos os hubs</option>' + hubIds.map(id => `<option value="${id}">${escH(hubNome(id))}</option>`).join('');
+  const sT = $('#elTipo'), sL = $('#elLoja'); if(sT.options.length !== D.errTypes.length + 1) sT.innerHTML = optT; if(sL.dataset.n !== hubIds.join(',')){ sL.innerHTML = optL; sL.dataset.n = hubIds.join(','); }
   sT.value = ER.f.tipo; sL.value = ER.f.loja; ddSync(sT); ddSync(sL);
   const tn = Object.fromEntries(D.errTypes.map(t => [t.id, t]));
-  const lista = rows.filter(r => !ER.f.loja || nomeOrig(r) === ER.f.loja);
+  const lista = rows;
   $('#elBody').innerHTML = lista.slice(0, 300).map(r => { const t = tn[r.tipo] || {name:r.tipo, color:'#888'}, canc = r.origem === 'cancelamento', hc = (D.hubs.find(h => h.id === r.hub) || {}).color || '#888';
     const txt = canc ? (MOT[r.comentario] || limpaMotivo(r.comentario) || 'Sem descrição') : (r.comentario || 'Sem descrição');
     return `<div class="erow">
@@ -516,7 +517,7 @@ document.addEventListener('DOMContentLoaded', () => {
   on('#elLoja', 'change', e => { ER.f.loja = e.target.value; renderErros(); });
   on('#elQ', 'input', e => { ER.f.q = e.target.value; renderErros(); });
   on('#elCsv', 'click', () => {
-    const rows = errosFiltrados().filter(r => !ER.f.loja || (r.origem === 'cancelamento' ? hubNome(r.hub) : r.reportadoPor) === ER.f.loja), cols = ['dia','reportadoEm','reportadoPor','negocio','unidade','hubApi','hub','tipo','produto','troca','trocaAutorizada','perdaFinanceira','comentario','conclusao','finalizadoEm','pedidoRef','pedidoId','pedidoTotal','pedidoCriadoEm','pedidoCanceladoEm','id'];
+    const rows = errosFiltrados(), cols = ['dia','reportadoEm','reportadoPor','negocio','unidade','hubApi','hub','tipo','produto','troca','trocaAutorizada','perdaFinanceira','comentario','conclusao','finalizadoEm','pedidoRef','pedidoId','pedidoTotal','pedidoCriadoEm','pedidoCanceladoEm','id'];
     const q = v => '"' + String(v ?? '').replace(/"/g, '""').replace(/\r?\n/g, ' ') + '"';
     const csv = '﻿' + cols.join(';') + '\n' + rows.map(r => cols.map(c => q(r[c])).join(';')).join('\n');
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'})); a.download = 'erros-orion-' + (ER.data ? ER.data.de + '_a_' + ER.data.ate : 'periodo') + '.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
