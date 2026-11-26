@@ -710,6 +710,22 @@ export async function rotaAlerta(req, path, ctx) {
     evento(f, "confirmou", `${por} corrigiu: ${f.nome || "a pessoa da vaga"} trabalhou neste turno${antes ? ` (o ponto de ${antes} não era a cobertura desta vaga)` : ""}.`, por); await putJ(`furo/${dia}/${id}`, f);
     return json({ ok: true, antes, estado: f.estado });
   }
+  // correção da gestão: o substituto (ponto fora da escala) foi atribuído à vaga errada quando duas vagas da mesma unidade faltaram; passa para a vaga certa
+  if (path === "/api/alerta/furo-reatribuir" && req.method === "POST") {
+    const b = await req.json().catch(() => ({})), dia = String(b.d || ""), de = String(b.de || ""), para = String(b.para || "");
+    if (!/^\d{4}-\d\d-\d\d$/.test(dia) || !de || !para || de === para) return erro("Dados inválidos.");
+    const [fa, fb] = await Promise.all([getJ(`furo/${dia}/${de}`), getJ(`furo/${dia}/${para}`)]);
+    if (!fa || !fb) return erro("Furo não encontrado.", 404);
+    if (!fa.substituto) return erro("A vaga de origem não tem substituto.");
+    if (fb.substituto) return erro("A vaga de destino já tem substituto.");
+    const sub = fa.substituto, agora = Date.now(), por = String(b.por || "Gestão").slice(0, 40);
+    delete fa.substituto; fa.semSubAuto = true; fa.estado = "aberto"; delete fa.resolvidoEm; delete fa.resolvidoVia; fa.aCaminho = false;
+    evento(fa, "reatribuido", `${por} corrigiu: ${sub.nome} não cobre esta vaga (foi para ${fb.hubNome} · ${fb.turno}). Vaga volta a ficar sem cobertura.`, por);
+    fb.substituto = { nome: sub.nome, ponto: !!sub.ponto, manual: true, informadoEm: agora }; fb.estado = "resolvido"; fb.resolvidoEm = agora; fb.resolvidoVia = "ponto"; fb.aCaminho = false;
+    evento(fb, "reatribuido", `${por} informou que ${sub.nome} cobre esta vaga${fb.nome ? " de " + fb.nome : ""} (ponto batido na unidade).`, por);
+    await putJ(`furo/${dia}/${de}`, fa); await putJ(`furo/${dia}/${para}`, fb);
+    return json({ ok: true });
+  }
   if (path === "/api/alerta/painel" && req.method === "GET") {
     const dia = /^\d{4}-\d\d-\d\d$/.test(q.get("d") || "") ? q.get("d") : isoOf(Date.now());
     const [resumo, furos, out] = await Promise.all([getJ(`dia/${dia}`), listar(`furo/${dia}/`), listar(`out/${dia}/`)]);

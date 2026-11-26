@@ -81,7 +81,7 @@ async function load(){
 
   // furos
   $('nf').textContent=j.furos.length;
-  $('furosl').innerHTML=j.furos.length?j.furos.map(f=>`<div class="furo-it f-${f.estado}"><div><b>${esc(f.hub)} · ${esc(f.turno)} <span class="mono" style="color:var(--mut);font-weight:500">${esc(f.inicio)}</span></b><span class="mut">${f.vazia?'Vaga sem ninguém escalado':esc(f.nome)}${f.substituto?` → coberto por ${esc(f.substituto)}`:''}</span></div><span class="chip ${f.estado}">${ST[f.estado]||esc(f.estado)}</span></div>`).join(''):'<div class="vazio"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" stroke="#baff1a" stroke-width="1.5"/><path d="M6 10.5l2.7 2.7L14 7.5" stroke="#baff1a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Nenhum furo neste dia.</div>';
+  $('furosl').innerHTML=j.furos.length?j.furos.map(f=>`<div class="furo-it f-${f.estado}"><div><b>${esc(f.hub)} · ${esc(f.turno)} <span class="mono" style="color:var(--mut);font-weight:500">${esc(f.inicio)}</span></b><span class="mut">${f.vazia?'Vaga sem ninguém escalado':esc(f.nome)}${f.substituto?` → coberto por ${esc(f.substituto)}`:''}</span>${f.substituto?`<button class="btn-sm" data-reat="${esc(f.id)}" title="O ponto de ${esc(f.substituto)} foi atribuído à vaga errada" style="margin-top:6px;font-size:11px">Não é esta vaga</button>`:''}</div><span class="chip ${f.estado}">${ST[f.estado]||esc(f.estado)}</span></div>`).join(''):'<div class="vazio"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" stroke="#baff1a" stroke-width="1.5"/><path d="M6 10.5l2.7 2.7L14 7.5" stroke="#baff1a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Nenhum furo neste dia.</div>';
   atividade();
 }
 
@@ -129,3 +129,16 @@ $('dia').onchange=load;load();loadCfg().catch(e=>$('cfg').textContent=e.message)
     Object.assign(M[NAME], {anima:typeof anima==='function'?anima:undefined,atividade:typeof atividade==='function'?atividade:undefined,get:typeof get==='function'?get:undefined,info:typeof info==='function'?info:undefined,load:typeof load==='function'?load:undefined,loadCfg:typeof loadCfg==='function'?loadCfg:undefined,toast:typeof toast==='function'?toast:undefined});
   })(docP, locP, histP);
 })();
+
+document.addEventListener('click',async ev=>{
+  const b=ev.target.closest&&ev.target.closest('[data-reat]');if(!b||!J)return;
+  const de=b.dataset.reat,fs=J.furos,o=fs.find(f=>f.id===de);if(!o)return;
+  const alvos=fs.filter(f=>f.id!==de&&!f.substituto&&f.estado!=='resolvido');
+  if(!alvos.length){alert('Não há outra vaga em aberto neste dia para receber '+o.substituto+'.');return}
+  const op=alvos.map((f,i)=>`${i+1}) ${f.hub} · ${f.turno} ${f.inicio} — ${f.vazia?'vaga sem ninguém':f.nome}`).join('\n');
+  const n=parseInt(prompt(`${o.substituto} cobre qual vaga?\n\n${op}\n\nDigite o número:`),10);
+  const t=alvos[n-1];if(!t)return;
+  const r=await fetch('/api/alerta/furo-reatribuir',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({d:J.dia,de,para:t.id})});
+  const j=await r.json().catch(()=>({}));if(!r.ok){alert(j.error||'Não foi possível corrigir.');return}
+  if(typeof load==='function')load();else location.reload();
+});
