@@ -1,6 +1,8 @@
 // Central de alertas de furo de escala: cruza a escala (Firebase do app "escala-operacional") com quem bateu o ponto (Tangerino + freelancers),
 // avisa o líder do hub, registra toda a linha do tempo e manda o relatório diário. Usado por api.mjs (rotas) e vigia.mjs (agendado, a cada 5 min).
-import { getStore } from "@netlify/blobs";
+import { getStore } from "./_store.mjs";
+import { temBanco } from "./_pg.mjs";
+import { lerEscalaDB } from "./fsdb.mjs";
 
 const TZ = parseFloat((process.env.TZ_OFFSET_HOURS ?? "-3").toString()), HOUR = 3600000, DAY = 86400000;
 const ESCALA_SITE = process.env.ESCALA_SITE || "https://escala-operacional-orion.netlify.app";
@@ -46,6 +48,7 @@ async function firebaseCfg() {
 const fsVal = x => { const [k, v] = Object.entries(x)[0]; if (k === "arrayValue") return (v.values || []).map(fsVal); if (k === "mapValue") return Object.fromEntries(Object.entries(v.fields || {}).map(([a, b]) => [a, fsVal(b)])); if (k === "integerValue") return +v; if (k === "nullValue") return null; return v; };
 const fsDoc = d => Object.fromEntries(Object.entries(d.fields || {}).map(([a, b]) => [a, fsVal(b)]));
 export async function lerEscala(datas) {
+  if (temBanco()) return lerEscalaDB(datas);      // escala guardada no próprio Postgres
   const f = await firebaseCfg(), base = `https://firestore.googleapis.com/v1/projects/${f.projectId}/databases/(default)/documents`;
   const [c, q] = await Promise.all([
     fetch(`${base}/config/principal?key=${f.apiKey}`, { signal: AbortSignal.timeout(9000) }).then(r => r.json()),
@@ -613,10 +616,13 @@ export async function rotaAlerta(req, path, ctx) {
     const CORS = { "Access-Control-Allow-Origin": "https://escala-operacional-orion.netlify.app", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type", Vary: "Origin" };
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     if (req.method !== "POST") return json({ error: "Método inválido." }, 405, CORS);
-    const b = await req.json().catch(() => ({})), f = await firebaseCfg();
+    const b = await req.json().catch(() => ({}));
+    if (!ctx.isEscala?.(req)) {
+    const f = await firebaseCfg();
     const u = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${f.apiKey}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken: String(b.idToken || "") }), signal: AbortSignal.timeout(8000) }).then(r => r.json()).catch(() => null);
     const email = String(u?.users?.[0]?.email || "").toLowerCase();
     if (!email || !f.adminEmail || email !== f.adminEmail.toLowerCase()) return json({ error: "Acesso negado: entre como administrador." }, 403, CORS);
+    }
     const esc = await lerEscala([isoOf(Date.now())]), hubs = {};
     for (const h of esc.cfg.hubs) hubs[h.id] = Object.values((await getJ(`tel/${h.id}`)) || {}).map(x => ({ nome: x.nome, tel: x.tel || "", semTel: !!x.semTel, motivo: x.motivo || "" }));
     return json({ ok: true, hubs }, 200, CORS);

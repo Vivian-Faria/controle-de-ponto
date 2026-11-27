@@ -26,7 +26,7 @@ let original = '';     // último estado salvo (para saber se há alterações)
 let usuarioAtual = null;
 let aba = 'hubs';
 // ---------- telefones dos colaboradores (a central de alertas lê daqui os números para os avisos) ----------
-const CENTRAL = 'https://controle-de-ponto-solides.netlify.app';
+const CENTRAL = location.origin;
 const telNacional = (v) => { let d = String(v || '').replace(/\D/g, ''); if (d.startsWith('55') && d.length > 11) d = d.slice(2); return d; };
 const telValido = (v) => { const d = telNacional(v); return d.length === 10 || d.length === 11; };
 const mascaraTel = (v) => {
@@ -487,7 +487,7 @@ async function importarTelefones() {
   try {
     const idToken = await tokenAdmin();
     if (!idToken) throw new Error('sem login');
-    const r = await fetch(`${CENTRAL}/api/alerta/tel-export`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken }) });
+    const r = await fetch(`${CENTRAL}/api/alerta/tel-export`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || `Erro ${r.status}`);
     let preenchidos = 0, criados = 0;

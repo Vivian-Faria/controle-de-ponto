@@ -1,5 +1,5 @@
 // Ponto eletrônico dos freelancers + fila de envio ao DP. Módulo usado por api.mjs.
-import { getStore } from "@netlify/blobs";
+import { getStore } from "./_store.mjs";
 import crypto from "node:crypto";
 
 export const UNIDADES = ["Buritis", "Sion", "Cidade Nova", "Castelo", "Expedição Sion"];

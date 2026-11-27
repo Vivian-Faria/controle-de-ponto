@@ -1,7 +1,11 @@
 // Painel de Ponto — API (Netlify Function v2). Port do server.py.
-import { getStore } from "@netlify/blobs";
+import { getStore } from "./_store.mjs";
 import crypto from "node:crypto";
-import HIST from "./historico.json";
+import HIST from "./historico.json" with { type: "json" };
+import { rotaFs } from "./fsdb.mjs";
+import { rotaMigracao } from "./migracao.mjs";
+import { temBanco } from "./_pg.mjs";
+import fs from "node:fs";
 import { rotaFreela, entradasFreela } from "./freela.mjs";
 import { rotaAlerta } from "./alerta.mjs";
 import { rotaDash } from "./dash.mjs";
@@ -318,6 +322,25 @@ function validFreela(req) {
 }
 const safeEq = (a, b) => { const x = crypto.createHash("sha256").update(a).digest(), y = crypto.createHash("sha256").update(b).digest(); return crypto.timingSafeEqual(x, y); };
 let fails = 0, failWindow = 0;
+
+// login do administrador da escala (substitui o Firebase Auth no navegador): senha em ESCALA_SENHA, ou a mesma do Firebase da escala
+const makeEscala = () => { const exp = Date.now() + 12 * HOUR; return `${exp}.${sign("escala:" + exp)}`; };
+export function validEscala(req) {
+  const m = /(?:^|;\s*)escala_session=([^;]+)/.exec(req.headers.get("cookie") || ""); if (!m) return false;
+  const [exp, sig] = m[1].split("."); if (!exp || !sig || Number(exp) < Date.now()) return false;
+  const a = Buffer.from(sig), b = Buffer.from(sign("escala:" + exp)); return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+const ADMIN_ESCALA = env("ESCALA_ADMIN_EMAIL", "vivian@orioncloudkitchens.com.br");
+async function senhaEscalaOk(senha) {
+  if (!senha) return false;
+  if (env("ESCALA_SENHA")) return safeEq(senha, env("ESCALA_SENHA"));
+  try {      // sem ESCALA_SENHA: confere no Firebase Auth da escala (mesma senha de sempre)
+    const cfg = fs.readFileSync(new URL("../../public/escala/firebase-config.js", import.meta.url), "utf8"), key = /apiKey\s*:\s*"([^"]+)"/.exec(cfg)?.[1];
+    const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${key}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: ADMIN_ESCALA, password: senha, returnSecureToken: false }), signal: AbortSignal.timeout(8000) });
+    return r.ok;
+  } catch { return false; }
+}
+let escFails = 0, escWindow = 0;
 let opsFails = 0, opsWindow = 0;
 const OPS_PIN_HASH = "b653390f75b5f76fb7b5da927e6cb08639729456c631c1a297f8488a0e0d744d";   // hash (scrypt) do PIN de Operações; pode ser trocado pela variável OPS_PIN_HASH no Netlify
 function validOps(req) {
@@ -343,7 +366,7 @@ export default async (req) => {
     if (path === "/api/logout") return json({ ok: true }, 200, { "Set-Cookie": "ponto_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0" });
     if (path.startsWith("/api/freela")) return await rotaFreela(req, path, { json, secret: SECRET, isAdmin: validSession, isFreela: validFreela,
       freelaCookie: () => `freela_session=${makeFreela()}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${14 * 3600}` });
-    if (path.startsWith("/api/alerta")) return await rotaAlerta(req, path, { json, isAdmin: validSession, sign, presencas: presencasDoDia });
+    if (path.startsWith("/api/alerta")) return await rotaAlerta(req, path, { json, isAdmin: validSession, isEscala: validEscala, sign, presencas: presencasDoDia });
     // PIN da área de Operações (exclusivo da gerência): sessão própria, além do login geral
     if (path === "/api/ops/status") return json({ ok: validSession(req) && validOps(req) });
     if (path === "/api/ops/pin" && req.method === "POST") {
@@ -357,6 +380,18 @@ export default async (req) => {
       return json({ ok: true }, 200, { "Set-Cookie": `ops_session=${exp}.${sign("ops:" + exp)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${12 * 3600}` });
     }
     if (path === "/api/ops/sair") return json({ ok: true }, 200, { "Set-Cookie": "ops_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0" });
+    // escala: login do administrador e banco de documentos
+    if (path === "/api/escala/status") return json({ ok: validEscala(req) || validSession(req), email: ADMIN_ESCALA });
+    if (path === "/api/escala/login" && req.method === "POST") {
+      if (Date.now() - escWindow > 600000) { escFails = 0; escWindow = Date.now(); }
+      if (escFails >= 8) return json({ error: "Muitas tentativas. Aguarde alguns minutos." }, 429);
+      const body = await req.json().catch(() => ({}));
+      if (!(await senhaEscalaOk(String(body.senha || "")))) { escFails++; await new Promise(r => setTimeout(r, 800)); return json({ error: "Senha incorreta." }, 401); }
+      return json({ ok: true, email: ADMIN_ESCALA }, 200, { "Set-Cookie": `escala_session=${makeEscala()}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${12 * 3600}` });
+    }
+    if (path === "/api/escala/sair") return json({ ok: true }, 200, { "Set-Cookie": "escala_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0" });
+    if (path.startsWith("/api/migracao/")) return await rotaMigracao(req, path, { json });
+    if (path.startsWith("/api/fs/")) { if (!temBanco()) return json({ error: "Banco de documentos indisponível neste ambiente." }, 503); return await rotaFs(req, path, { json, admin: r => validEscala(r) || validSession(r) }); }
     if (path.startsWith("/api/dash")) return await rotaDash(req, path, { json, isAdmin: validSession });
     if (!validSession(req)) return json({ error: "Não autorizado" }, 401);
 

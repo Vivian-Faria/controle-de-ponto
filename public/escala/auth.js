@@ -1,14 +1,24 @@
-// Login do administrador (página de Cadastros).
-import {
-  getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut
-} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { obterApp } from './db.js';
+// Login do administrador (página de Cadastros e Escala). A sessão fica no servidor da Central (cookie), sem Firebase Auth no navegador.
 import { ADMIN_EMAIL } from './firebase-config.js';
 
-let auth;
-const obterAuth = () => (auth ??= getAuth(obterApp()));
+let usuario = null;
+const ouvintes = new Set();
+const avisa = () => ouvintes.forEach((cb) => cb(usuario));
+const lerStatus = async () => {
+  try { const j = await (await fetch('/api/escala/status', { credentials: 'same-origin', cache: 'no-store' })).json(); usuario = j.ok ? { email: j.email || ADMIN_EMAIL } : null; }
+  catch { usuario = null; }
+};
 
-export const entrar = (senha) => signInWithEmailAndPassword(obterAuth(), ADMIN_EMAIL, senha);
-export const sair = () => signOut(obterAuth());
-export const tokenAdmin = () => obterAuth().currentUser?.getIdToken();
-export const aoMudarLogin = (cb) => onAuthStateChanged(obterAuth(), cb);
+export async function entrar(senha) {
+  const r = await fetch('/api/escala/login', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ senha }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(j.error || 'Senha incorreta.'); e.code = 'auth/invalid-credential'; throw e; }
+  usuario = { email: j.email || ADMIN_EMAIL }; avisa();
+}
+export async function sair() { await fetch('/api/escala/sair', { credentials: 'same-origin' }).catch(() => {}); usuario = null; avisa(); }
+export const tokenAdmin = async () => (usuario ? 'sessao' : null);
+export function aoMudarLogin(cb) {
+  ouvintes.add(cb);
+  lerStatus().then(() => cb(usuario));
+  return () => ouvintes.delete(cb);
+}

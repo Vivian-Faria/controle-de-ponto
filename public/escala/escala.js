@@ -27,7 +27,7 @@ const el = {
 const mostrarStatus = criarStatus($('#status'));
 
 // ---- telefones dos colaboradores (a central de alertas guarda os números; aqui só se pergunta quem ainda está sem) ----
-const CENTRAL = 'https://controle-de-ponto-solides.netlify.app';
+const CENTRAL = location.origin;
 const MSG_CADASTRO = 'Cadastre o telefone pelo link de equipe que a central enviou no seu WhatsApp (se perdeu, peça à gestão). Quem não tem celular: marque "Sem celular" naquela página.';
 const cadCache = { chave: '', faltam: [] };
 // devolve a lista de nomes sem telefone, ou null se a central não respondeu (nesse caso nada é bloqueado)

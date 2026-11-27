@@ -1,11 +1,11 @@
 // Acesso ao Firestore. Lugares que guardam tudo:
 //   config/principal             → hubs, turnos (com vagas), supervisores, colaboradores, datas especiais
 //   escalas/{hubId}_{AAAA-MM-DD} → quem está em cada vaga (fixo ou freelancer), folgas e faltas do dia
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
   getFirestore, doc, getDoc, getDocs, setDoc, deleteDoc, onSnapshot, collection, query, where, serverTimestamp,
   arrayUnion, arrayRemove, writeBatch
-} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+  , initializeApp
+} from '/shared/fs-modular.js';
 import { firebaseConfig } from './firebase-config.js';
 
 let app;

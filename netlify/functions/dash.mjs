@@ -2,7 +2,7 @@
 // O token NUNCA vai para o navegador: fica na variável de ambiente ORION_ADMIN_TOKEN.
 // Estratégia: cada dia fechado é agregado uma vez e guardado (Netlify Blobs); hoje é recalculado a cada ~60 s.
 // A API limita 60 req/min e janelas de 31 dias, então o histórico é preenchido aos poucos (mais recente primeiro).
-import { getStore } from "@netlify/blobs";
+import { getStore } from "./_store.mjs";
 import { lerEscala, isoOf } from "./alerta.mjs";
 
 const TZ = parseFloat((process.env.TZ_OFFSET_HOURS ?? "-3").toString()), HOUR = 3600000, DAY = 86400000;

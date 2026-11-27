@@ -4,6 +4,14 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@netlify/blobs": "^8.1.0"
+    "@netlify/blobs": "^8.1.0",
+    "pg": "^8.13.0"
+  },
+  "scripts": {
+    "start": "node server/index.mjs",
+    "migrar": "node scripts/migrar.mjs"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
