@@ -22,7 +22,7 @@
   const TARGETS = {
     prod:   {label:'Produtividade',        unit:'ped/pessoa/dia', dir:'up',   goal:30, dec:1, short:'PRODUTIVIDADE', def:'Pedidos totais do dia ÷ pessoas escaladas no dia'},
     cancel: {label:'Taxa de cancelamento', unit:'%',            dir:'down', goal:1.0, dec:1, short:'CANCELAMENTO',  def:'Cancelamentos ÷ pedidos totais'},
-    assert: {label:'Assertividade',        unit:'%',            dir:'up',   goal:98.0,dec:1, short:'ASSERTIVIDADE', def:'1 − erros ÷ pedidos totais (Expedição: erros reportados pelas lojas; Varandas: cancelados por erro de montagem)'},
+    assert: {label:'Assertividade',        unit:'%',            dir:'up',   goal:98.0,dec:1, short:'ASSERTIVIDADE', def:'1 − erros ÷ pedidos totais (Expedição: erros reportados pelas lojas; Varandas: pedidos cancelados por erro operacional)'},
     tempo:  {label:'Tempo de processamento',unit:'min',         dir:'down', goal:7,   dec:1, short:'TEMPO DE PROC.',def:'Pedido pronto − pedido recebido (média)'},
     erros:  {label:'Erros por semana',     unit:'erros/sem',    dir:'down', goal:2,   dec:1, short:'ERROS / SEMANA',def:'Erros por semana em cada hub (média entre os hubs selecionados; no máximo 2). Expedição: reportados pelas lojas; Varandas: cancelados por erro de montagem'},
   };

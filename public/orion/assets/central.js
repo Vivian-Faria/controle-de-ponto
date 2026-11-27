@@ -454,13 +454,13 @@ window.CentralApp = {go, get data(){return D},  agg, lastN, status, score, band,
     if(k === 'ped') return `<b>PEDIDOS TOTAIS · ${h.short}</b><p>Todos os pedidos criados no hub dentro do horário de funcionamento, cancelados incluídos.</p><div>Total no período: <em>${nf(m.ped,0)}</em></div><div>Média por dia: <em>${nf(m.ped/(dias||1),0)}</em></div>`;
     const T = D.targets[k], mu = k === 'erros' ? 1 : 1, g = gl(k, m), st = status(k, m[k], mu, m), sit = SIT[st] || SIT.ok;
     const meta = (T.dir === 'up' ? '≥ ' : (k === 'cancel' ? '< ' : '≤ ')) + nf(g, T.dec) + ' ' + T.unit;
-    const cancs = Math.round(m.cancel/100*m.ped), errs = Math.round((100-m.assert)/100*m.ped);
+    const ex = hid === 'exp', cancs = Math.round(m.cancel/100*m.ped), errs = Math.round((100-m.assert)/100*m.ped);
     const calc = {
       prod:   `Pedidos totais ÷ pessoas escaladas no dia (média dos dias com escala lançada).`,
       cancel: `Cancelados ÷ pedidos totais. No período: ${nf(cancs,0)} de ${nf(m.ped,0)} pedidos.`,
-      assert: `1 − (erros reportados ÷ pedidos totais). No período: ${nf(errs,0)} erros em ${nf(m.ped,0)} pedidos.`,
+      assert: ex ? `1 − (erros reportados pelas lojas ÷ pedidos totais). No período: ${nf(errs,0)} erros em ${nf(m.ped,0)} pedidos.` : `1 − (pedidos cancelados por erro operacional ÷ pedidos totais). No período: ${nf(errs,0)} cancelados por erro em ${nf(m.ped,0)} pedidos.`,
       tempo:  `Pedido pronto para coleta − pedido criado, em média ponderada pelos pedidos de cada dia.`,
-      erros:  `Erros reportados ÷ dias do período (${dias} dia${dias>1?'s':''}).`
+      erros:  ex ? `Erros reportados pelas lojas ÷ dias do período (${dias} dia${dias>1?'s':''}).` : `Pedidos cancelados por erro operacional ÷ dias do período (${dias} dia${dias>1?'s':''}).`
     }[k];
     return `<b>${T.label.toUpperCase()} · ${h.short}</b><p>${calc}</p><div>Atual: <em>${fmtM(k, m[k])} ${T.unit}</em></div><div>Meta: <em>${meta}</em></div><div><i style="background:${sit[1]}"></i>${m[k] == null ? 'sem dados no período' : sit[0]}</div>`;
   }
