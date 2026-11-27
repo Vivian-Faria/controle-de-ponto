@@ -41,3 +41,5 @@
 .op-per .inp{width:auto;padding:7px 10px}
 .op-per .hint{flex-basis:100%;font-size:12px;color:var(--dim)}
 .op-it .op-btns{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+body.ops-locked #navOpBadge,body.ops-locked #opDmBadge{display:none!important}

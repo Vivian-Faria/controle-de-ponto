@@ -318,6 +318,13 @@ function validFreela(req) {
 }
 const safeEq = (a, b) => { const x = crypto.createHash("sha256").update(a).digest(), y = crypto.createHash("sha256").update(b).digest(); return crypto.timingSafeEqual(x, y); };
 let fails = 0, failWindow = 0;
+let opsFails = 0, opsWindow = 0;
+const OPS_PIN_HASH = "b653390f75b5f76fb7b5da927e6cb08639729456c631c1a297f8488a0e0d744d";   // hash (scrypt) do PIN de Operações; pode ser trocado pela variável OPS_PIN_HASH no Netlify
+function validOps(req) {
+  const m = /(?:^|;\s*)ops_session=([^;]+)/.exec(req.headers.get("cookie") || ""); if (!m) return false;
+  const [exp, sig] = m[1].split("."); if (!exp || !sig || Number(exp) < Date.now()) return false;
+  const a = Buffer.from(sig), b = Buffer.from(sign("ops:" + exp)); return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 
 // ------------------------------------------------------------ rotas
 export default async (req) => {
@@ -337,6 +344,19 @@ export default async (req) => {
     if (path.startsWith("/api/freela")) return await rotaFreela(req, path, { json, secret: SECRET, isAdmin: validSession, isFreela: validFreela,
       freelaCookie: () => `freela_session=${makeFreela()}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${14 * 3600}` });
     if (path.startsWith("/api/alerta")) return await rotaAlerta(req, path, { json, isAdmin: validSession, sign, presencas: presencasDoDia });
+    // PIN da área de Operações (exclusivo da gerência): sessão própria, além do login geral
+    if (path === "/api/ops/status") return json({ ok: validSession(req) && validOps(req) });
+    if (path === "/api/ops/pin" && req.method === "POST") {
+      if (!validSession(req)) return json({ error: "Não autorizado" }, 401);
+      if (Date.now() - opsWindow > 600000) { opsFails = 0; opsWindow = Date.now(); }
+      if (opsFails >= 5) return json({ error: "Muitas tentativas. Aguarde alguns minutos." }, 429);
+      const b = await req.json().catch(() => ({})), pin = String(b.pin || "");
+      const h = /^\d{4}$/.test(pin) ? crypto.scryptSync(pin, "orion-ops-v1", 32).toString("hex") : "";
+      if (!h || !safeEq(h, process.env.OPS_PIN_HASH || OPS_PIN_HASH)) { opsFails++; await new Promise(r => setTimeout(r, 800)); return json({ error: "PIN incorreto" }, 401); }
+      const exp = Date.now() + 12 * HOUR;
+      return json({ ok: true }, 200, { "Set-Cookie": `ops_session=${exp}.${sign("ops:" + exp)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${12 * 3600}` });
+    }
+    if (path === "/api/ops/sair") return json({ ok: true }, 200, { "Set-Cookie": "ops_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0" });
     if (path.startsWith("/api/dash")) return await rotaDash(req, path, { json, isAdmin: validSession });
     if (!validSession(req)) return json({ error: "Não autorizado" }, 401);
 

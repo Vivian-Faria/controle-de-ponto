@@ -8,8 +8,36 @@ const Dd = window.CentralData;
 /* ---------- navegação e menu lateral ---------- */
 const ROUTES = {dashboard:'Dashboard', operacoes:'Operações', compras:'Compras', ponto:'Controle de ponto', alertas:'Central de alertas', escala:'Escala', presencas:'Presenças'};
 const rendered = {};
+let opsOk = false;
+function opsGate(){
+  let o = document.getElementById('opsGate');
+  if(!o){
+    o = document.createElement('div'); o.id = 'opsGate';
+    o.style.cssText = 'position:fixed;inset:0;z-index:90;background:rgba(10,10,10,.92);display:flex;align-items:center;justify-content:center;padding:20px';
+    o.innerHTML = '<form style="background:#161616;border:1px solid #2c2c2c;border-radius:16px;padding:28px;width:300px;text-align:center;color:#eee;font-family:inherit"><div style="font-size:11px;letter-spacing:.14em;color:#baff1a;margin-bottom:8px">OPERAÇÕES</div><h2 style="margin:0 0 6px;font-size:20px">Área restrita</h2><p style="margin:0 0 16px;font-size:13px;color:#999">Digite o PIN de 4 dígitos.</p><input id="opsPin" type="password" inputmode="numeric" pattern="\\d{4}" maxlength="4" autocomplete="off" style="width:100%;box-sizing:border-box;text-align:center;font-size:28px;letter-spacing:.5em;padding:10px;background:#0c0c0c;color:#fff;border:1px solid #333;border-radius:10px"><div id="opsErr" style="min-height:18px;font-size:12px;color:#ff6b6b;margin:8px 0"></div><button type="submit" style="width:100%;padding:11px;border:0;border-radius:10px;background:#baff1a;color:#111;font-weight:700;cursor:pointer">Entrar</button><a href="#/dashboard" id="opsVoltar" style="display:block;margin-top:12px;font-size:12px;color:#888">Voltar ao Dashboard</a></form>';
+    document.body.appendChild(o);
+    o.querySelector('form').addEventListener('submit', async e => {
+      e.preventDefault(); const pin = $('#opsPin').value, err = $('#opsErr'); err.textContent = '';
+      try{
+        const r = await fetch('/api/ops/pin', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({pin})});
+        const j = await r.json().catch(() => ({}));
+        if(!r.ok){ err.textContent = j.error || 'Não foi possível validar.'; $('#opsPin').value = ''; return; }
+        opsOk = true; document.body.classList.remove('ops-locked'); o.remove(); go('operacoes', false);
+      }catch(x){ err.textContent = 'Sem conexão. Tente de novo.'; }
+    });
+  }
+  o.hidden = false; setTimeout(() => { const i = $('#opsPin'); i && i.focus(); }, 50);
+}
+document.body.classList.add('ops-locked');
+fetch('/api/ops/status', {credentials:'same-origin'}).then(r => r.json()).then(j => { if(j.ok){ opsOk = true; document.body.classList.remove('ops-locked'); if(location.hash === '#/operacoes') go('operacoes', false); } }).catch(() => {});
 function go(name, push){
   if(!ROUTES[name]) name = 'dashboard';
+  if(name === 'operacoes' && !opsOk){
+    $$('.view').forEach(v => v.hidden = true); $$('.sb a.it').forEach(a => a.classList.toggle('on', a.dataset.go === name));
+    $('#crumb').innerHTML = 'CENTRAL <b>/ Operações</b>'; if(push !== false) history.replaceState(null,'','#/operacoes');
+    opsGate(); return;
+  }
+  const og = document.getElementById('opsGate'); if(og) og.remove();
   $$('.view').forEach(v => { const on = v.id === 'v-' + name; v.hidden = !on; if(on){ v.classList.remove('in'); void v.offsetWidth; v.classList.add('in'); } });
   $$('.sb a.it').forEach(a => a.classList.toggle('on', a.dataset.go === name));
   $('#crumb').innerHTML = 'CENTRAL <b>/ ' + ROUTES[name] + '</b>';
