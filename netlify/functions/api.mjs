@@ -354,7 +354,8 @@ export default async (req) => {
   deadline.t = Date.now() + 9000;
   const url = new URL(req.url), path = url.pathname.replace(/\/+$/, "");
   try {
-    if (!TOKEN || !PASSWORD) return json({ error: "Configuração incompleta: defina TANGERINO_TOKEN e APP_PASSWORD nas variáveis de ambiente do Netlify." }, 500);
+    const semConfig = !TOKEN || !PASSWORD;
+    if (semConfig && !/^\/api\/(fs|migracao|escala)(\/|$)/.test(path)) return json({ error: "Configuração incompleta: defina TANGERINO_TOKEN e APP_PASSWORD nas variáveis de ambiente." }, 500);
 
     if (path === "/api/login" && req.method === "POST") {
       if (Date.now() - failWindow > 600000) { fails = 0; failWindow = Date.now(); }
