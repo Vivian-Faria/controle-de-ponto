@@ -165,7 +165,7 @@ async function pessoasDoDia(dias) {
           for (const t of esc.cfg.turnos.filter(x => x.hubId === hub.id)) {
             const n = Number(t.vagas?.[dowOf(dia)]) || 0; if (!n) continue;
             const slots = doc.slots?.[t.id] || {}; let cheias = 0;
-            for (let v = 0; v < n; v++) { const x = slots[v] ?? slots[String(v)]; const nome = typeof x === "string" ? x : Array.isArray(x?.partes) ? x.partes.find(p => p?.nome)?.nome : x?.nome; if (nome) cheias++; }
+            for (const x of Object.values(slots)) { const nome = typeof x === "string" ? x : Array.isArray(x?.partes) ? x.partes.find(p => p?.nome)?.nome : x?.nome; if (nome) cheias++; }   // a escala grava a pessoa em qualquer posição (4, 6, 10…), não só 0..n-1
             if (!cheias) continue; hh.total += cheias;
             const mm = z => { const [h, m] = String(z || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
             const a = mm(t.inicio); let f = mm(t.fim); if (f <= a) f += 1440;
@@ -181,7 +181,7 @@ async function pessoasDoDia(dias) {
 
 // ---------------------------------------------------------------- orquestração
 const LOGV = 5;                                                                            // versão do diário de erros (subir força refazer a fase de erros)
-const PV = 3;                                                                              // versão da regra de contagem de pessoas
+const PV = 4;                                                                              // versão da regra de contagem de pessoas
 const chaveDia = d => `v3/dia/${d}`;
 const fechado = (d, agora) => agora >= Date.parse(d + "T00:00:00Z") - TZ * HOUR + DAY + 2 * HOUR;       // 2 h depois da meia-noite local
 
@@ -284,7 +284,8 @@ async function sondaEscala(dia) {
     const doc = esc.docs[`${hub.id}_${dia}`], id = hubEscala(hub.nome || hub.id);
     const turnos = esc.cfg.turnos.filter(x => x.hubId === hub.id).map(t => {
       const n = Number(t.vagas?.[dow]) || 0, slots = doc?.slots?.[t.id] || {}, nomes = [];
-      for (let v = 0; v < n; v++) { const x = slots[v] ?? slots[String(v)]; const nome = typeof x === "string" ? x : Array.isArray(x?.partes) ? x.partes.map(q => q?.nome).filter(Boolean).join(" / ") : x?.nome; nomes.push(nome || null); }
+      for (const x of Object.values(slots)) { const nome = typeof x === "string" ? x : Array.isArray(x?.partes) ? x.partes.map(q => q?.nome).filter(Boolean).join(" / ") : x?.nome; if (nome) nomes.push(nome); }
+      while (nomes.length < n) nomes.push(null);
       return { turno: t.nome || t.id, inicio: t.inicio, fim: t.fim, vagasDoDia: n, preenchidas: nomes.filter(Boolean).length, nomes };
     });
     out.hubs.push({ hub: hub.nome || hub.id, idCentral: id, temDocumentoNoDia: !!doc, turnos });
