@@ -208,7 +208,7 @@ function drawDashboard(first, quiet){
   for(let i=Math.min(n,wEnd());i>=1;i--){ const m = agg(sh.map(h => [D.byHub[h.id][wEnd()-i]])); m.erros = errRoll(sh.map(h => h.id), wEnd()-i); KEYS.forEach(k => daily[k].push(m[k] ?? daily[k][daily[k].length-1] ?? 0)); }
   $('#kpis').innerHTML = KEYS.map(k => { const T = D.targets[k], mu = 1, GL = gl(k,cur)*mu, st = status(k,cur[k],mu,cur), col = `var(--${st==='ok'?'lime':st==='wa'?'amber':'red'})`;
     const w = Math.max(8, Math.min(100, T.dir==='up' ? cur[k]/GL*100 : GL/cur[k]*100));
-    return `<div class="card kpi" style="--k:${col};--w:${w}%"><small>${T.short}</small><strong>${fmtM(k,cur[k])}<u>${T.unit}</u></strong>${deltaHTML(k,cur[k],prev[k])}${spark(daily[k],col)}<div class="meta">META ${T.dir==='up'?'≥':'≤'} ${fmtM(k,GL)} ${T.unit}${k==='erros' ? ' POR HUB · ' + cur.errTot + ' NO PERÍODO' : ''}</div></div>`; }).join('');
+    return `<div class="card kpi" style="--k:${col};--w:${w}%"><small>${T.short}</small><strong>${fmtM(k,cur[k])}<u>${T.unit}</u></strong>${k==='prod' && !(escDias(sh,n,false) >= Math.max(3, sh.length*n/2) && escDias(sh,n,true) >= Math.max(3, sh.length*n/2)) ? '<span class="dl eq"><span style="color:var(--dim)">sem comparação: poucos dias com escala</span></span>' : deltaHTML(k,cur[k],prev[k])}${spark(daily[k],col)}<div class="meta">META ${T.dir==='up'?'≥':'≤'} ${fmtM(k,GL)} ${T.unit}${k==='erros' ? ' POR HUB · ' + cur.errTot + ' NO PERÍODO' : ''}</div></div>`; }).join('');
   // saúde por hub
   const all = hubsComDados().map(h => { const m = agg([lastN(h.id,n)]); return {h, m, sc: score(m)}; });
   const order = [...all].sort((a,b) => b.sc - a.sc);
@@ -284,9 +284,19 @@ function analyze(sh, n){
 }
 function worstMetric(r){ return KEYS.map(k => ({k, g:gap(k,r.m[k],1,r.m)})).sort((a,b) => b.g-a.g)[0]; }
 function errTop(h, n){ const t = D.errTypes.map(e => ({e, v: lastN(h.id,n).reduce((a,r) => a + r.errTipos[e.id], 0)})).sort((a,b) => b.v-a.v); const tot = t.reduce((a,x) => a + x.v, 0) || 1; return {name:t[0].e.name, pct:Math.round(t[0].v/tot*100)}; }
-function peakGap(sh){   // hora com maior carga por pessoa
-  let best = {h:0, r:0}; for(let h=10; h<24; h++){ const p = sh.reduce((a,x) => a + hrAt(x.id,h,S.period).pedidos, 0), q = sh.reduce((a,x) => a + hrAt(x.id,h,S.period).pessoas, 0); if(q && p/q > best.r) best = {h, r:p/q}; } return best;
+function peakGap(sh){   // hora com maior carga por pessoa, só nos dias com escala lançada (sem escala não há "por pessoa")
+  let best = null;
+  for(let h=10; h<24; h++){
+    let p = 0, q = 0;
+    sh.forEach(x => {
+      const w = D.hourlyDia && D.hourlyDia[x.id] ? D.hourlyDia[x.id].slice(Math.max(0, wEnd()-S.period), wEnd()) : null;
+      if(w) w.forEach(d => { const tot = d.q.reduce((a,b) => a + b, 0); if(tot > 0){ p += d.p[h]; q += d.q[h]; } });
+    });
+    if(q > 0 && (!best || p/q > best.r)) best = {h, r:p/q};
+  }
+  return best;
 }
+const escDias = (sh, n, prev) => sh.reduce((a,h) => a + (prev ? prevN(h.id,n) : lastN(h.id,n)).filter(r => r.cabecas > 0).length, 0);
 function advice(r, n){
   const w = worstMetric(r), T = D.targets[w.k], tip = {
     cancel:'investigue os motivos de cancelamento por turno (ruptura de item? demora de preparo?) e revise a disponibilidade do cardápio.',
@@ -324,7 +334,9 @@ function manLine(sh, n){
 function briefing(){
   const sh = selHubs(), n = S.period, a = analyze(sh, n), nm = sh.length > 1 ? 'dos hubs selecionados' : 'do ' + sh[0].short;
   const L = []; const dN = (a.net.prod - a.netP.prod)/(a.netP.prod||1)*100;
-  L.push(`<p>Panorama ${S.custom ? 'do' : 'dos'} ${perTxt(n)} ${nm}: saúde operacional <b class="${cls(band(a.netScore))}">${a.netScore}/100</b>. A produtividade está em <b>${nf(a.net.prod,1)}</b> pedidos por pessoa ao dia (${dN>=0?'+':''}${nf(dN,1)}% vs. período anterior) e o tempo médio de processamento é <b>${nf(a.net.tempo,1)} min</b>.</p>`);
+  const eC = escDias(sh,n,false), eP = escDias(sh,n,true), tot = sh.length*n, confia = eC >= Math.max(3, tot/2) && eP >= Math.max(3, tot/2);   // só compara com o período anterior se ambos tiverem escala em metade dos dias ou mais
+  const cob = eC < tot ? ` (média de ${eC} de ${tot} dias com escala lançada)` : '';
+  L.push(`<p>Panorama ${S.custom ? 'do' : 'dos'} ${perTxt(n)} ${nm}: saúde operacional <b class="${cls(band(a.netScore))}">${a.netScore}/100</b>. A produtividade está em <b>${nf(a.net.prod,1)}</b> pedidos por pessoa ao dia${confia ? ` (${dN>=0?'+':''}${nf(dN,1)}% vs. período anterior)` : ' (sem variação: faltam dias com escala lançada para comparar)'}${cob} e o tempo médio de processamento é <b>${nf(a.net.tempo,1)} min</b>.</p>`);
   const items = [];
   if(sh.length > 1){
     items.push(`<b>${a.best.h.short}</b> lidera com índice ${a.best.sc}. <b class="${cls(band(a.worst.sc))}">${a.worst.h.short}</b> é o ponto mais frágil (${a.worst.sc}).`);
@@ -333,7 +345,7 @@ function briefing(){
     if(bad2){ const b2 = advice(bad2,n); items.push(`<b>${bad2.h.short}</b> também pede atenção em ${b2.T.label.toLowerCase()} (${fmtM(b2.w.k,bad2.m[b2.w.k])} ${b2.T.unit}).`); }
   } else { const ad = advice(a.rows[0], n), ok = band(a.rows[0].sc) === 'ok';
     items.push(ok ? 'Todos os indicadores estão perto da meta. Mantenha o ritmo e monitore a tendência dos próximos dias.' : `O principal desvio é ${ad.T.label.toLowerCase()} (${fmtM(ad.w.k,a.rows[0].m[ad.w.k])} ${ad.T.unit}). Recomendo: ${ad.tip}`); }
-  const pk = peakGap(sh); items.push(`O horário mais pressionado é às <b>${pk.h}h</b>, com ${nf(pk.r,1)} pedidos por pessoa na escala. Vale reforçar esse intervalo antes de aumentar a equipe no restante do dia.`);
+  const pk = peakGap(sh); if(pk) items.push(`O horário mais pressionado é às <b>${pk.h}h</b>, com ${nf(pk.r,1)} pedidos por pessoa na escala. Vale reforçar esse intervalo antes de aumentar a equipe no restante do dia.`);
   const best7 = lastN(sh[0].id, 7); const wk = {}; sh.forEach(h => lastN(h.id, Math.min(28,n*2)).forEach(r => { const d = new Date(r.date+'T12:00').getDay(); wk[d] = (wk[d]||0) + r.erros; }));
   const wd = Object.entries(wk).sort((x,y) => y[1]-x[1])[0]; if(wd) items.push(`Os erros se concentram às <b>${['domingos','segundas','terças','quartas','quintas','sextas','sábados'][wd[0]]}</b>; prepare um reforço de conferência nesse dia.`);
   const ml = manLine(sh, n); if(ml) items.push(ml);
