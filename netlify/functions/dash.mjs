@@ -192,7 +192,7 @@ export async function atualizar({ ate = DIAS, max = ORCAMENTO_REQ } = {}) {
   // pessoas da escala: refaz (sem tocar na API) quando a regra mudou ou nos últimos dias, que ainda podem ser preenchidos
   try {
     const rev = [];
-    for (const d of dias) { if (rev.length >= 10) break; const reg = await getJ(chaveDia(d)); if (reg?.fim && (reg.pv !== PV || (d >= addDays(hoje, -2) && agora - (reg.pEm || 0) > 600000))) rev.push([d, reg]); }
+    for (const d of [...dias].reverse()) { if (rev.length >= 10) break; const reg = await getJ(chaveDia(d)); if (reg?.fim && (reg.pv !== PV || (d >= addDays(hoje, -2) && agora - (reg.pEm || 0) > 600000))) rev.push([d, reg]); }
     if (rev.length) { const pp = await pessoasDoDia(rev.map(x => x[0])); if (pp.__erro) escalaErro = pp.__erro;
       else for (const [d, reg] of rev) { reg.pessoas = pp[d] || null; reg.pv = PV; reg.pEm = agora; await putJ(chaveDia(d), reg); } }
   } catch (e) { escalaErro = String(e.message || e); }
